@@ -51,3 +51,6 @@ if ($null -eq $FlutterArgs -or $FlutterArgs.Count -eq 0) {
 } else {
     & flutter @FlutterArgs
 }
+
+# Propagate Flutter's exit code (otherwise a crash can still report success).
+exit $LASTEXITCODE

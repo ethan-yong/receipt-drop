@@ -23,7 +23,7 @@ That comes from Flutter’s **native assets / hooks** step (often `sqlite3`, `jn
 
    (`-StopDartProcesses` kills **all** `dart`/`flutter` processes on the machine—only use when nothing else needs them.)
 
-3. If it still times out, try **once** (machine-wide; turn back on if another project needs native assets):
+3. If it still times out on **`objective_c` / `sqlite3` hook locks** even after `-StopDartProcesses`, disable native assets for the SDK (machine-wide; re-enable if another project needs them):
 
    ```powershell
    flutter config --no-enable-native-assets
