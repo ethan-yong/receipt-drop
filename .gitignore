@@ -29,6 +29,19 @@ MANIFEST
 # Local git worktrees (superpowers workflow)
 .worktrees/
 
+# Cursor
+.cursor/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.idea/
+*.iml
+
 # PyInstaller
 #   Usually these files are written by a python script from a template
 #   before PyInstaller builds the exe, so as to inject date/other infos into it.
