@@ -23,10 +23,13 @@ That comes from Flutter’s **native assets / hooks** step (often `sqlite3`, `jn
 
    (`-StopDartProcesses` kills **all** `dart`/`flutter` processes on the machine—only use when nothing else needs them.)
 
-3. If it still times out on **`objective_c` / `sqlite3` hook locks** even after `-StopDartProcesses`, disable native assets for the SDK (machine-wide; re-enable if another project needs them):
+3. **Do not** run `flutter config --no-enable-native-assets` for this app. Dependencies such as **`sqlite3`** and **`objective_c`** need **Dart code/data assets** during `flutter test`. If you previously disabled them, turn them back on (machine-wide Flutter SDK setting):
 
    ```powershell
-   flutter config --no-enable-native-assets
+   flutter config --enable-native-assets
+   flutter config --enable-dart-data-assets
    ```
 
-4. Long-term: keep the repo **outside OneDrive** (e.g. `C:\dev\puggy-bank`) to reduce file-lock friction.
+   Then run `.\scripts\flutter_test_windows.ps1 -StopDartProcesses` again.
+
+4. Long-term: keep the repo **outside OneDrive** (e.g. `C:\dev\puggy-bank`) to reduce hook **lock** friction while keeping native assets **enabled**.
