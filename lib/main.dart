@@ -1,8 +1,30 @@
 import 'package:flutter/material.dart';
 
 import 'app.dart';
+import 'core/bootstrap/app_prefs.dart';
+import 'core/config/env.dart';
+import 'core/routing/app_router.dart';
+import 'core/routing/auth_refresh.dart';
+import 'data/remote/supabase_client_holder.dart';
+import 'widgets/missing_supabase_config_app.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const PuggyBankApp());
+  await Env.loadDotEnvIfDebug();
+  await AppPrefs.init();
+
+  if (!Env.hasSupabaseConfig) {
+    runApp(const MissingSupabaseConfigApp());
+    return;
+  }
+
+  await initializeSupabase(
+    url: Env.supabaseUrl,
+    anonKey: Env.supabaseAnonKey,
+  );
+
+  final authRefresh = AuthRefreshNotifier();
+  final router = createAppRouter(authRefresh);
+
+  runApp(PuggyBankApp(routerConfig: router));
 }
