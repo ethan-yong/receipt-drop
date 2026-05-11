@@ -1,0 +1,9 @@
+{
+  "version": "2026-05-11.1",
+  "default_category": "Others",
+  "rules": [
+    { "category": "Food & Drink", "any_of": ["mcdonald", "starbucks", "kopitiam", "kfc", "tealive", "7-eleven"] },
+    { "category": "Groceries", "any_of": ["aeon", "village grocer", "jaya grocer", "lotus", "mydin"] },
+    { "category": "Transport", "any_of": ["touch n go", "tng", "grab", "petron", "shell", "petronas"] }
+  ]
+}
