@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -71,7 +72,11 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _oauth(OAuthProvider provider) async {
     setState(() => _loading = true);
     try {
-      await Supabase.instance.client.auth.signInWithOAuth(provider);
+      await Supabase.instance.client.auth.signInWithOAuth(
+        provider,
+        // Web PKCE redirect must match “Redirect URLs” in Supabase Dashboard.
+        redirectTo: kIsWeb ? '${Uri.base.origin}/' : null,
+      );
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
