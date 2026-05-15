@@ -79,6 +79,8 @@ flutter:
 
   assets:
     - assets/config/categories-v1.json
+    # Local secrets (gitignored). Copy `.env.example` → `.env` for debug; required for flutter_dotenv on all platforms including web.
+    - .env
 
   # To add assets to your application, add an assets section, like this:
   # assets:
