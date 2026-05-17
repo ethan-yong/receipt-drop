@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../bootstrap/app_prefs.dart';
+import '../config/env.dart';
 import 'auth_refresh.dart';
 import '../../features/auth/auth_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
@@ -26,10 +27,16 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
     initialLocation: '/home',
     refreshListenable: refresh,
     redirect: (context, state) {
+      final path = state.uri.path;
+
+      if (Env.skipAuth) {
+        if (path == '/auth' || path == '/onboarding') return '/home';
+        return null;
+      }
+
       final loggedIn =
           Supabase.instance.client.auth.currentSession != null;
       final onboardingDone = AppPrefs.onboardingComplete;
-      final path = state.uri.path;
 
       if (!onboardingDone && path != '/onboarding') {
         return '/onboarding';

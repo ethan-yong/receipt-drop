@@ -18,7 +18,7 @@ void main() {
     );
   });
 
-  testWidgets('Auth gate shows sign-in when logged out', (
+  testWidgets('Home tab loads when auth is skipped in debug', (
     WidgetTester tester,
   ) async {
     final refresh = AuthRefreshNotifier();
@@ -27,6 +27,9 @@ void main() {
     await tester.pumpWidget(PuggyBankApp(routerConfig: router));
     await tester.pumpAndSettle();
 
-    expect(find.text('Sign in to PuggyBank'), findsOneWidget);
+    expect(
+      find.text('Your spending feed will appear here.'),
+      findsOneWidget,
+    );
   });
 }

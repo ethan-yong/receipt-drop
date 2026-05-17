@@ -42,4 +42,29 @@ class Env {
 
   static bool get hasSupabaseConfig =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
+  /// Skip onboarding + auth redirects while building features (debug only by default).
+  ///
+  /// Enabled when `SKIP_AUTH=true` in `.env` or `--dart-define=SKIP_AUTH=true`,
+  /// or by default in [kDebugMode] unless `SKIP_AUTH=false`.
+  /// Always off in profile/release unless you pass the dart-define (not recommended).
+  static bool get skipAuth {
+    const fromDefine = String.fromEnvironment('SKIP_AUTH');
+    if (fromDefine == 'true' || fromDefine == '1') return true;
+    if (fromDefine == 'false' || fromDefine == '0') return false;
+    if (kDebugMode) {
+      try {
+        final v = dotenv.maybeGet('SKIP_AUTH');
+        if (v != null) {
+          final lower = v.trim().toLowerCase();
+          if (lower == 'true' || lower == '1') return true;
+          if (lower == 'false' || lower == '0') return false;
+        }
+      } on Object {
+        // dotenv not loaded yet (e.g. widget tests) — fall through to debug default.
+      }
+      return true;
+    }
+    return false;
+  }
 }
