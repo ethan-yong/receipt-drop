@@ -33,3 +33,11 @@ That comes from Flutter’s **native assets / hooks** step (often `sqlite3`, `jn
    Then run `.\scripts\flutter_test_windows.ps1 -StopDartProcesses` again.
 
 4. Long-term: keep the repo **outside OneDrive** (e.g. `C:\dev\puggy-bank`) to reduce hook **lock** friction while keeping native assets **enabled**.
+
+### Android `flutter run` stuck on Gradle for a long time
+
+First debug builds download Android SDK components (CMake, etc.) and compile native deps (ML Kit, SQLite). Under **OneDrive**, `assembleDebug` can appear hung for an hour+.
+
+1. Stop the run (`Ctrl+C`) and use a copy off OneDrive: `C:\dev\puggy-bank` (sync from Desktop with `robocopy` or open that folder in Cursor).
+2. From `C:\dev\puggy-bank`: `flutter pub get` then `flutter run` (phone connected with USB debugging).
+3. A successful first build produces `build\app\outputs\flutter-apk\app-debug.apk` in ~2–5 minutes off OneDrive; later runs are much faster.
