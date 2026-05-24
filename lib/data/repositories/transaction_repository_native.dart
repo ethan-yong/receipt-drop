@@ -1,20 +1,35 @@
 import 'package:drift/drift.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../domain/models/transaction_view.dart';
 import '../local/app_database.dart';
 import 'demo_transactions.dart';
+import 'ingest_receipt_request.dart';
 
 class TransactionRepository {
   TransactionRepository(this._db);
 
   final AppDatabase _db;
+  static const _uuid = Uuid();
+
   Stream<List<TransactionView>> watchAll() {
     return (_db.select(_db.outboxTransactions)
           ..orderBy([
             (t) => OrderingTerm.desc(t.occurredAt),
           ]))
         .watch()
-        .map((rows) => rows.map(_mapRow).toList());
+        .asyncMap(_rowsToViews);
+  }
+
+  Future<List<TransactionView>> _rowsToViews(
+    List<OutboxTransaction> rows,
+  ) async {
+    final views = <TransactionView>[];
+    for (final row in rows) {
+      final path = await _artifactPathFor(row.id);
+      views.add(_mapRow(row, path));
+    }
+    return views;
   }
 
   Future<TransactionView?> getById(String id) async {
@@ -22,7 +37,62 @@ class TransactionRepository {
           ..where((t) => t.id.equals(id)))
         .getSingleOrNull();
     if (row == null) return null;
-    return _mapRow(row);
+    final path = await _artifactPathFor(id);
+    return _mapRow(row, path);
+  }
+
+  Future<TransactionView> ingestReceipt(IngestReceiptRequest request) async {
+    final id = _uuid.v4();
+    final artifactId = _uuid.v4();
+    final now = DateTime.now();
+    final amountSource = request.needsAmount ? null : 'ocr';
+
+    await _db.into(_db.outboxTransactions).insert(
+          OutboxTransactionsCompanion.insert(
+            id: id,
+            userId: request.userId,
+            occurredAt: Value(now),
+            amountMyr: Value(request.amountMyr),
+            amountSource: Value(amountSource),
+            needsAmount: Value(request.needsAmount),
+            merchantRaw: Value(request.merchantRaw),
+            categoryGuess: Value(request.categoryGuess),
+            shareLocationLat: Value(request.shareLocationLat),
+            shareLocationLng: Value(request.shareLocationLng),
+            shareLocationCapturedAt: Value(request.shareLocationCapturedAt),
+            ocrConfidence: Value(request.ocrConfidence),
+            syncStatus: const Value('pending'),
+            pipelineStatus: const Value('provisional'),
+          ),
+        );
+
+    await _db.into(_db.outboxArtifacts).insert(
+          OutboxArtifactsCompanion.insert(
+            id: artifactId,
+            userId: request.userId,
+            transactionId: id,
+            mimeType: request.mimeType,
+            localFilePath: request.localFilePath,
+          ),
+        );
+
+    return TransactionView(
+      id: id,
+      occurredAt: now,
+      amountMyr: request.amountMyr,
+      needsAmount: request.needsAmount,
+      merchantRaw: request.merchantRaw,
+      categoryGuess: request.categoryGuess,
+      categoryUser: null,
+      placeName: null,
+      placeGooglePlaceId: null,
+      placeLat: request.shareLocationLat,
+      placeLng: request.shareLocationLng,
+      syncStatus: 'pending',
+      pipelineStatus: 'provisional',
+      localThumbnailPath: request.localFilePath,
+      thumbnailBytes: request.thumbnailBytes,
+    );
   }
 
   Future<void> updateTransaction(TransactionView view) async {
@@ -38,6 +108,16 @@ class TransactionRepository {
         placeLat: Value(view.placeLat),
         placeLng: Value(view.placeLng),
         occurredAt: Value(view.occurredAt),
+      ),
+    );
+  }
+
+  Future<void> retryStuckSync() async {
+    await (_db.update(_db.outboxTransactions)
+          ..where((t) => t.syncStatus.equals('stuck')))
+        .write(
+      const OutboxTransactionsCompanion(
+        syncStatus: Value('pending'),
       ),
     );
   }
@@ -83,7 +163,14 @@ class TransactionRepository {
     }
   }
 
-  TransactionView _mapRow(OutboxTransaction row) {
+  Future<String?> _artifactPathFor(String transactionId) async {
+    final artifact = await (_db.select(_db.outboxArtifacts)
+          ..where((a) => a.transactionId.equals(transactionId)))
+        .getSingleOrNull();
+    return artifact?.localFilePath;
+  }
+
+  TransactionView _mapRow(OutboxTransaction row, String? localPath) {
     return TransactionView(
       id: row.id,
       occurredAt: row.occurredAt,
@@ -98,7 +185,7 @@ class TransactionRepository {
       placeLng: row.placeLng,
       syncStatus: row.syncStatus,
       pipelineStatus: row.pipelineStatus,
-      localThumbnailPath: null,
+      localThumbnailPath: localPath,
     );
   }
 }

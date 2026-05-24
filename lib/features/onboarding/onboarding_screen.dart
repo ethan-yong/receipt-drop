@@ -3,8 +3,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/bootstrap/app_prefs.dart';
 import '../../core/theme/app_theme.dart';
+import '../../widgets/pug_mascot.dart';
+import '../../widgets/puggy_primary_button.dart';
 
-/// Three short slides, then routes to sign-in (onboarding in design spec).
+/// Three slides matching design mock, then routes to sign-in.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -16,21 +18,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _pageController = PageController();
   int _index = 0;
 
-  static const _slides = <({String title, String body})>[
+  static const _slides = <({String asset, String title, String body})>[
     (
+      asset: 'assets/branding/pug-onboarding-1.png',
       title: 'Share any RM receipt',
-      body:
-          'Use your bank or TNG receipt screenshot — tap Share and choose PuggyBank.',
+      body: 'We log it. Use your bank or TNG receipt — tap Share and choose PuggyBank.',
     ),
     (
-      title: 'We guess place & category',
-      body:
-          'You can fix anything later. Nothing blocks you from saving right away.',
+      asset: 'assets/branding/pug-onboarding-2.png',
+      title: 'We guess place + category',
+      body: 'You can fix anything later. Nothing blocks you from saving right away.',
     ),
     (
+      asset: 'assets/branding/pug-onboarding-3.png',
       title: 'Your data, your map',
-      body:
-          'Spend rolls up on your dashboard and map. PuggyBank is not a bank.',
+      body: 'Private. Secure. Yours. PuggyBank is not a bank.',
     ),
   ];
 
@@ -48,7 +50,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _next(BuildContext context) async {
     if (_index < _slides.length - 1) {
       await _pageController.nextPage(
-        duration: const Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 320),
         curve: Curves.easeOutCubic,
       );
     } else {
@@ -82,20 +84,30 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 28),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        TweenAnimationBuilder<double>(
+                          key: ValueKey(i),
+                          tween: Tween(begin: 0.85, end: 1),
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutCubic,
+                          builder: (context, scale, child) {
+                            return Transform.scale(scale: scale, child: child);
+                          },
+                          child: PugMascot(assetPath: s.asset, size: 160),
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
                         Text(
                           s.title,
-                          style: Theme.of(context).textTheme.headlineSmall
-                              ?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primaryGreen,
-                              ),
+                          style: Theme.of(context).textTheme.headlineMedium,
+                          textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: AppSpacing.md),
                         Text(
                           s.body,
-                          style: Theme.of(context).textTheme.bodyLarge,
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                          textAlign: TextAlign.center,
                         ),
                       ],
                     ),
@@ -107,32 +119,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(
                 _slides.length,
-                (i) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: CircleAvatar(
-                    radius: 4,
-                    backgroundColor: i == _index
+                (i) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: i == _index ? 20 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: i == _index
                         ? AppColors.primaryGreen
                         : Colors.grey.shade400,
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-              child: FilledButton(
-                onPressed: () {
-                  _next(context);
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primaryGreen,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: Text(
-                  _index == _slides.length - 1 ? 'Get started' : 'Next',
-                ),
+              child: PuggyPrimaryButton(
+                label: _index == _slides.length - 1
+                    ? "Let's get started"
+                    : 'Next',
+                onPressed: () => _next(context),
               ),
             ),
           ],

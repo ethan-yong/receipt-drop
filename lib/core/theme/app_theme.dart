@@ -1,37 +1,124 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-class AppColors {
-  static const scaffold = Color(0xFFF9F7F2);
-  static const primaryGreen = Color(0xFF2D5A27);
-  static const accentOrange = Color(0xFFE67E22);
-}
+import 'app_colors.dart';
+import 'app_spacing.dart';
+import 'app_typography.dart';
+
+export 'app_colors.dart';
+export 'app_spacing.dart';
+export 'app_typography.dart';
 
 ThemeData buildPuggyTheme() {
-  final base = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: AppColors.primaryGreen,
-      primary: AppColors.primaryGreen,
-      secondary: AppColors.accentOrange,
-      surface: AppColors.scaffold,
-    ),
-    scaffoldBackgroundColor: AppColors.scaffold,
+  final textTheme = buildPuggyTextTheme();
+  final colorScheme = ColorScheme.fromSeed(
+    seedColor: AppColors.primaryGreen,
+    primary: AppColors.primaryGreen,
+    onPrimary: Colors.white,
+    secondary: AppColors.accentOrange,
+    surface: AppColors.scaffold,
+    onSurface: AppColors.textPrimary,
+    error: AppColors.destructive,
   );
-  return base.copyWith(
-    appBarTheme: const AppBarTheme(
+
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: colorScheme,
+    scaffoldBackgroundColor: AppColors.scaffold,
+    textTheme: textTheme,
+    appBarTheme: AppBarTheme(
       backgroundColor: AppColors.scaffold,
-      foregroundColor: Colors.black87,
+      foregroundColor: AppColors.textPrimary,
       elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: false,
+      titleTextStyle: textTheme.titleLarge,
+      systemOverlayStyle: SystemUiOverlayStyle.dark,
     ),
-    navigationBarTheme: NavigationBarThemeData(
-      indicatorColor: AppColors.primaryGreen.withValues(alpha: 0.15),
-      labelTextStyle: WidgetStateProperty.all(
-        const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+    cardTheme: CardThemeData(
+      color: AppColors.cardSurface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.cardBorderRadius,
+        side: const BorderSide(color: AppColors.divider, width: 1),
+      ),
+      margin: EdgeInsets.zero,
+    ),
+    dividerTheme: const DividerThemeData(
+      color: AppColors.divider,
+      thickness: 1,
+      space: 1,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: AppColors.cardSurface,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
+        borderSide: const BorderSide(color: AppColors.divider),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
+        borderSide: const BorderSide(color: AppColors.divider),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
+        borderSide: const BorderSide(color: AppColors.primaryGreen, width: 2),
+      ),
+      labelStyle: textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+      hintStyle: textTheme.bodyMedium?.copyWith(color: AppColors.textMuted),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.primaryGreen,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
+        ),
+        textStyle: textTheme.labelLarge?.copyWith(color: Colors.white),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.textPrimary,
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+        side: const BorderSide(color: AppColors.divider),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
+        ),
+        textStyle: textTheme.labelLarge,
+      ),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: AppColors.scaffold,
+      selectedColor: AppColors.primaryGreen.withValues(alpha: 0.12),
+      labelStyle: textTheme.labelMedium!,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.chipBorderRadius,
+        side: const BorderSide(color: AppColors.divider),
       ),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: AppColors.primaryGreen,
       foregroundColor: Colors.white,
+      elevation: 4,
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      backgroundColor: AppColors.cardSurface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
+      ),
     ),
   );
 }

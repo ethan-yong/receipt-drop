@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../widgets/pug_mascot.dart';
+import '../../widgets/puggy_primary_button.dart';
 
-/// Email/password + OAuth (Google, Apple). Redirect handled by [GoRouter].
+/// Email/password + OAuth (Google, Apple).
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -41,7 +43,7 @@ class _AuthScreenState extends State<AuthScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Check your email to confirm your account (if required by project settings).',
+                'Check your email to confirm your account (if required).',
               ),
             ),
           );
@@ -74,19 +76,12 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       await Supabase.instance.client.auth.signInWithOAuth(
         provider,
-        // Web PKCE redirect must match “Redirect URLs” in Supabase Dashboard.
         redirectTo: kIsWeb ? '${Uri.base.origin}/' : null,
       );
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.message)),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
         );
       }
     } finally {
@@ -98,116 +93,118 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.scaffold,
-      appBar: AppBar(title: const Text('Sign in')),
-      body: AbsorbPointer(
-        absorbing: _loading,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Sign in to PuggyBank',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
+      body: SafeArea(
+        child: AbsorbPointer(
+          absorbing: _loading,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: AppSpacing.lg),
+                  const Center(
+                    child: PugMascot(
+                      assetPath: 'assets/branding/pug-logo.png',
+                      size: 88,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    'PuggyBank',
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                          color: AppColors.primaryGreen,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    'Not a bank — your receipt-powered spending view.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                  PuggyOAuthButton(
+                    label: 'Continue with Google',
+                    icon: const Icon(Icons.g_mobiledata, size: 28),
+                    onPressed: _loading
+                        ? null
+                        : () => _oauth(OAuthProvider.google),
+                  ),
+                  const SizedBox(height: AppSpacing.sm + 4),
+                  PuggyOAuthButton(
+                    label: 'Continue with Apple',
+                    icon: const Icon(Icons.apple, size: 22),
+                    onPressed: _loading
+                        ? null
+                        : () => _oauth(OAuthProvider.apple),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Row(
+                    children: [
+                      const Expanded(child: Divider()),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'or',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Not a bank — your receipt-powered spending view.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 28),
-                OutlinedButton.icon(
-                  onPressed: _loading
-                      ? null
-                      : () => _oauth(OAuthProvider.google),
-                  icon: const Icon(Icons.g_mobiledata, size: 28),
-                  label: const Text('Continue with Google'),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _loading
-                      ? null
-                      : () => _oauth(OAuthProvider.apple),
-                  icon: const Icon(Icons.apple, size: 22),
-                  label: const Text('Continue with Apple'),
-                ),
-                const SizedBox(height: 28),
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: Colors.grey.shade400)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'or email',
-                        style: TextStyle(color: Colors.grey.shade700),
+                      const Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  TextFormField(
+                    controller: _emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    decoration: const InputDecoration(labelText: 'Email'),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Enter email';
+                      if (!v.contains('@')) return 'Enter a valid email';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      suffixIcon: TextButton(
+                        onPressed: () {},
+                        child: const Text('Forgot?'),
                       ),
                     ),
-                    Expanded(child: Divider(color: Colors.grey.shade400)),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) return 'Enter password';
+                      if (v.length < 6) {
+                        return 'At least 6 characters';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Enter email';
-                    if (!v.contains('@')) return 'Enter a valid email';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Password',
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: AppSpacing.lg),
+                  PuggyPrimaryButton(
+                    label: _isSignUp ? 'Create account' : 'Sign in',
+                    loading: _loading,
+                    onPressed: _submitEmailPassword,
                   ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Enter password';
-                    if (v.length < 6) {
-                      return 'Password must be at least 6 characters';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _loading ? null : _submitEmailPassword,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primaryGreen,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () => setState(() => _isSignUp = !_isSignUp),
+                    child: Text(
+                      _isSignUp
+                          ? 'Already have an account? Sign in'
+                          : 'Need an account? Sign up',
+                    ),
                   ),
-                  child: Text(_isSignUp ? 'Create account' : 'Sign in'),
-                ),
-                TextButton(
-                  onPressed: _loading
-                      ? null
-                      : () => setState(() => _isSignUp = !_isSignUp),
-                  child: Text(
-                    _isSignUp
-                        ? 'Already have an account? Sign in'
-                        : 'Need an account? Sign up',
-                  ),
-                ),
-                if (_loading)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 24),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

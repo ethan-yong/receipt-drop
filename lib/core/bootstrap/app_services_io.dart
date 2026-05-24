@@ -1,5 +1,5 @@
 import '../../data/local/app_database.dart';
-import '../../data/repositories/transaction_repository.dart';
+import '../../data/repositories/transaction_repository_native.dart';
 
 /// Native/mobile/desktop: Drift SQLite outbox.
 abstract final class AppServices {

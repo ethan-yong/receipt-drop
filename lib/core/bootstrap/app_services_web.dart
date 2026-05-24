@@ -1,4 +1,4 @@
-import '../../data/repositories/transaction_repository.dart';
+import '../../data/repositories/transaction_repository_web.dart';
 
 /// Web: in-memory transactions (no dart:ffi / SQLite).
 abstract final class AppServices {

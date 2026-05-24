@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app.dart';
 import 'core/bootstrap/app_prefs.dart';
+import 'core/bootstrap/app_services.dart';
 import 'core/config/env.dart';
 import 'core/routing/app_router.dart';
 import 'core/routing/auth_refresh.dart';
@@ -12,6 +13,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Env.loadDotEnvIfDebug();
   await AppPrefs.init();
+  await AppServices.init();
 
   if (!Env.hasSupabaseConfig) {
     runApp(const MissingSupabaseConfigApp());

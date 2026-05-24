@@ -52,6 +52,12 @@ dependencies:
   http: ^1.2.2
   collection: ^1.18.0
   shared_preferences: ^2.3.3
+  google_fonts: ^6.2.1
+  fl_chart: ^0.69.2
+  cached_network_image: ^3.4.1
+  image_picker: ^1.1.2
+  file_picker: ^8.1.6
+  pdfrx: ^1.0.103
 
 dev_dependencies:
   flutter_test:
@@ -79,6 +85,7 @@ flutter:
 
   assets:
     - assets/config/categories-v1.json
+    - assets/branding/
     # Local secrets (gitignored). Copy `.env.example` → `.env` for debug; required for flutter_dotenv on all platforms including web.
     - .env
 

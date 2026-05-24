@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>PuggyBank uses the camera to photograph receipts for expense tracking.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>PuggyBank needs photo library access to import receipt images.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>PuggyBank uses your location to suggest nearby places for receipts.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

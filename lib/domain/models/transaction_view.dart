@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// Unified transaction row for UI (outbox-first; cloud merge later).
 class TransactionView {
   const TransactionView({
@@ -15,6 +17,7 @@ class TransactionView {
     required this.syncStatus,
     required this.pipelineStatus,
     required this.localThumbnailPath,
+    this.thumbnailBytes,
   });
 
   final String id;
@@ -31,6 +34,7 @@ class TransactionView {
   final String syncStatus;
   final String pipelineStatus;
   final String? localThumbnailPath;
+  final Uint8List? thumbnailBytes;
 
   String get effectiveCategory {
     final user = categoryUser?.trim();
