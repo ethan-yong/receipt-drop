@@ -61,6 +61,7 @@ class TransactionRepository {
             shareLocationLng: Value(request.shareLocationLng),
             shareLocationCapturedAt: Value(request.shareLocationCapturedAt),
             ocrConfidence: Value(request.ocrConfidence),
+            impactUser: Value(request.impactUser),
             syncStatus: const Value('pending'),
             pipelineStatus: const Value('provisional'),
           ),
@@ -92,6 +93,7 @@ class TransactionRepository {
       pipelineStatus: 'provisional',
       localThumbnailPath: request.localFilePath,
       thumbnailBytes: request.thumbnailBytes,
+      impactUser: request.impactUser,
     );
   }
 
@@ -108,6 +110,7 @@ class TransactionRepository {
         placeLat: Value(view.placeLat),
         placeLng: Value(view.placeLng),
         occurredAt: Value(view.occurredAt),
+        impactUser: Value(view.impactUser),
       ),
     );
   }
@@ -186,6 +189,7 @@ class TransactionRepository {
       syncStatus: row.syncStatus,
       pipelineStatus: row.pipelineStatus,
       localThumbnailPath: localPath,
+      impactUser: row.impactUser,
     );
   }
 }

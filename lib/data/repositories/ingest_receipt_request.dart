@@ -15,6 +15,7 @@ class IngestReceiptRequest {
     this.shareLocationCapturedAt,
     this.ocrConfidence,
     this.userId = 'demo-user',
+    this.impactUser,
   });
 
   final String localFilePath;
@@ -29,4 +30,5 @@ class IngestReceiptRequest {
   final DateTime? shareLocationCapturedAt;
   final double? ocrConfidence;
   final String userId;
+  final String? impactUser;
 }

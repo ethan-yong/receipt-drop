@@ -33,6 +33,11 @@ class OutboxTransactions extends Table {
 
   RealColumn get categoryConfidence => real().nullable()();
 
+  /// User override for the derived impact level ('low'|'med'|'high'); null
+  /// means the level shown in [TransactionView.effectiveImpactLevel] is
+  /// re-derived from [amountMyr] rather than stored here.
+  TextColumn get impactUser => text().nullable()();
+
   TextColumn get placeStatus =>
       text().withDefault(const Constant('none'))();
 

@@ -6,14 +6,20 @@ import '../bootstrap/app_prefs.dart';
 import '../config/env.dart';
 import 'auth_refresh.dart';
 import '../../features/auth/auth_screen.dart';
+import '../../features/avatar/avatar_customizer_screen.dart';
+import '../../features/badges/badges_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
-import '../../features/friends/friends_teaser_screen.dart';
+import '../../features/feed/feed_screen.dart';
+import '../../features/friends/friends_screen.dart';
 import '../../features/home/home_screen.dart';
+import '../../features/leaderboard/leaderboard_screen.dart';
 import '../../features/map/spend_map_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/places/places_search_screen.dart';
+import '../../features/ritual/ritual_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/share/share_hint_screen.dart';
+import '../../features/summary/summary_screen.dart';
 import '../../features/tx_detail/transaction_detail_screen.dart';
 import '../../widgets/main_shell.dart';
 
@@ -74,6 +80,16 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
           StatefulShellBranch(
             routes: <RouteBase>[
               GoRoute(
+                path: '/feed',
+                name: 'feed',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage<void>(child: FeedScreen()),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
                 path: '/map',
                 name: 'map',
                 pageBuilder: (context, state) =>
@@ -84,24 +100,50 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
           StatefulShellBranch(
             routes: <RouteBase>[
               GoRoute(
-                path: '/dashboard',
-                name: 'dashboard',
+                path: '/ranks',
+                name: 'ranks',
                 pageBuilder: (context, state) =>
-                    const NoTransitionPage<void>(child: DashboardScreen()),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
-                path: '/settings',
-                name: 'settings',
-                pageBuilder: (context, state) =>
-                    const NoTransitionPage<void>(child: SettingsScreen()),
+                    const NoTransitionPage<void>(child: LeaderboardScreen()),
               ),
             ],
           ),
         ],
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/dashboard',
+        name: 'dashboard',
+        builder: (context, state) => const DashboardScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/settings',
+        name: 'settings',
+        builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/avatar',
+        name: 'avatar',
+        builder: (context, state) => const AvatarCustomizerScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/badges',
+        name: 'badges',
+        builder: (context, state) => const BadgesScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/ritual',
+        name: 'ritual',
+        builder: (context, state) => const RitualScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/summary',
+        name: 'summary',
+        builder: (context, state) => const SummaryScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
@@ -123,9 +165,9 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
-        path: '/friends-teaser',
-        name: 'friends-teaser',
-        builder: (context, state) => const FriendsTeaserScreen(),
+        path: '/friends',
+        name: 'friends',
+        builder: (context, state) => const FriendsScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

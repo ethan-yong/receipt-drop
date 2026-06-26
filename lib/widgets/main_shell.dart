@@ -9,7 +9,7 @@ import '../core/platform/platform_utils.dart';
 import '../core/theme/app_theme.dart';
 import '../features/share/receipt_capture_flow.dart';
 
-/// Bottom navigation: Home, Map, FAB, Stats, Settings.
+/// Bottom navigation: Home, Feed, FAB, Map, Ranks.
 class MainShell extends StatelessWidget {
   const MainShell({super.key, required this.navigationShell});
 
@@ -92,24 +92,24 @@ class _IosTabBar extends StatelessWidget {
                     onTap: () => onTap(0),
                   ),
                   _NavItem(
-                    icon: CupertinoIcons.map,
-                    selectedIcon: CupertinoIcons.map_fill,
-                    label: 'Map',
+                    icon: CupertinoIcons.person_2,
+                    selectedIcon: CupertinoIcons.person_2_fill,
+                    label: 'Feed',
                     selected: index == 1,
                     onTap: () => onTap(1),
                   ),
                   const SizedBox(width: 56),
                   _NavItem(
-                    icon: CupertinoIcons.chart_bar,
-                    selectedIcon: CupertinoIcons.chart_bar_fill,
-                    label: 'Stats',
+                    icon: CupertinoIcons.map,
+                    selectedIcon: CupertinoIcons.map_fill,
+                    label: 'Map',
                     selected: index == 2,
                     onTap: () => onTap(2),
                   ),
                   _NavItem(
-                    icon: CupertinoIcons.gear,
-                    selectedIcon: CupertinoIcons.gear_solid,
-                    label: 'Settings',
+                    icon: CupertinoIcons.rosette,
+                    selectedIcon: CupertinoIcons.rosette,
+                    label: 'Ranks',
                     selected: index == 3,
                     onTap: () => onTap(3),
                   ),
@@ -150,24 +150,24 @@ class _AndroidTabBar extends StatelessWidget {
             onTap: () => onTap(0),
           ),
           _NavItem(
-            icon: Icons.map_outlined,
-            selectedIcon: Icons.map,
-            label: 'Map',
+            icon: Icons.people_outline,
+            selectedIcon: Icons.people,
+            label: 'Feed',
             selected: index == 1,
             onTap: () => onTap(1),
           ),
           const SizedBox(width: 56),
           _NavItem(
-            icon: Icons.bar_chart_outlined,
-            selectedIcon: Icons.bar_chart,
-            label: 'Stats',
+            icon: Icons.map_outlined,
+            selectedIcon: Icons.map,
+            label: 'Map',
             selected: index == 2,
             onTap: () => onTap(2),
           ),
           _NavItem(
-            icon: Icons.settings_outlined,
-            selectedIcon: Icons.settings,
-            label: 'Settings',
+            icon: Icons.emoji_events_outlined,
+            selectedIcon: Icons.emoji_events,
+            label: 'Ranks',
             selected: index == 3,
             onTap: () => onTap(3),
           ),

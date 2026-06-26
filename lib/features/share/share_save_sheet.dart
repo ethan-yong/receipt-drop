@@ -4,9 +4,10 @@ import '../../core/platform/adaptive_sheet.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../core/platform/platform_utils.dart';
 import '../../core/theme/app_theme.dart';
+import '../../domain/logic/impact_level.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/puggy_primary_button.dart';
-import '../../widgets/receipt_thumbnail.dart';
+import '../../widgets/receipt_strip.dart';
 import 'receipt_ingest_draft.dart';
 
 /// Save sheet after receipt ingest (manual upload or share).
@@ -19,15 +20,22 @@ class ShareSaveSheet extends StatefulWidget {
   });
 
   final ReceiptIngestDraft draft;
-  final Future<void> Function(double? amount, ReceiptIngestDraft draft) onSave;
+  final Future<void> Function(
+    double? amount,
+    ReceiptIngestDraft draft,
+    ImpactLevel impact,
+  ) onSave;
   final Future<void> Function(ReceiptIngestDraft draft) onCancel;
 
   /// Returns true if the user saved.
   static Future<bool> show(
     BuildContext context, {
     required ReceiptIngestDraft draft,
-    required Future<void> Function(double? amount, ReceiptIngestDraft draft)
-        onSave,
+    required Future<void> Function(
+      double? amount,
+      ReceiptIngestDraft draft,
+      ImpactLevel impact,
+    ) onSave,
     required Future<void> Function(ReceiptIngestDraft draft) onCancel,
   }) async {
     final result = await AdaptiveSheet.showForm<bool>(
@@ -48,6 +56,7 @@ class ShareSaveSheet extends StatefulWidget {
 
 class _ShareSaveSheetState extends State<ShareSaveSheet> {
   late final TextEditingController _amountController;
+  ImpactLevel? _impactOverride;
   var _saving = false;
 
   @override
@@ -57,10 +66,14 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
     _amountController = TextEditingController(
       text: amount != null ? amount.toStringAsFixed(2) : '',
     );
+    _amountController.addListener(_onAmountChanged);
   }
+
+  void _onAmountChanged() => setState(() {});
 
   @override
   void dispose() {
+    _amountController.removeListener(_onAmountChanged);
     _amountController.dispose();
     super.dispose();
   }
@@ -71,6 +84,9 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
     return double.tryParse(raw);
   }
 
+  ImpactLevel get _effectiveImpact =>
+      _impactOverride ?? deriveImpactLevel(_parseAmount());
+
   Future<void> _save() async {
     final amount = _parseAmount();
     if (amount == null || amount <= 0) {
@@ -79,7 +95,7 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
     }
     setState(() => _saving = true);
     try {
-      await widget.onSave(amount, widget.draft);
+      await widget.onSave(amount, widget.draft, _effectiveImpact);
       if (mounted) {
         PlatformFeedback.mediumTap();
         Navigator.pop(context, true);
@@ -118,14 +134,7 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
           const SizedBox(height: AppSpacing.md),
         ],
         Center(
-          child: ReceiptThumbnail(
-            size: 72,
-            radius: 12,
-            localPath: widget.draft.localFilePath.startsWith('web:')
-                ? null
-                : widget.draft.localFilePath,
-            thumbnailBytes: widget.draft.thumbnailBytes,
-          ),
+          child: ReceiptStrip(impact: _effectiveImpact),
         ),
         const SizedBox(height: AppSpacing.md),
         Text(
@@ -143,6 +152,24 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
         ],
         const SizedBox(height: AppSpacing.lg),
         AmountField(controller: _amountController),
+        const SizedBox(height: AppSpacing.lg),
+        Text('Impact', style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: [
+            for (final level in ImpactLevel.values) ...[
+              if (level != ImpactLevel.values.first)
+                const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: _ImpactChip(
+                  level: level,
+                  selected: _effectiveImpact == level,
+                  onTap: () => setState(() => _impactOverride = level),
+                ),
+              ),
+            ],
+          ],
+        ),
         const SizedBox(height: AppSpacing.lg),
       ],
     );
@@ -211,6 +238,56 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ImpactChip extends StatelessWidget {
+  const _ImpactChip({
+    required this.level,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ImpactLevel level;
+  final bool selected;
+  final VoidCallback onTap;
+
+  Color get _color {
+    switch (level) {
+      case ImpactLevel.low:
+        return AppColors.impactLow;
+      case ImpactLevel.med:
+        return AppColors.impactMed;
+      case ImpactLevel.high:
+        return AppColors.impactHigh;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppSpacing.chipBorderRadius,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? _color : AppColors.cardSurface,
+          borderRadius: AppSpacing.chipBorderRadius,
+          border: Border.all(
+            color: selected ? _color : AppColors.divider,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Text(
+          level.label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+              ),
+        ),
       ),
     );
   }

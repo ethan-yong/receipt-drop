@@ -8,6 +8,7 @@ import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../data/repositories/ingest_receipt_request.dart';
+import '../../data/repositories/social_repository.dart';
 import '../../domain/models/transaction_view.dart';
 import 'receipt_capture_menu.dart';
 import 'receipt_ingest_draft.dart';
@@ -127,7 +128,7 @@ class ReceiptCaptureFlow {
     final saved = await ShareSaveSheet.show(
       context,
       draft: draft,
-      onSave: (amount, draft) async {
+      onSave: (amount, draft, impact) async {
         savedTx = await AppServices.transactions.ingestReceipt(
           IngestReceiptRequest(
             localFilePath: draft.localFilePath,
@@ -141,15 +142,16 @@ class ReceiptCaptureFlow {
             shareLocationLng: draft.shareLocationLng,
             shareLocationCapturedAt: draft.shareLocationCapturedAt,
             ocrConfidence: draft.ocrConfidence,
+            impactUser: impact.name,
           ),
         );
+        final tx = savedTx;
+        if (tx != null) SocialRepository.createFeedPost(tx);
       },
       onCancel: ReceiptIngestService.discardDraft,
     );
 
     if (!saved || savedTx == null || !context.mounted) return;
-
-    PlatformFeedback.showMessage(context, 'Receipt saved');
 
     if (fromShareIntent) {
       await AppPrefs.setShareCoachMarkPending();
@@ -157,9 +159,6 @@ class ReceiptCaptureFlow {
 
     if (!context.mounted) return;
 
-    context.goNamed(
-      'tx-detail',
-      pathParameters: {'id': savedTx!.id},
-    );
+    context.pushNamed('ritual');
   }
 }

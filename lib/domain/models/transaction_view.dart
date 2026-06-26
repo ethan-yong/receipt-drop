@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import '../logic/impact_level.dart';
+
 /// Unified transaction row for UI (outbox-first; cloud merge later).
 class TransactionView {
   const TransactionView({
@@ -18,6 +20,7 @@ class TransactionView {
     required this.pipelineStatus,
     required this.localThumbnailPath,
     this.thumbnailBytes,
+    this.impactUser,
   });
 
   final String id;
@@ -35,6 +38,7 @@ class TransactionView {
   final String pipelineStatus;
   final String? localThumbnailPath;
   final Uint8List? thumbnailBytes;
+  final String? impactUser;
 
   String get effectiveCategory {
     final user = categoryUser?.trim();
@@ -42,6 +46,21 @@ class TransactionView {
     final guess = categoryGuess?.trim();
     if (guess != null && guess.isNotEmpty) return guess;
     return 'Unclassified';
+  }
+
+  /// User override wins; otherwise re-derived from [amountMyr] (there is no
+  /// stored "guess" for impact — it's cheap to recompute, unlike category).
+  ImpactLevel get effectiveImpactLevel {
+    switch (impactUser) {
+      case 'low':
+        return ImpactLevel.low;
+      case 'med':
+        return ImpactLevel.med;
+      case 'high':
+        return ImpactLevel.high;
+      default:
+        return deriveImpactLevel(amountMyr);
+    }
   }
 
   String get displayPlace {
@@ -78,6 +97,7 @@ class TransactionView {
     required double? placeLng,
     required String syncStatus,
     required String pipelineStatus,
+    String? impactUser,
   }) {
     return TransactionView(
       id: id,
@@ -94,6 +114,7 @@ class TransactionView {
       syncStatus: syncStatus,
       pipelineStatus: pipelineStatus,
       localThumbnailPath: null,
+      impactUser: impactUser,
     );
   }
 
@@ -106,6 +127,7 @@ class TransactionView {
     double? placeLat,
     double? placeLng,
     DateTime? occurredAt,
+    String? impactUser,
   }) {
     return TransactionView(
       id: id,
@@ -123,6 +145,7 @@ class TransactionView {
       syncStatus: syncStatus,
       pipelineStatus: pipelineStatus,
       localThumbnailPath: localThumbnailPath,
+      impactUser: impactUser ?? this.impactUser,
     );
   }
 }

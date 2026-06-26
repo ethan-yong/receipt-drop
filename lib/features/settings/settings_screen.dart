@@ -78,8 +78,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SettingsTile(
             icon: Icons.people_outline,
             title: 'Friends',
-            subtitle: 'Coming soon',
-            onTap: () => context.pushNamed('friends-teaser'),
+            onTap: () => context.pushNamed('friends'),
+          ),
+          SettingsTile(
+            icon: Icons.dashboard_outlined,
+            title: 'Dashboard',
+            subtitle: 'Full numbers, charts, and receipt history',
+            onTap: () => context.pushNamed('dashboard'),
           ),
           SettingsTile(
             icon: Icons.info_outline,

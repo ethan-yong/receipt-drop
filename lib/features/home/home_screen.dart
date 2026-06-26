@@ -3,15 +3,20 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
-import '../../core/platform/platform_feedback.dart';
 import '../../core/theme/app_theme.dart';
-import '../../domain/logic/dashboard_aggregates.dart';
+import '../../data/repositories/avatar_repository.dart';
+import '../../domain/logic/avatar_mood.dart';
+import '../../domain/logic/badge_catalog.dart';
+import '../../domain/logic/badge_progress.dart';
+import '../../domain/logic/diorama_theme.dart';
+import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';
+import '../../features/share/receipt_capture_flow.dart';
 import '../../widgets/adaptive_sync_banner.dart';
-import '../../widgets/empty_state.dart';
-import '../../widgets/grouped_transaction_list.dart';
-import '../../widgets/platform_refresh_scroll_view.dart';
+import '../../widgets/blob_avatar.dart';
 import '../../widgets/share_coach_mark.dart';
+import '../../widgets/themed_scene_background.dart';
+import '../../widgets/top_badges_grid.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,84 +26,266 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  var _showCoachMark = AppPrefs.shareCoachMarkPending && !AppPrefs.shareCoachMarkSeen;
+  var _showCoachMark =
+      AppPrefs.shareCoachMarkPending && !AppPrefs.shareCoachMarkSeen;
+  AvatarConfig? _avatarConfig;
+  BadgeCatalog? _badgeCatalog;
 
-  Future<void> _refresh() async {
-    await AppServices.transactions.retryStuckSync();
-    await Future<void>.delayed(const Duration(milliseconds: 400));
+  @override
+  void initState() {
+    super.initState();
+    AvatarRepository.getAvatarConfig().then((config) {
+      if (mounted) setState(() => _avatarConfig = config);
+    });
+    BadgeCatalog.loadBundled().then((catalog) {
+      if (mounted) setState(() => _badgeCatalog = catalog);
+    });
   }
 
-  Future<void> _deleteTransaction(TransactionView tx) async {
-    await AppServices.transactions.deleteTransaction(tx.id);
-    if (mounted) {
-      PlatformFeedback.showMessage(context, 'Receipt deleted');
-    }
+  Future<void> _retrySync() async {
+    await AppServices.transactions.retryStuckSync();
+  }
+
+  TransactionView? _mostRecent(List<TransactionView> rows) {
+    if (rows.isEmpty) return null;
+    return rows.reduce(
+      (a, b) => a.occurredAt.isAfter(b.occurredAt) ? a : b,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final avatarConfig = _avatarConfig;
     return Scaffold(
       backgroundColor: AppColors.scaffold,
-      appBar: AppBar(
-        title: Text(
-          'PuggyBank',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: AppColors.primaryGreen,
-                fontWeight: FontWeight.w700,
-              ),
+      body: SafeArea(
+        child: StreamBuilder<List<TransactionView>>(
+          stream: AppServices.transactions.watchAll(),
+          builder: (context, snapshot) {
+            final rows = snapshot.data ?? const [];
+            final stuck = rows.where((t) => t.isStuckSync).length;
+            final today = todaysTransactions(rows, DateTime.now());
+            final mood = deriveAvatarMood(today);
+            final theme = getThemeForCategory(_mostRecent(rows)?.effectiveCategory);
+            final badgeCatalog = _badgeCatalog;
+            final badgeEntries = badgeCatalog == null
+                ? null
+                : computeBadgeEntries(badgeCatalog, rows);
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              AvatarRepository.syncCurrentMood(mood.name);
+              AvatarRepository.syncCurrentStreak(currentDailyStreak(rows));
+              if (badgeEntries != null) {
+                AvatarRepository.syncBadgeCount(
+                  badgeEntries.where((e) => e.earned).length,
+                );
+              }
+            });
+            final isIdle = theme.id == DioramaThemeId.idle;
+
+            return Column(
+              children: [
+                if (_showCoachMark)
+                  ShareCoachMark(
+                    onDismiss: () => setState(() => _showCoachMark = false),
+                  ),
+                AdaptiveSyncBanner(stuckCount: stuck, onRetry: _retrySync),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.md,
+                      AppSpacing.sm,
+                      AppSpacing.md,
+                      AppSpacing.xl,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'TODAY',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium
+                                      ?.copyWith(letterSpacing: 1.2),
+                                ),
+                                Text(
+                                  'Receipt Drop',
+                                  style: Theme.of(context).textTheme.displaySmall,
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                _DropCountPill(count: today.length),
+                                const SizedBox(width: AppSpacing.sm),
+                                _RoundIconButton(
+                                  icon: Icons.settings_outlined,
+                                  onTap: () => context.pushNamed('settings'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        Center(
+                          child: SizedBox(
+                            width: 280,
+                            height: 280,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                ThemedSceneBackground(
+                                  theme: theme,
+                                  borderRadius: AppSpacing.heroBorderRadius,
+                                ),
+                                if (avatarConfig != null)
+                                  BlobAvatar(
+                                    mood: mood,
+                                    config: avatarConfig,
+                                    size: 180,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Center(
+                          child: Column(
+                            children: [
+                              Text(
+                                isIdle ? 'No scene yet' : theme.label,
+                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      letterSpacing: 1.2,
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                                child: Text(
+                                  theme.caption,
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ),
+                              const SizedBox(height: AppSpacing.sm),
+                              OutlinedButton.icon(
+                                onPressed: () => context.pushNamed('avatar'),
+                                icon: const Icon(Icons.auto_fix_high, size: 16),
+                                label: const Text('Customize avatar'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.md,
+                                    vertical: AppSpacing.sm,
+                                  ),
+                                  shape: const StadiumBorder(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed: () => ReceiptCaptureFlow.start(context),
+                            style: FilledButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: AppSpacing.heroBorderRadius,
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+                            ),
+                            child: Text(
+                              'Drop Receipt',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Badges', style: Theme.of(context).textTheme.labelMedium),
+                            TextButton(
+                              onPressed: () => context.pushNamed('badges'),
+                              child: const Row(
+                                children: [
+                                  Text('View All'),
+                                  Icon(Icons.chevron_right, size: 16),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        if (badgeEntries != null)
+                          TopBadgesGrid(entries: badgeEntries),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
-      body: StreamBuilder<List<TransactionView>>(
-        stream: AppServices.transactions.watchAll(),
-        builder: (context, snapshot) {
-          final rows = snapshot.data ?? [];
-          if (rows.isEmpty) {
-            return const EmptyState(
-              title: 'No receipts yet',
-              subtitle:
-                  'Share a receipt from your bank app or tap + to get started.',
-            );
-          }
+    );
+  }
+}
 
-          final stuck = rows.where((t) => t.isStuckSync).length;
-          final now = DateTime.now();
-          final groups = <String, List<TransactionView>>{};
-          for (final t in rows) {
-            final label = dayGroupLabel(t.occurredAt, now);
-            groups.putIfAbsent(label, () => []).add(t);
-          }
+class _DropCountPill extends StatelessWidget {
+  const _DropCountPill({required this.count});
 
-          return Column(
-            children: [
-              if (_showCoachMark)
-                ShareCoachMark(
-                  onDismiss: () => setState(() => _showCoachMark = false),
-                ),
-              AdaptiveSyncBanner(
-                stuckCount: stuck,
-                onRetry: _refresh,
-              ),
-              Expanded(
-                child: PlatformRefreshScrollView(
-                  onRefresh: _refresh,
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: GroupedTransactionList(
-                        groups: groups,
-                        onTap: (tx) => context.pushNamed(
-                          'tx-detail',
-                          pathParameters: {'id': tx.id},
-                        ),
-                        onDelete: _deleteTransaction,
-                      ),
-                    ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 80)),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: AppSpacing.chipBorderRadius,
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.auto_awesome, size: 14),
+          const SizedBox(width: 4),
+          Text('$count drops', style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoundIconButton extends StatelessWidget {
+  const _RoundIconButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: 36,
+        height: 36,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.cardSurface,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Icon(icon, size: 18, color: AppColors.textPrimary),
       ),
     );
   }

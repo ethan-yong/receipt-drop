@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
@@ -7,7 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../domain/logic/dashboard_aggregates.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/category_donut_chart.dart';
-import '../../widgets/friends_teaser_card.dart';
+import '../../widgets/grouped_transaction_list.dart';
 import '../../widgets/month_picker_header.dart';
 import '../../widgets/platform_refresh_scroll_view.dart';
 
@@ -33,6 +34,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await Future<void>.delayed(const Duration(milliseconds: 400));
   }
 
+  Future<void> _deleteTransaction(TransactionView tx) async {
+    await AppServices.transactions.deleteTransaction(tx.id);
+    if (mounted) {
+      PlatformFeedback.showMessage(context, 'Receipt deleted');
+    }
+  }
+
+  Map<String, List<TransactionView>> _groupForMonth(List<TransactionView> rows) {
+    final start = DateTime(_month.year, _month.month);
+    final end = DateTime(_month.year, _month.month + 1);
+    final now = DateTime.now();
+    final groups = <String, List<TransactionView>>{};
+    for (final t in rows) {
+      if (t.occurredAt.isBefore(start) || !t.occurredAt.isBefore(end)) continue;
+      final label = dayGroupLabel(t.occurredAt, now);
+      groups.putIfAbsent(label, () => []).add(t);
+    }
+    return groups;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -46,6 +67,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           final categories = categoryBreakdown(rows, _month);
           final weeks = weeklyTrend(rows, _month);
           final places = topPlaces(rows, _month);
+          final groups = _groupForMonth(rows);
           final fmt = NumberFormat.currency(symbol: 'RM ', decimalDigits: 2);
 
           return PlatformRefreshScrollView(
@@ -116,7 +138,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    const FriendsTeaserCard(),
+                    _sectionTitle(context, 'Receipts'),
+                    if (groups.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                        child: Text(
+                          'No receipts this month.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                      )
+                    else
+                      GroupedTransactionList(
+                        groups: groups,
+                        onTap: (tx) => context.pushNamed(
+                          'tx-detail',
+                          pathParameters: {'id': tx.id},
+                        ),
+                        onDelete: _deleteTransaction,
+                      ),
                   ]),
                 ),
               ),

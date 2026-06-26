@@ -3,13 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
-/// Fraunces (display) + DM Sans (UI) per design plan.
+/// Plus Jakarta Sans throughout, per the Impact Drops design system.
 TextTheme buildPuggyTextTheme() {
-  final display = GoogleFonts.fraunces(
+  final display = GoogleFonts.plusJakartaSans(
     color: AppColors.textPrimary,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w800,
   );
-  final body = GoogleFonts.dmSans(
+  final body = GoogleFonts.plusJakartaSans(
     color: AppColors.textPrimary,
   );
 
@@ -17,11 +17,8 @@ TextTheme buildPuggyTextTheme() {
     displayLarge: display.copyWith(fontSize: 32, height: 1.15),
     displayMedium: display.copyWith(fontSize: 28, height: 1.2),
     displaySmall: display.copyWith(fontSize: 24, height: 1.25),
-    headlineMedium: display.copyWith(
-      fontSize: 22,
-      color: AppColors.primaryGreen,
-    ),
-    headlineSmall: display.copyWith(fontSize: 20),
+    headlineMedium: display.copyWith(fontSize: 22),
+    headlineSmall: display.copyWith(fontSize: 20, fontWeight: FontWeight.w700),
     titleLarge: body.copyWith(fontSize: 18, fontWeight: FontWeight.w700),
     titleMedium: body.copyWith(fontSize: 16, fontWeight: FontWeight.w600),
     titleSmall: body.copyWith(fontSize: 14, fontWeight: FontWeight.w600),

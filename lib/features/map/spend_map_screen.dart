@@ -30,7 +30,7 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
         position: LatLng(c.lat, c.lng),
         onTap: () => SpendMapBottomSheet.show(context, c),
         icon: BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueGreen,
+          BitmapDescriptor.hueYellow,
         ),
         infoWindow: InfoWindow(
           title: c.displayName,

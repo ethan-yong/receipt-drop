@@ -45,6 +45,7 @@ class TransactionRepository {
       pipelineStatus: 'provisional',
       localThumbnailPath: request.localFilePath,
       thumbnailBytes: request.thumbnailBytes,
+      impactUser: request.impactUser,
     );
     _rows.add(view);
     _emit();
@@ -78,6 +79,7 @@ class TransactionRepository {
           pipelineStatus: _rows[i].pipelineStatus,
           localThumbnailPath: _rows[i].localThumbnailPath,
           thumbnailBytes: _rows[i].thumbnailBytes,
+          impactUser: _rows[i].impactUser,
         );
       }
     }

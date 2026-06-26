@@ -14,8 +14,9 @@ ThemeData buildPuggyTheme() {
   final colorScheme = ColorScheme.fromSeed(
     seedColor: AppColors.primaryGreen,
     primary: AppColors.primaryGreen,
-    onPrimary: Colors.white,
+    onPrimary: AppColors.textPrimary,
     secondary: AppColors.accentOrange,
+    onSecondary: AppColors.textPrimary,
     surface: AppColors.scaffold,
     onSurface: AppColors.textPrimary,
     error: AppColors.destructive,
@@ -74,12 +75,12 @@ ThemeData buildPuggyTheme() {
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.primaryGreen,
-        foregroundColor: Colors.white,
+        foregroundColor: AppColors.textPrimary,
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
         ),
-        textStyle: textTheme.labelLarge?.copyWith(color: Colors.white),
+        textStyle: textTheme.labelLarge?.copyWith(color: AppColors.textPrimary),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -105,13 +106,15 @@ ThemeData buildPuggyTheme() {
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: AppColors.primaryGreen,
-      foregroundColor: Colors.white,
+      foregroundColor: AppColors.textPrimary,
       elevation: 4,
     ),
     bottomSheetTheme: const BottomSheetThemeData(
       backgroundColor: AppColors.cardSurface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppSpacing.heroRadius),
+        ),
       ),
     ),
     snackBarTheme: SnackBarThemeData(

@@ -26,7 +26,7 @@ class PuggyPrimaryButton extends StatelessWidget {
                 width: 22,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                 ),
               )
             : Text(label),

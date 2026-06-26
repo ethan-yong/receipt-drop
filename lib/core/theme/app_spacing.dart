@@ -8,10 +8,11 @@ abstract final class AppSpacing {
   static const double lg = 24;
   static const double xl = 32;
 
-  static const double cardRadius = 16;
+  static const double cardRadius = 20;
   static const double chipRadius = 20;
-  static const double buttonRadius = 14;
-  static const double inputRadius = 12;
+  static const double buttonRadius = 20;
+  static const double inputRadius = 16;
+  static const double heroRadius = 32;
 
   static const EdgeInsets screenPadding =
       EdgeInsets.symmetric(horizontal: md);
@@ -21,4 +22,6 @@ abstract final class AppSpacing {
       BorderRadius.circular(cardRadius);
   static BorderRadius get chipBorderRadius =>
       BorderRadius.circular(chipRadius);
+  static BorderRadius get heroBorderRadius =>
+      BorderRadius.circular(heroRadius);
 }

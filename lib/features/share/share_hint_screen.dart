@@ -103,7 +103,7 @@ class _ShareStep extends StatelessWidget {
             child: Text(
               '$number',
               style: TextStyle(
-                color: highlight ? Colors.white : AppColors.textSecondary,
+                color: highlight ? AppColors.textPrimary : AppColors.textSecondary,
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
               ),
