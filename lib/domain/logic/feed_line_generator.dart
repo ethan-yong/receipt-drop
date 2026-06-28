@@ -1,47 +1,38 @@
-import 'dart:math';
-
 import '../models/transaction_view.dart';
 import 'impact_level.dart';
 
-const _highLines = [
-  'dropped a luxury-level impact today',
-  'logged a high-impact moment',
-  'had a big one today',
-];
-
-const _medLines = [
-  'logged a steady, balanced afternoon',
-  'kept a mid-impact pace today',
-  'dropped a fair-sized one',
-];
-
-const _lowLines = [
-  'had a low activity day — calm energy',
-  'kept it quiet — observer mode',
-  'dropped a gentle one today',
-];
-
-const _categoryFlavor = {
-  'Food & Drink': 'over food',
-  'Groceries': 'on a grocery run',
-  'Transport': 'on the road',
+const _impactAdj = {
+  ImpactLevel.low: 'Low-key',
+  ImpactLevel.med: 'Mid-tier',
+  ImpactLevel.high: 'High-impact',
 };
 
-final _random = Random();
+const _categoryNoun = {
+  'Food & Drink': 'lunch',
+  'Groceries': 'grocery run',
+  'Transport': 'transport spend',
+  'Shopping': 'shopping trip',
+  'Unclassified': 'receipt drop',
+};
 
-/// Generates the only text ever shown about a friend's drop in the feed —
-/// deliberately derived from impact tier + category alone, never the raw
-/// amount or merchant name (see migration 20260626000002_social.sql, which
-/// only lets `feed_posts.line` cross the RLS boundary between users).
-/// Called once at save time, so a fresh random pick (rather than a
-/// deterministic formula) is fine — the result is persisted, not recomputed.
+/// Privacy-safe feed line: impact tier + category + place — never RM amounts.
+/// Called once at save time; result is persisted in `feed_posts.line`.
 String generateFeedLine(TransactionView transaction) {
-  final lines = switch (transaction.effectiveImpactLevel) {
-    ImpactLevel.high => _highLines,
-    ImpactLevel.med => _medLines,
-    ImpactLevel.low => _lowLines,
-  };
-  final line = lines[_random.nextInt(lines.length)];
-  final flavor = _categoryFlavor[transaction.effectiveCategory];
-  return flavor == null ? line : '$line $flavor';
+  final impact = _impactAdj[transaction.effectiveImpactLevel] ?? 'Mid-tier';
+  final category = transaction.effectiveCategory;
+  final noun = _categoryNoun[category] ?? category.toLowerCase();
+  final place = _placeLabel(transaction);
+
+  if (place == null) {
+    return '$impact $noun';
+  }
+  return '$impact $noun at $place';
+}
+
+String? _placeLabel(TransactionView transaction) {
+  final name = transaction.placeName?.trim();
+  if (name != null && name.isNotEmpty) return name;
+  final merchant = transaction.merchantRaw?.trim();
+  if (merchant != null && merchant.isNotEmpty) return merchant;
+  return null;
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
@@ -5,6 +7,7 @@ import '../../domain/models/transaction_view.dart';
 import '../local/app_database.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
+import 'sync_worker.dart';
 
 class TransactionRepository {
   TransactionRepository(this._db);
@@ -39,6 +42,25 @@ class TransactionRepository {
     if (row == null) return null;
     final path = await _artifactPathFor(id);
     return _mapRow(row, path);
+  }
+
+  Stream<List<TransactionView>> watchUnritualled() {
+    return (_db.select(_db.outboxTransactions)
+          ..where((t) => t.ritualledAt.isNull())
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.occurredAt),
+          ]))
+        .watch()
+        .asyncMap(_rowsToViews);
+  }
+
+  Future<void> markAsRitualled(List<String> ids) async {
+    if (ids.isEmpty) return;
+    final now = DateTime.now();
+    for (final id in ids) {
+      await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(id)))
+          .write(OutboxTransactionsCompanion(ritualledAt: Value(now)));
+    }
   }
 
   Future<TransactionView> ingestReceipt(IngestReceiptRequest request) async {
@@ -77,6 +99,8 @@ class TransactionRepository {
           ),
         );
 
+    unawaited(SyncWorker.run(_db, id));
+
     return TransactionView(
       id: id,
       occurredAt: now,
@@ -94,6 +118,7 @@ class TransactionRepository {
       localThumbnailPath: request.localFilePath,
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
+      ritualledAt: null,
     );
   }
 
@@ -116,13 +141,25 @@ class TransactionRepository {
   }
 
   Future<void> retryStuckSync() async {
-    await (_db.update(_db.outboxTransactions)
+    final stuck = await (_db.select(_db.outboxTransactions)
           ..where((t) => t.syncStatus.equals('stuck')))
-        .write(
-      const OutboxTransactionsCompanion(
-        syncStatus: Value('pending'),
-      ),
-    );
+        .get();
+    for (final row in stuck) {
+      await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(row.id)))
+          .write(
+        const OutboxTransactionsCompanion(
+          syncStatus: Value('pending'),
+          retryCount: Value(0),
+        ),
+      );
+    }
+
+    final pending = await (_db.select(_db.outboxTransactions)
+          ..where((t) => t.syncStatus.equals('pending')))
+        .get();
+    for (final row in pending) {
+      unawaited(SyncWorker.run(_db, row.id));
+    }
   }
 
   Future<void> deleteTransaction(String id) async {
@@ -190,6 +227,7 @@ class TransactionRepository {
       pipelineStatus: row.pipelineStatus,
       localThumbnailPath: localPath,
       impactUser: row.impactUser,
+      ritualledAt: row.ritualledAt,
     );
   }
 }

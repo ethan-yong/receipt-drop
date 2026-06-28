@@ -26,6 +26,7 @@ class BadgeDef {
     required this.rarity,
     required this.goal,
     this.hint,
+    this.comingSoon = false,
   });
 
   final String id;
@@ -35,6 +36,7 @@ class BadgeDef {
   final BadgeRarity rarity;
   final int goal;
   final String? hint;
+  final bool comingSoon;
 }
 
 /// Static badge catalog (rarity/goal/copy) — curated, ship-with-the-app
@@ -59,6 +61,7 @@ class BadgeCatalog {
         rarity: _rarityFromString(map['rarity'] as String?),
         goal: map['goal'] as int,
         hint: map['hint'] as String?,
+        comingSoon: map['comingSoon'] as bool? ?? false,
       );
     }).toList();
     return BadgeCatalog._(list);

@@ -5,8 +5,8 @@ enum ImpactLevel { low, med, high }
 /// adjust once product has real-world distribution to tune against.
 ImpactLevel deriveImpactLevel(double? amountMyr, {List<double>? historicalAmounts}) {
   if (amountMyr == null) return ImpactLevel.low;
-  if (amountMyr < 30) return ImpactLevel.low;
-  if (amountMyr < 100) return ImpactLevel.med;
+  if (amountMyr < 15) return ImpactLevel.low;
+  if (amountMyr < 60) return ImpactLevel.med;
   return ImpactLevel.high;
 }
 
@@ -20,5 +20,21 @@ extension ImpactLevelX on ImpactLevel {
       case ImpactLevel.high:
         return 'High';
     }
+  }
+
+  /// Stored in `outbox_transactions.impact_user`.
+  String get storageValue => name;
+}
+
+ImpactLevel? impactLevelFromStorage(String? value) {
+  switch (value) {
+    case 'low':
+      return ImpactLevel.low;
+    case 'med':
+      return ImpactLevel.med;
+    case 'high':
+      return ImpactLevel.high;
+    default:
+      return null;
   }
 }

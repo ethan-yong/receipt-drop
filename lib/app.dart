@@ -7,15 +7,21 @@ import 'core/theme/app_theme.dart';
 import 'features/share/share_intent_listener.dart';
 
 class PuggyBankApp extends StatelessWidget {
-  const PuggyBankApp({super.key, required this.routerConfig});
+  const PuggyBankApp({
+    super.key,
+    required this.routerConfig,
+    this.theme,
+  });
 
   final GoRouter routerConfig;
+  final ThemeData? theme;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
       title: 'PuggyBank',
-      theme: buildPuggyTheme(),
+      debugShowCheckedModeBanner: false,
+      theme: theme ?? buildPuggyTheme(),
       routerConfig: routerConfig,
       builder: (context, child) {
         Widget result = ShareIntentListener(

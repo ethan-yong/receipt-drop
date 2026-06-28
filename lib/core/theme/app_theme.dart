@@ -9,8 +9,18 @@ export 'app_colors.dart';
 export 'app_spacing.dart';
 export 'app_typography.dart';
 
-ThemeData buildPuggyTheme() {
-  final textTheme = buildPuggyTextTheme();
+/// System-font theme for widget tests (no Google Fonts network fetch).
+ThemeData buildPuggyTestTheme() {
+  return buildPuggyTheme(
+    textTheme: Typography.material2021().black.apply(
+      bodyColor: AppColors.textPrimary,
+      displayColor: AppColors.textPrimary,
+    ),
+  );
+}
+
+ThemeData buildPuggyTheme({TextTheme? textTheme}) {
+  final resolvedTextTheme = textTheme ?? buildPuggyTextTheme();
   final colorScheme = ColorScheme.fromSeed(
     seedColor: AppColors.primaryGreen,
     primary: AppColors.primaryGreen,
@@ -26,14 +36,14 @@ ThemeData buildPuggyTheme() {
     useMaterial3: true,
     colorScheme: colorScheme,
     scaffoldBackgroundColor: AppColors.scaffold,
-    textTheme: textTheme,
+    textTheme: resolvedTextTheme,
     appBarTheme: AppBarTheme(
       backgroundColor: AppColors.scaffold,
       foregroundColor: AppColors.textPrimary,
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: false,
-      titleTextStyle: textTheme.titleLarge,
+      titleTextStyle: resolvedTextTheme.titleLarge,
       systemOverlayStyle: SystemUiOverlayStyle.dark,
     ),
     cardTheme: CardThemeData(
@@ -69,8 +79,8 @@ ThemeData buildPuggyTheme() {
         borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
         borderSide: const BorderSide(color: AppColors.primaryGreen, width: 2),
       ),
-      labelStyle: textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
-      hintStyle: textTheme.bodyMedium?.copyWith(color: AppColors.textMuted),
+      labelStyle: resolvedTextTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
+      hintStyle: resolvedTextTheme.bodyMedium?.copyWith(color: AppColors.textMuted),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -80,7 +90,7 @@ ThemeData buildPuggyTheme() {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
         ),
-        textStyle: textTheme.labelLarge?.copyWith(color: AppColors.textPrimary),
+        textStyle: resolvedTextTheme.labelLarge?.copyWith(color: AppColors.textPrimary),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
@@ -91,13 +101,13 @@ ThemeData buildPuggyTheme() {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
         ),
-        textStyle: textTheme.labelLarge,
+        textStyle: resolvedTextTheme.labelLarge,
       ),
     ),
     chipTheme: ChipThemeData(
       backgroundColor: AppColors.scaffold,
       selectedColor: AppColors.primaryGreen.withValues(alpha: 0.12),
-      labelStyle: textTheme.labelMedium!,
+      labelStyle: resolvedTextTheme.labelMedium!,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
       shape: RoundedRectangleBorder(
         borderRadius: AppSpacing.chipBorderRadius,

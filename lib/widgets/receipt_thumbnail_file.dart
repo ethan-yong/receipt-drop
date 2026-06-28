@@ -9,6 +9,6 @@ Widget buildLocalFileImage(
   return Image.file(
     File(path),
     fit: BoxFit.cover,
-    errorBuilder: (_, __, ___) => placeholder,
+    errorBuilder: (_, _, _) => placeholder,
   );
 }

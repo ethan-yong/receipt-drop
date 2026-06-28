@@ -7,7 +7,7 @@ import '../../data/repositories/avatar_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';
-import '../../widgets/blob_avatar.dart';
+import '../../widgets/pixel_avatar.dart';
 
 enum _Tab { color, eyes, hat }
 
@@ -108,7 +108,7 @@ class _AvatarCustomizerScreenState extends State<AvatarCustomizerScreen> {
                               final mood = deriveAvatarMood(
                                 todaysTransactions(rows, DateTime.now()),
                               );
-                              return BlobAvatar(
+                              return PixelAvatar(
                                 mood: mood,
                                 config: draft,
                                 size: 220,
@@ -267,7 +267,7 @@ class _ColorGrid extends StatelessWidget {
             selected: draft.color == c,
             onTap: () => onPick(c),
             label: c.label,
-            preview: BlobAvatar(
+            preview: PixelAvatar(
               mood: AvatarMood.calm,
               config: AvatarConfig(
                 color: c,
@@ -301,7 +301,7 @@ class _EyesGrid extends StatelessWidget {
             selected: draft.eyes == e,
             onTap: () => onPick(e),
             label: e.label,
-            preview: BlobAvatar(
+            preview: PixelAvatar(
               mood: AvatarMood.calm,
               config: AvatarConfig(
                 color: draft.color,
@@ -335,7 +335,7 @@ class _HatGrid extends StatelessWidget {
             selected: draft.hat == h,
             onTap: () => onPick(h),
             label: h.label,
-            preview: BlobAvatar(
+            preview: PixelAvatar(
               mood: AvatarMood.calm,
               config: AvatarConfig(
                 color: draft.color,

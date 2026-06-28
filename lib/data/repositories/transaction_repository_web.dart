@@ -26,6 +26,33 @@ class TransactionRepository {
     return null;
   }
 
+  Stream<List<TransactionView>> watchUnritualled() {
+    Future.microtask(_emitUnritualled);
+    return _unritualledController.stream;
+  }
+
+  final _unritualledController =
+      StreamController<List<TransactionView>>.broadcast();
+
+  Future<void> markAsRitualled(List<String> ids) async {
+    final now = DateTime.now();
+    for (var i = 0; i < _rows.length; i++) {
+      if (ids.contains(_rows[i].id)) {
+        _rows[i] = _rows[i].copyWith(ritualledAt: now);
+      }
+    }
+    _emit();
+    _emitUnritualled();
+  }
+
+  void _emitUnritualled() {
+    final unritualled = _rows.where((r) => r.ritualledAt == null).toList()
+      ..sort((a, b) => a.occurredAt.compareTo(b.occurredAt));
+    if (!_unritualledController.isClosed) {
+      _unritualledController.add(unritualled);
+    }
+  }
+
   Future<TransactionView> ingestReceipt(IngestReceiptRequest request) async {
     final id = _uuid.v4();
     final now = DateTime.now();
@@ -46,9 +73,11 @@ class TransactionRepository {
       localThumbnailPath: request.localFilePath,
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
+      ritualledAt: null,
     );
     _rows.add(view);
     _emit();
+    _emitUnritualled();
     return view;
   }
 
@@ -110,9 +139,11 @@ class TransactionRepository {
     if (!_controller.isClosed) {
       _controller.add(sorted);
     }
+    _emitUnritualled();
   }
 
   Future<void> dispose() async {
+    await _unritualledController.close();
     await _controller.close();
   }
 }

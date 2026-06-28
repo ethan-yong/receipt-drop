@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../data/repositories/places_repository.dart';
 
 class PlacesSearchScreen extends StatefulWidget {
   const PlacesSearchScreen({super.key});
@@ -12,29 +15,41 @@ class PlacesSearchScreen extends StatefulWidget {
 
 class _PlacesSearchScreenState extends State<PlacesSearchScreen> {
   final _queryController = TextEditingController();
-  final _demoResults = const [
-    ('7-Eleven Sunway', 'Jalan PJS 11/15, Bandar Sunway'),
-    ('Tealive SS15', 'Jalan SS 15/4, Subang Jaya'),
-    ('Village Grocer', '1 Utama Shopping Centre'),
-    ('AEON Big', 'Mid Valley Megamall'),
-  ];
-
-  List<(String, String)> get _filtered {
-    final q = _queryController.text.trim().toLowerCase();
-    if (q.isEmpty) return _demoResults;
-    return _demoResults
-        .where(
-          (r) =>
-              r.$1.toLowerCase().contains(q) ||
-              r.$2.toLowerCase().contains(q),
-        )
-        .toList();
-  }
+  Timer? _debounce;
+  List<PlaceResult> _results = const [];
+  var _loading = false;
+  String? _error;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _queryController.dispose();
     super.dispose();
+  }
+
+  void _onQueryChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () => _search(value));
+  }
+
+  Future<void> _search(String query) async {
+    if (query.trim().isEmpty) {
+      if (mounted) setState(() => _results = const []);
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final results = await PlacesRepository.search(query);
+    if (!mounted) return;
+    setState(() {
+      _results = results;
+      _loading = false;
+      if (results.isEmpty && query.trim().length >= 2) {
+        _error = 'No places found. Try a different search.';
+      }
+    });
   }
 
   @override
@@ -59,13 +74,19 @@ class _PlacesSearchScreenState extends State<PlacesSearchScreen> {
                 hintText: 'Search places',
                 prefixIcon: Icon(Icons.search),
               ),
-              onChanged: (_) => setState(() {}),
+              onChanged: _onQueryChanged,
             ),
           ),
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+              child: Text(_error!, style: Theme.of(context).textTheme.bodySmall),
+            ),
           Expanded(
             child: ListView(
               children: [
-                for (final r in _filtered)
+                for (final r in _results)
                   ListTile(
                     leading: CircleAvatar(
                       backgroundColor:
@@ -75,16 +96,18 @@ class _PlacesSearchScreenState extends State<PlacesSearchScreen> {
                         color: AppColors.primaryGreen,
                       ),
                     ),
-                    title: Text(r.$1),
-                    subtitle: Text(r.$2),
-                    onTap: () => context.pop(r.$1),
+                    title: Text(r.name),
+                    subtitle: Text(r.address),
+                    onTap: () => context.pop(r),
                   ),
-                ListTile(
-                  leading: const Icon(Icons.pin_drop_outlined),
-                  title: const Text('Choose on map'),
-                  subtitle: const Text('Drop a pin manually'),
-                  onTap: () => context.pop('Custom location'),
-                ),
+                if (_results.isEmpty && !_loading && _queryController.text.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(AppSpacing.lg),
+                    child: Text(
+                      'Search for a shop, mall, or restaurant in Malaysia.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
               ],
             ),
           ),

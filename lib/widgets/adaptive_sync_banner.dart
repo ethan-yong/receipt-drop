@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../core/config/env.dart';
 import '../core/platform/platform_feedback.dart';
 import '../core/platform/platform_utils.dart';
 import '../core/theme/app_theme.dart';
@@ -18,7 +19,9 @@ class AdaptiveSyncBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (stuckCount <= 0) return const SizedBox.shrink();
+    if (stuckCount <= 0 || !Env.hasSupabaseConfig) {
+      return const SizedBox.shrink();
+    }
 
     final message =
         '$stuckCount receipt${stuckCount > 1 ? 's' : ''} couldn\'t sync';

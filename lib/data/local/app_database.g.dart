@@ -143,6 +143,17 @@ class $OutboxTransactionsTable extends OutboxTransactions
         type: DriftSqlType.double,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _impactUserMeta = const VerificationMeta(
+    'impactUser',
+  );
+  @override
+  late final GeneratedColumn<String> impactUser = GeneratedColumn<String>(
+    'impact_user',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _placeStatusMeta = const VerificationMeta(
     'placeStatus',
   );
@@ -301,6 +312,17 @@ class $OutboxTransactionsTable extends OutboxTransactions
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _ritualledAtMeta = const VerificationMeta(
+    'ritualledAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> ritualledAt = GeneratedColumn<DateTime>(
+    'ritualled_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -315,6 +337,7 @@ class $OutboxTransactionsTable extends OutboxTransactions
     categoryGuess,
     categoryUser,
     categoryConfidence,
+    impactUser,
     placeStatus,
     placeGooglePlaceId,
     placeName,
@@ -329,6 +352,7 @@ class $OutboxTransactionsTable extends OutboxTransactions
     syncStatus,
     lastError,
     retryCount,
+    ritualledAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -434,6 +458,12 @@ class $OutboxTransactionsTable extends OutboxTransactions
           data['category_confidence']!,
           _categoryConfidenceMeta,
         ),
+      );
+    }
+    if (data.containsKey('impact_user')) {
+      context.handle(
+        _impactUserMeta,
+        impactUser.isAcceptableOrUnknown(data['impact_user']!, _impactUserMeta),
       );
     }
     if (data.containsKey('place_status')) {
@@ -544,6 +574,15 @@ class $OutboxTransactionsTable extends OutboxTransactions
         retryCount.isAcceptableOrUnknown(data['retry_count']!, _retryCountMeta),
       );
     }
+    if (data.containsKey('ritualled_at')) {
+      context.handle(
+        _ritualledAtMeta,
+        ritualledAt.isAcceptableOrUnknown(
+          data['ritualled_at']!,
+          _ritualledAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -601,6 +640,10 @@ class $OutboxTransactionsTable extends OutboxTransactions
         DriftSqlType.double,
         data['${effectivePrefix}category_confidence'],
       ),
+      impactUser: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}impact_user'],
+      ),
       placeStatus: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}place_status'],
@@ -657,6 +700,10 @@ class $OutboxTransactionsTable extends OutboxTransactions
         DriftSqlType.int,
         data['${effectivePrefix}retry_count'],
       )!,
+      ritualledAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}ritualled_at'],
+      ),
     );
   }
 
@@ -680,6 +727,11 @@ class OutboxTransaction extends DataClass
   final String? categoryGuess;
   final String? categoryUser;
   final double? categoryConfidence;
+
+  /// User override for the derived impact level ('low'|'med'|'high'); null
+  /// means the level shown in [TransactionView.effectiveImpactLevel] is
+  /// re-derived from [amountMyr] rather than stored here.
+  final String? impactUser;
   final String placeStatus;
   final String? placeGooglePlaceId;
   final String? placeName;
@@ -694,6 +746,9 @@ class OutboxTransaction extends DataClass
   final String syncStatus;
   final String? lastError;
   final int retryCount;
+
+  /// Set after the receipt has been shown in the ritual animation.
+  final DateTime? ritualledAt;
   const OutboxTransaction({
     required this.id,
     required this.userId,
@@ -707,6 +762,7 @@ class OutboxTransaction extends DataClass
     this.categoryGuess,
     this.categoryUser,
     this.categoryConfidence,
+    this.impactUser,
     required this.placeStatus,
     this.placeGooglePlaceId,
     this.placeName,
@@ -721,6 +777,7 @@ class OutboxTransaction extends DataClass
     required this.syncStatus,
     this.lastError,
     required this.retryCount,
+    this.ritualledAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -750,6 +807,9 @@ class OutboxTransaction extends DataClass
     }
     if (!nullToAbsent || categoryConfidence != null) {
       map['category_confidence'] = Variable<double>(categoryConfidence);
+    }
+    if (!nullToAbsent || impactUser != null) {
+      map['impact_user'] = Variable<String>(impactUser);
     }
     map['place_status'] = Variable<String>(placeStatus);
     if (!nullToAbsent || placeGooglePlaceId != null) {
@@ -787,6 +847,9 @@ class OutboxTransaction extends DataClass
       map['last_error'] = Variable<String>(lastError);
     }
     map['retry_count'] = Variable<int>(retryCount);
+    if (!nullToAbsent || ritualledAt != null) {
+      map['ritualled_at'] = Variable<DateTime>(ritualledAt);
+    }
     return map;
   }
 
@@ -818,6 +881,9 @@ class OutboxTransaction extends DataClass
       categoryConfidence: categoryConfidence == null && nullToAbsent
           ? const Value.absent()
           : Value(categoryConfidence),
+      impactUser: impactUser == null && nullToAbsent
+          ? const Value.absent()
+          : Value(impactUser),
       placeStatus: Value(placeStatus),
       placeGooglePlaceId: placeGooglePlaceId == null && nullToAbsent
           ? const Value.absent()
@@ -852,6 +918,9 @@ class OutboxTransaction extends DataClass
           ? const Value.absent()
           : Value(lastError),
       retryCount: Value(retryCount),
+      ritualledAt: ritualledAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ritualledAt),
     );
   }
 
@@ -877,6 +946,7 @@ class OutboxTransaction extends DataClass
       categoryConfidence: serializer.fromJson<double?>(
         json['categoryConfidence'],
       ),
+      impactUser: serializer.fromJson<String?>(json['impactUser']),
       placeStatus: serializer.fromJson<String>(json['placeStatus']),
       placeGooglePlaceId: serializer.fromJson<String?>(
         json['placeGooglePlaceId'],
@@ -895,6 +965,7 @@ class OutboxTransaction extends DataClass
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       lastError: serializer.fromJson<String?>(json['lastError']),
       retryCount: serializer.fromJson<int>(json['retryCount']),
+      ritualledAt: serializer.fromJson<DateTime?>(json['ritualledAt']),
     );
   }
   @override
@@ -913,6 +984,7 @@ class OutboxTransaction extends DataClass
       'categoryGuess': serializer.toJson<String?>(categoryGuess),
       'categoryUser': serializer.toJson<String?>(categoryUser),
       'categoryConfidence': serializer.toJson<double?>(categoryConfidence),
+      'impactUser': serializer.toJson<String?>(impactUser),
       'placeStatus': serializer.toJson<String>(placeStatus),
       'placeGooglePlaceId': serializer.toJson<String?>(placeGooglePlaceId),
       'placeName': serializer.toJson<String?>(placeName),
@@ -929,6 +1001,7 @@ class OutboxTransaction extends DataClass
       'syncStatus': serializer.toJson<String>(syncStatus),
       'lastError': serializer.toJson<String?>(lastError),
       'retryCount': serializer.toJson<int>(retryCount),
+      'ritualledAt': serializer.toJson<DateTime?>(ritualledAt),
     };
   }
 
@@ -945,6 +1018,7 @@ class OutboxTransaction extends DataClass
     Value<String?> categoryGuess = const Value.absent(),
     Value<String?> categoryUser = const Value.absent(),
     Value<double?> categoryConfidence = const Value.absent(),
+    Value<String?> impactUser = const Value.absent(),
     String? placeStatus,
     Value<String?> placeGooglePlaceId = const Value.absent(),
     Value<String?> placeName = const Value.absent(),
@@ -959,6 +1033,7 @@ class OutboxTransaction extends DataClass
     String? syncStatus,
     Value<String?> lastError = const Value.absent(),
     int? retryCount,
+    Value<DateTime?> ritualledAt = const Value.absent(),
   }) => OutboxTransaction(
     id: id ?? this.id,
     userId: userId ?? this.userId,
@@ -978,6 +1053,7 @@ class OutboxTransaction extends DataClass
     categoryConfidence: categoryConfidence.present
         ? categoryConfidence.value
         : this.categoryConfidence,
+    impactUser: impactUser.present ? impactUser.value : this.impactUser,
     placeStatus: placeStatus ?? this.placeStatus,
     placeGooglePlaceId: placeGooglePlaceId.present
         ? placeGooglePlaceId.value
@@ -1004,6 +1080,7 @@ class OutboxTransaction extends DataClass
     syncStatus: syncStatus ?? this.syncStatus,
     lastError: lastError.present ? lastError.value : this.lastError,
     retryCount: retryCount ?? this.retryCount,
+    ritualledAt: ritualledAt.present ? ritualledAt.value : this.ritualledAt,
   );
   OutboxTransaction copyWithCompanion(OutboxTransactionsCompanion data) {
     return OutboxTransaction(
@@ -1035,6 +1112,9 @@ class OutboxTransaction extends DataClass
       categoryConfidence: data.categoryConfidence.present
           ? data.categoryConfidence.value
           : this.categoryConfidence,
+      impactUser: data.impactUser.present
+          ? data.impactUser.value
+          : this.impactUser,
       placeStatus: data.placeStatus.present
           ? data.placeStatus.value
           : this.placeStatus,
@@ -1069,6 +1149,9 @@ class OutboxTransaction extends DataClass
       retryCount: data.retryCount.present
           ? data.retryCount.value
           : this.retryCount,
+      ritualledAt: data.ritualledAt.present
+          ? data.ritualledAt.value
+          : this.ritualledAt,
     );
   }
 
@@ -1087,6 +1170,7 @@ class OutboxTransaction extends DataClass
           ..write('categoryGuess: $categoryGuess, ')
           ..write('categoryUser: $categoryUser, ')
           ..write('categoryConfidence: $categoryConfidence, ')
+          ..write('impactUser: $impactUser, ')
           ..write('placeStatus: $placeStatus, ')
           ..write('placeGooglePlaceId: $placeGooglePlaceId, ')
           ..write('placeName: $placeName, ')
@@ -1100,7 +1184,8 @@ class OutboxTransaction extends DataClass
           ..write('pipelineStatus: $pipelineStatus, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
-          ..write('retryCount: $retryCount')
+          ..write('retryCount: $retryCount, ')
+          ..write('ritualledAt: $ritualledAt')
           ..write(')'))
         .toString();
   }
@@ -1119,6 +1204,7 @@ class OutboxTransaction extends DataClass
     categoryGuess,
     categoryUser,
     categoryConfidence,
+    impactUser,
     placeStatus,
     placeGooglePlaceId,
     placeName,
@@ -1133,6 +1219,7 @@ class OutboxTransaction extends DataClass
     syncStatus,
     lastError,
     retryCount,
+    ritualledAt,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1150,6 +1237,7 @@ class OutboxTransaction extends DataClass
           other.categoryGuess == this.categoryGuess &&
           other.categoryUser == this.categoryUser &&
           other.categoryConfidence == this.categoryConfidence &&
+          other.impactUser == this.impactUser &&
           other.placeStatus == this.placeStatus &&
           other.placeGooglePlaceId == this.placeGooglePlaceId &&
           other.placeName == this.placeName &&
@@ -1163,7 +1251,8 @@ class OutboxTransaction extends DataClass
           other.pipelineStatus == this.pipelineStatus &&
           other.syncStatus == this.syncStatus &&
           other.lastError == this.lastError &&
-          other.retryCount == this.retryCount);
+          other.retryCount == this.retryCount &&
+          other.ritualledAt == this.ritualledAt);
 }
 
 class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
@@ -1179,6 +1268,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
   final Value<String?> categoryGuess;
   final Value<String?> categoryUser;
   final Value<double?> categoryConfidence;
+  final Value<String?> impactUser;
   final Value<String> placeStatus;
   final Value<String?> placeGooglePlaceId;
   final Value<String?> placeName;
@@ -1193,6 +1283,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
   final Value<String> syncStatus;
   final Value<String?> lastError;
   final Value<int> retryCount;
+  final Value<DateTime?> ritualledAt;
   final Value<int> rowid;
   const OutboxTransactionsCompanion({
     this.id = const Value.absent(),
@@ -1207,6 +1298,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.categoryGuess = const Value.absent(),
     this.categoryUser = const Value.absent(),
     this.categoryConfidence = const Value.absent(),
+    this.impactUser = const Value.absent(),
     this.placeStatus = const Value.absent(),
     this.placeGooglePlaceId = const Value.absent(),
     this.placeName = const Value.absent(),
@@ -1221,6 +1313,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.syncStatus = const Value.absent(),
     this.lastError = const Value.absent(),
     this.retryCount = const Value.absent(),
+    this.ritualledAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   OutboxTransactionsCompanion.insert({
@@ -1236,6 +1329,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.categoryGuess = const Value.absent(),
     this.categoryUser = const Value.absent(),
     this.categoryConfidence = const Value.absent(),
+    this.impactUser = const Value.absent(),
     this.placeStatus = const Value.absent(),
     this.placeGooglePlaceId = const Value.absent(),
     this.placeName = const Value.absent(),
@@ -1250,6 +1344,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.syncStatus = const Value.absent(),
     this.lastError = const Value.absent(),
     this.retryCount = const Value.absent(),
+    this.ritualledAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        userId = Value(userId);
@@ -1266,6 +1361,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Expression<String>? categoryGuess,
     Expression<String>? categoryUser,
     Expression<double>? categoryConfidence,
+    Expression<String>? impactUser,
     Expression<String>? placeStatus,
     Expression<String>? placeGooglePlaceId,
     Expression<String>? placeName,
@@ -1280,6 +1376,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Expression<String>? syncStatus,
     Expression<String>? lastError,
     Expression<int>? retryCount,
+    Expression<DateTime>? ritualledAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1295,6 +1392,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       if (categoryGuess != null) 'category_guess': categoryGuess,
       if (categoryUser != null) 'category_user': categoryUser,
       if (categoryConfidence != null) 'category_confidence': categoryConfidence,
+      if (impactUser != null) 'impact_user': impactUser,
       if (placeStatus != null) 'place_status': placeStatus,
       if (placeGooglePlaceId != null)
         'place_google_place_id': placeGooglePlaceId,
@@ -1311,6 +1409,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       if (syncStatus != null) 'sync_status': syncStatus,
       if (lastError != null) 'last_error': lastError,
       if (retryCount != null) 'retry_count': retryCount,
+      if (ritualledAt != null) 'ritualled_at': ritualledAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1328,6 +1427,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Value<String?>? categoryGuess,
     Value<String?>? categoryUser,
     Value<double?>? categoryConfidence,
+    Value<String?>? impactUser,
     Value<String>? placeStatus,
     Value<String?>? placeGooglePlaceId,
     Value<String?>? placeName,
@@ -1342,6 +1442,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Value<String>? syncStatus,
     Value<String?>? lastError,
     Value<int>? retryCount,
+    Value<DateTime?>? ritualledAt,
     Value<int>? rowid,
   }) {
     return OutboxTransactionsCompanion(
@@ -1357,6 +1458,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       categoryGuess: categoryGuess ?? this.categoryGuess,
       categoryUser: categoryUser ?? this.categoryUser,
       categoryConfidence: categoryConfidence ?? this.categoryConfidence,
+      impactUser: impactUser ?? this.impactUser,
       placeStatus: placeStatus ?? this.placeStatus,
       placeGooglePlaceId: placeGooglePlaceId ?? this.placeGooglePlaceId,
       placeName: placeName ?? this.placeName,
@@ -1372,6 +1474,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       syncStatus: syncStatus ?? this.syncStatus,
       lastError: lastError ?? this.lastError,
       retryCount: retryCount ?? this.retryCount,
+      ritualledAt: ritualledAt ?? this.ritualledAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1414,6 +1517,9 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     }
     if (categoryConfidence.present) {
       map['category_confidence'] = Variable<double>(categoryConfidence.value);
+    }
+    if (impactUser.present) {
+      map['impact_user'] = Variable<String>(impactUser.value);
     }
     if (placeStatus.present) {
       map['place_status'] = Variable<String>(placeStatus.value);
@@ -1459,6 +1565,9 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     if (retryCount.present) {
       map['retry_count'] = Variable<int>(retryCount.value);
     }
+    if (ritualledAt.present) {
+      map['ritualled_at'] = Variable<DateTime>(ritualledAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1480,6 +1589,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           ..write('categoryGuess: $categoryGuess, ')
           ..write('categoryUser: $categoryUser, ')
           ..write('categoryConfidence: $categoryConfidence, ')
+          ..write('impactUser: $impactUser, ')
           ..write('placeStatus: $placeStatus, ')
           ..write('placeGooglePlaceId: $placeGooglePlaceId, ')
           ..write('placeName: $placeName, ')
@@ -1494,6 +1604,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
           ..write('retryCount: $retryCount, ')
+          ..write('ritualledAt: $ritualledAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2379,6 +2490,7 @@ typedef $$OutboxTransactionsTableCreateCompanionBuilder =
       Value<String?> categoryGuess,
       Value<String?> categoryUser,
       Value<double?> categoryConfidence,
+      Value<String?> impactUser,
       Value<String> placeStatus,
       Value<String?> placeGooglePlaceId,
       Value<String?> placeName,
@@ -2393,6 +2505,7 @@ typedef $$OutboxTransactionsTableCreateCompanionBuilder =
       Value<String> syncStatus,
       Value<String?> lastError,
       Value<int> retryCount,
+      Value<DateTime?> ritualledAt,
       Value<int> rowid,
     });
 typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
@@ -2409,6 +2522,7 @@ typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
       Value<String?> categoryGuess,
       Value<String?> categoryUser,
       Value<double?> categoryConfidence,
+      Value<String?> impactUser,
       Value<String> placeStatus,
       Value<String?> placeGooglePlaceId,
       Value<String?> placeName,
@@ -2423,6 +2537,7 @@ typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
       Value<String> syncStatus,
       Value<String?> lastError,
       Value<int> retryCount,
+      Value<DateTime?> ritualledAt,
       Value<int> rowid,
     });
 
@@ -2532,6 +2647,11 @@ class $$OutboxTransactionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get impactUser => $composableBuilder(
+    column: $table.impactUser,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get placeStatus => $composableBuilder(
     column: $table.placeStatus,
     builder: (column) => ColumnFilters(column),
@@ -2599,6 +2719,11 @@ class $$OutboxTransactionsTableFilterComposer
 
   ColumnFilters<int> get retryCount => $composableBuilder(
     column: $table.retryCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get ritualledAt => $composableBuilder(
+    column: $table.ritualledAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2697,6 +2822,11 @@ class $$OutboxTransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get impactUser => $composableBuilder(
+    column: $table.impactUser,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get placeStatus => $composableBuilder(
     column: $table.placeStatus,
     builder: (column) => ColumnOrderings(column),
@@ -2766,6 +2896,11 @@ class $$OutboxTransactionsTableOrderingComposer
     column: $table.retryCount,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get ritualledAt => $composableBuilder(
+    column: $table.ritualledAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$OutboxTransactionsTableAnnotationComposer
@@ -2829,6 +2964,11 @@ class $$OutboxTransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get impactUser => $composableBuilder(
+    column: $table.impactUser,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get placeStatus => $composableBuilder(
     column: $table.placeStatus,
     builder: (column) => column,
@@ -2888,6 +3028,11 @@ class $$OutboxTransactionsTableAnnotationComposer
 
   GeneratedColumn<int> get retryCount => $composableBuilder(
     column: $table.retryCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get ritualledAt => $composableBuilder(
+    column: $table.ritualledAt,
     builder: (column) => column,
   );
 
@@ -2962,6 +3107,7 @@ class $$OutboxTransactionsTableTableManager
                 Value<String?> categoryGuess = const Value.absent(),
                 Value<String?> categoryUser = const Value.absent(),
                 Value<double?> categoryConfidence = const Value.absent(),
+                Value<String?> impactUser = const Value.absent(),
                 Value<String> placeStatus = const Value.absent(),
                 Value<String?> placeGooglePlaceId = const Value.absent(),
                 Value<String?> placeName = const Value.absent(),
@@ -2976,6 +3122,7 @@ class $$OutboxTransactionsTableTableManager
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
                 Value<int> retryCount = const Value.absent(),
+                Value<DateTime?> ritualledAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion(
                 id: id,
@@ -2990,6 +3137,7 @@ class $$OutboxTransactionsTableTableManager
                 categoryGuess: categoryGuess,
                 categoryUser: categoryUser,
                 categoryConfidence: categoryConfidence,
+                impactUser: impactUser,
                 placeStatus: placeStatus,
                 placeGooglePlaceId: placeGooglePlaceId,
                 placeName: placeName,
@@ -3004,6 +3152,7 @@ class $$OutboxTransactionsTableTableManager
                 syncStatus: syncStatus,
                 lastError: lastError,
                 retryCount: retryCount,
+                ritualledAt: ritualledAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3020,6 +3169,7 @@ class $$OutboxTransactionsTableTableManager
                 Value<String?> categoryGuess = const Value.absent(),
                 Value<String?> categoryUser = const Value.absent(),
                 Value<double?> categoryConfidence = const Value.absent(),
+                Value<String?> impactUser = const Value.absent(),
                 Value<String> placeStatus = const Value.absent(),
                 Value<String?> placeGooglePlaceId = const Value.absent(),
                 Value<String?> placeName = const Value.absent(),
@@ -3034,6 +3184,7 @@ class $$OutboxTransactionsTableTableManager
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
                 Value<int> retryCount = const Value.absent(),
+                Value<DateTime?> ritualledAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion.insert(
                 id: id,
@@ -3048,6 +3199,7 @@ class $$OutboxTransactionsTableTableManager
                 categoryGuess: categoryGuess,
                 categoryUser: categoryUser,
                 categoryConfidence: categoryConfidence,
+                impactUser: impactUser,
                 placeStatus: placeStatus,
                 placeGooglePlaceId: placeGooglePlaceId,
                 placeName: placeName,
@@ -3062,6 +3214,7 @@ class $$OutboxTransactionsTableTableManager
                 syncStatus: syncStatus,
                 lastError: lastError,
                 retryCount: retryCount,
+                ritualledAt: ritualledAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

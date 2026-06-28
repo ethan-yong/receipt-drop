@@ -24,8 +24,12 @@ class Env {
     const fromDefine = String.fromEnvironment('SUPABASE_URL');
     if (fromDefine.isNotEmpty) return fromDefine;
     if (kDebugMode) {
-      final v = dotenv.maybeGet('SUPABASE_URL');
-      if (v != null && v.isNotEmpty) return v.trim();
+      try {
+        final v = dotenv.maybeGet('SUPABASE_URL');
+        if (v != null && v.isNotEmpty) return v.trim();
+      } on Object {
+        // dotenv not loaded yet (e.g. widget tests).
+      }
     }
     return '';
   }
@@ -34,8 +38,12 @@ class Env {
     const fromDefine = String.fromEnvironment('SUPABASE_ANON_KEY');
     if (fromDefine.isNotEmpty) return fromDefine;
     if (kDebugMode) {
-      final v = dotenv.maybeGet('SUPABASE_ANON_KEY');
-      if (v != null && v.isNotEmpty) return v.trim();
+      try {
+        final v = dotenv.maybeGet('SUPABASE_ANON_KEY');
+        if (v != null && v.isNotEmpty) return v.trim();
+      } on Object {
+        // dotenv not loaded yet (e.g. widget tests).
+      }
     }
     return '';
   }

@@ -10,10 +10,7 @@ import '../../widgets/receipt_strip.dart';
 
 enum _RitualPhase { intro, running, done }
 
-/// Full-screen "processing" ritual shown after a receipt is saved, before
-/// landing on the Summary/Awareness screen. Simplified from the prototype's
-/// multi-item batch animation to a single step — the real flow saves one
-/// receipt at a time, unlike the mock's seeded batch of drops.
+/// Batch ritual for all unritualled drops since the last run.
 class RitualScreen extends StatefulWidget {
   const RitualScreen({super.key});
 
@@ -24,10 +21,14 @@ class RitualScreen extends StatefulWidget {
 class _RitualScreenState extends State<RitualScreen>
     with SingleTickerProviderStateMixin {
   _RitualPhase _phase = _RitualPhase.intro;
+  List<TransactionView> _queue = const [];
+  int _currentIndex = 0;
   late final AnimationController _dropController;
   late final Animation<double> _curvedDrop;
+  StreamSubscription<List<TransactionView>>? _queueSub;
   Timer? _introTimer;
-  Timer? _doneTimer;
+  Timer? _stepTimer;
+  var _started = false;
 
   @override
   void initState() {
@@ -40,34 +41,65 @@ class _RitualScreenState extends State<RitualScreen>
       parent: _dropController,
       curve: const Cubic(0.34, 1.56, 0.64, 1),
     );
-    _introTimer = Timer(const Duration(milliseconds: 900), () {
+    _queueSub = AppServices.transactions.watchUnritualled().listen(_onQueue);
+  }
+
+  void _onQueue(List<TransactionView> rows) {
+    if (!mounted || _started) return;
+    if (rows.isEmpty) {
+      context.goNamed('summary');
+      return;
+    }
+    _started = true;
+    setState(() => _queue = rows);
+    _introTimer = Timer(const Duration(milliseconds: 900), _beginRunning);
+  }
+
+  void _beginRunning() {
+    if (!mounted || _queue.isEmpty) return;
+    setState(() {
+      _phase = _RitualPhase.running;
+      _currentIndex = 0;
+    });
+    _animateCurrentDrop();
+  }
+
+  void _animateCurrentDrop() {
+    _dropController.forward(from: 0);
+    _stepTimer?.cancel();
+    _stepTimer = Timer(const Duration(milliseconds: 900), () {
       if (!mounted) return;
-      setState(() => _phase = _RitualPhase.running);
-      _dropController.forward(from: 0);
-      _doneTimer = Timer(const Duration(milliseconds: 900), () {
-        if (!mounted) return;
-        setState(() => _phase = _RitualPhase.done);
-        Timer(const Duration(milliseconds: 700), () {
-          if (mounted) context.goNamed('summary');
-        });
-      });
+      if (_currentIndex + 1 < _queue.length) {
+        setState(() => _currentIndex++);
+        _animateCurrentDrop();
+      } else {
+        _finish();
+      }
+    });
+  }
+
+  Future<void> _finish() async {
+    if (!mounted) return;
+    setState(() => _phase = _RitualPhase.done);
+    await AppServices.transactions
+        .markAsRitualled(_queue.map((t) => t.id).toList());
+    _stepTimer?.cancel();
+    _stepTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) context.goNamed('summary');
     });
   }
 
   @override
   void dispose() {
+    _queueSub?.cancel();
     _introTimer?.cancel();
-    _doneTimer?.cancel();
+    _stepTimer?.cancel();
     _dropController.dispose();
     super.dispose();
   }
 
-  TransactionView? _mostRecent(List<TransactionView> rows) {
-    if (rows.isEmpty) return null;
-    return rows.reduce(
-      (a, b) => a.occurredAt.isAfter(b.occurredAt) ? a : b,
-    );
-  }
+  TransactionView? get _currentTx =>
+      _currentIndex < _queue.length ? _queue[_currentIndex] : null;
 
   @override
   Widget build(BuildContext context) {
@@ -94,35 +126,39 @@ class _RitualScreenState extends State<RitualScreen>
                     'Receipt Drop Machine',
                     style: Theme.of(context).textTheme.displaySmall,
                   ),
+                  if (_queue.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.sm),
+                      child: Text(
+                        _phase == _RitualPhase.running
+                            ? '${_currentIndex + 1} of ${_queue.length}'
+                            : '${_queue.length} drop${_queue.length == 1 ? '' : 's'}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
                 ],
               ),
               Expanded(
-                child: StreamBuilder<List<TransactionView>>(
-                  stream: AppServices.transactions.watchAll(),
-                  builder: (context, snapshot) {
-                    final tx = _mostRecent(snapshot.data ?? const []);
-                    return Center(
-                      child: _phase == _RitualPhase.running && tx != null
-                          ? AnimatedBuilder(
-                              animation: _curvedDrop,
-                              builder: (context, child) {
-                                final curved = _curvedDrop.value;
-                                return Opacity(
-                                  opacity: curved.clamp(0.0, 1.0).toDouble(),
-                                  child: Transform.translate(
-                                    offset: Offset(0, (1 - curved) * -80),
-                                    child: child,
-                                  ),
-                                );
-                              },
-                              child: ReceiptStrip(
-                                impact: tx.effectiveImpactLevel,
-                                label: tx.effectiveCategory,
+                child: Center(
+                  child: _phase == _RitualPhase.running && _currentTx != null
+                      ? AnimatedBuilder(
+                          animation: _curvedDrop,
+                          builder: (context, child) {
+                            final curved = _curvedDrop.value;
+                            return Opacity(
+                              opacity: curved.clamp(0.0, 1.0).toDouble(),
+                              child: Transform.translate(
+                                offset: Offset(0, (1 - curved) * -80),
+                                child: child,
                               ),
-                            )
-                          : const SizedBox.shrink(),
-                    );
-                  },
+                            );
+                          },
+                          child: ReceiptStrip(
+                            impact: _currentTx!.effectiveImpactLevel,
+                            label: _currentTx!.effectiveCategory,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ),
               Container(

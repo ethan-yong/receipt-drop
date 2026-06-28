@@ -2,19 +2,29 @@ import '../../data/repositories/transaction_repository_web.dart';
 
 /// Web: in-memory transactions (no dart:ffi / SQLite).
 abstract final class AppServices {
-  static late final TransactionRepository transactions;
+  static TransactionRepository? _transactions;
+
+  static TransactionRepository get transactions {
+    final repo = _transactions;
+    if (repo == null) {
+      throw StateError('AppServices.transactions accessed before init');
+    }
+    return repo;
+  }
 
   static Future<void> init() async {
-    transactions = TransactionRepository();
-    await transactions.seedDemoDataIfEmpty();
+    _transactions = TransactionRepository();
+    await _transactions!.seedDemoDataIfEmpty();
   }
 
   static Future<void> initForTest() async {
-    transactions = TransactionRepository();
-    await transactions.seedDemoDataIfEmpty();
+    await dispose();
+    _transactions = TransactionRepository();
+    await _transactions!.seedDemoDataIfEmpty();
   }
 
   static Future<void> dispose() async {
-    await transactions.dispose();
+    await _transactions?.dispose();
+    _transactions = null;
   }
 }

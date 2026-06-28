@@ -21,6 +21,7 @@ class TransactionView {
     required this.localThumbnailPath,
     this.thumbnailBytes,
     this.impactUser,
+    this.ritualledAt,
   });
 
   final String id;
@@ -39,6 +40,7 @@ class TransactionView {
   final String? localThumbnailPath;
   final Uint8List? thumbnailBytes;
   final String? impactUser;
+  final DateTime? ritualledAt;
 
   String get effectiveCategory {
     final user = categoryUser?.trim();
@@ -98,6 +100,7 @@ class TransactionView {
     required String syncStatus,
     required String pipelineStatus,
     String? impactUser,
+    DateTime? ritualledAt,
   }) {
     return TransactionView(
       id: id,
@@ -115,6 +118,7 @@ class TransactionView {
       pipelineStatus: pipelineStatus,
       localThumbnailPath: null,
       impactUser: impactUser,
+      ritualledAt: ritualledAt,
     );
   }
 
@@ -128,6 +132,7 @@ class TransactionView {
     double? placeLng,
     DateTime? occurredAt,
     String? impactUser,
+    DateTime? ritualledAt,
   }) {
     return TransactionView(
       id: id,
@@ -145,7 +150,9 @@ class TransactionView {
       syncStatus: syncStatus,
       pipelineStatus: pipelineStatus,
       localThumbnailPath: localThumbnailPath,
+      thumbnailBytes: thumbnailBytes,
       impactUser: impactUser ?? this.impactUser,
+      ritualledAt: ritualledAt ?? this.ritualledAt,
     );
   }
 }

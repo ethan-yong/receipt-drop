@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/place_key.dart';
+import '../../data/repositories/places_repository.dart';
 import '../../domain/logic/dashboard_aggregates.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/map_filter_chips.dart';
 import '../../widgets/spend_map_bottom_sheet.dart';
 
-/// Malaysia-default spend map with place bubbles.
+/// Malaysia-default spend map with personal markers or spend heatmap.
 class SpendMapScreen extends StatefulWidget {
   const SpendMapScreen({super.key});
 
@@ -20,8 +23,10 @@ class SpendMapScreen extends StatefulWidget {
 class _SpendMapScreenState extends State<SpendMapScreen> {
   static const _malaysiaCenter = LatLng(3.1390, 101.6869);
 
+  GoogleMapController? _mapController;
   String _timeFilter = 'This month';
   String _categoryFilter = 'All categories';
+  var _heatmapMode = false;
 
   Set<Marker> _buildMarkers(List<MapPlaceCluster> clusters) {
     return clusters.map((c) {
@@ -36,6 +41,32 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
           title: c.displayName,
           snippet: 'RM ${c.totalSpend.toStringAsFixed(0)}',
         ),
+      );
+    }).toSet();
+  }
+
+  Set<Circle> _buildHeatmapCircles(List<TransactionView> rows) {
+    final totals = <String, double>{};
+    for (final t in rows) {
+      final lat = t.placeLat;
+      final lng = t.placeLng;
+      if (lat == null || lng == null || t.amountMyr == null) continue;
+      final cell = geohashAt(lat, lng, 5);
+      totals[cell] = (totals[cell] ?? 0) + t.amountMyr!;
+    }
+    if (totals.isEmpty) return const {};
+
+    final maxTotal = totals.values.reduce((a, b) => a > b ? a : b);
+    return totals.entries.map((e) {
+      final center = geohashCentroid(e.key);
+      final ratio = maxTotal == 0 ? 0.0 : e.value / maxTotal;
+      final color = Color.lerp(AppColors.impactLow, AppColors.impactHigh, ratio)!;
+      return Circle(
+        circleId: CircleId(e.key),
+        center: LatLng(center.lat, center.lng),
+        radius: 2500,
+        fillColor: color.withValues(alpha: 0.35),
+        strokeWidth: 0,
       );
     }).toSet();
   }
@@ -62,6 +93,14 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
     }).toList();
   }
 
+  Future<void> _openPlaceSearch() async {
+    final result = await context.pushNamed<PlaceResult>('places-search');
+    if (result == null || _mapController == null) return;
+    await _mapController!.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(result.lat, result.lng), 14),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -72,8 +111,9 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
           final all = snapshot.data ?? [];
           final filtered = _filterRows(all);
           final clusters = mapClusters(filtered);
+          final hasGeo = filtered.isNotEmpty;
 
-          if (clusters.isEmpty) {
+          if (!hasGeo) {
             return const EmptyState(
               title: 'No map data yet',
               subtitle:
@@ -89,26 +129,56 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
                   target: _malaysiaCenter,
                   zoom: 11,
                 ),
-                markers: _buildMarkers(clusters),
+                markers: _heatmapMode ? const {} : _buildMarkers(clusters),
+                circles: _heatmapMode ? _buildHeatmapCircles(filtered) : const {},
                 myLocationButtonEnabled: false,
                 zoomControlsEnabled: false,
-                onMapCreated: (_) {},
+                onMapCreated: (c) => _mapController = c,
               ),
               SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: TextField(
-                        readOnly: true,
-                        decoration: InputDecoration(
-                          hintText: 'Search places',
-                          prefixIcon: const Icon(Icons.search),
-                          filled: true,
-                          fillColor: AppColors.cardSurface,
-                        ),
-                        onTap: () {},
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.md,
+                        AppSpacing.md,
+                        AppSpacing.md,
+                        0,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              readOnly: true,
+                              decoration: InputDecoration(
+                                hintText: 'Search places',
+                                prefixIcon: const Icon(Icons.search),
+                                filled: true,
+                                fillColor: AppColors.cardSurface,
+                              ),
+                              onTap: _openPlaceSearch,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Material(
+                            color: AppColors.cardSurface,
+                            shape: const CircleBorder(),
+                            child: IconButton(
+                              icon: Icon(
+                                _heatmapMode ? Icons.layers : Icons.layers_outlined,
+                                color: _heatmapMode
+                                    ? AppColors.primaryGreenDark
+                                    : AppColors.textPrimary,
+                              ),
+                              tooltip: _heatmapMode
+                                  ? 'Show personal markers'
+                                  : 'Show spend heatmap',
+                              onPressed: () =>
+                                  setState(() => _heatmapMode = !_heatmapMode),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     MapFilterChips(

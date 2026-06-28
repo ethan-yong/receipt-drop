@@ -4,9 +4,12 @@ import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/repositories/places_repository.dart';
+import '../../domain/logic/impact_level.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/place_block.dart';
 import '../../widgets/puggy_primary_button.dart';
+import '../../widgets/receipt_strip.dart';
 import '../../widgets/receipt_thumbnail.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
@@ -23,7 +26,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   final _amountController = TextEditingController();
   String? _category;
   String _placeName = 'No place';
+  String? _placeGooglePlaceId;
+  double? _placeLat;
+  double? _placeLng;
   DateTime? _occurredAt;
+  ImpactLevel? _impactOverride;
   bool _loading = true;
 
   static const _categories = [
@@ -49,7 +56,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           tx.amountMyr?.toStringAsFixed(2) ?? '';
       _category = tx.effectiveCategory;
       _placeName = tx.displayPlace;
+      _placeGooglePlaceId = tx.placeGooglePlaceId;
+      _placeLat = tx.placeLat;
+      _placeLng = tx.placeLng;
       _occurredAt = tx.occurredAt;
+      _impactOverride = impactLevelFromStorage(tx.impactUser);
       _loading = false;
     });
   }
@@ -64,12 +75,18 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     final tx = await AppServices.transactions.getById(widget.transactionId);
     if (tx == null) return;
     final parsed = double.tryParse(_amountController.text.trim());
+    final autoImpact = deriveImpactLevel(parsed);
+    final impact = _impactOverride ?? autoImpact;
     final updated = tx.copyWith(
       amountMyr: parsed,
       needsAmount: parsed == null,
       categoryUser: _category,
       placeName: _placeName == 'No place' ? null : _placeName,
+      placeGooglePlaceId: _placeGooglePlaceId,
+      placeLat: _placeLat,
+      placeLng: _placeLng,
       occurredAt: _occurredAt,
+      impactUser: impact.storageValue,
     );
     await AppServices.transactions.updateTransaction(updated);
     if (mounted) {
@@ -108,9 +125,14 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<void> _pickPlace() async {
-    final result = await context.pushNamed<String>('places-search');
+    final result = await context.pushNamed<PlaceResult>('places-search');
     if (result != null && mounted) {
-      setState(() => _placeName = result);
+      setState(() {
+        _placeName = result.name;
+        _placeGooglePlaceId = result.id;
+        _placeLat = result.lat;
+        _placeLng = result.lng;
+      });
     }
   }
 
@@ -153,6 +175,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         ? DateFormat('EEE, d MMM · HH:mm').format(_occurredAt!)
         : '';
 
+    final parsedAmount = double.tryParse(_amountController.text.trim());
+    final effectiveImpact = _impactOverride ?? deriveImpactLevel(parsedAmount);
+
     return Scaffold(
       backgroundColor: AppColors.scaffold,
       appBar: AppBar(
@@ -177,6 +202,26 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 child: AmountField(controller: _amountController),
               ),
             ),
+            const SizedBox(height: AppSpacing.md),
+            Text('Impact', style: Theme.of(context).textTheme.labelMedium),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                for (final level in ImpactLevel.values) ...[
+                  if (level != ImpactLevel.values.first)
+                    const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: _ImpactChip(
+                      level: level,
+                      selected: effectiveImpact == level,
+                      onTap: () => setState(() => _impactOverride = level),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Center(child: ReceiptStrip(impact: effectiveImpact)),
             const SizedBox(height: AppSpacing.md),
             PlaceBlock(
               placeName: _placeName,
@@ -220,6 +265,55 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImpactChip extends StatelessWidget {
+  const _ImpactChip({
+    required this.level,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ImpactLevel level;
+  final bool selected;
+  final VoidCallback onTap;
+
+  Color get _color {
+    switch (level) {
+      case ImpactLevel.low:
+        return AppColors.impactLow;
+      case ImpactLevel.med:
+        return AppColors.impactMed;
+      case ImpactLevel.high:
+        return AppColors.impactHigh;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppSpacing.chipBorderRadius,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? _color : AppColors.cardSurface,
+          borderRadius: AppSpacing.chipBorderRadius,
+          border: Border.all(
+            color: selected ? _color : AppColors.divider,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Text(
+          level.label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+              ),
         ),
       ),
     );

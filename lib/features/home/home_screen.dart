@@ -13,7 +13,7 @@ import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../features/share/receipt_capture_flow.dart';
 import '../../widgets/adaptive_sync_banner.dart';
-import '../../widgets/blob_avatar.dart';
+import '../../widgets/pixel_avatar.dart';
 import '../../widgets/share_coach_mark.dart';
 import '../../widgets/themed_scene_background.dart';
 import '../../widgets/top_badges_grid.dart';
@@ -95,45 +95,28 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(
                       AppSpacing.md,
-                      AppSpacing.sm,
+                      AppSpacing.xs,
                       AppSpacing.md,
                       AppSpacing.xl,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'TODAY',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelMedium
-                                      ?.copyWith(letterSpacing: 1.2),
-                                ),
-                                Text(
-                                  'Receipt Drop',
-                                  style: Theme.of(context).textTheme.displaySmall,
-                                ),
-                              ],
-                            ),
-                            Row(
-                              children: [
-                                _DropCountPill(count: today.length),
-                                const SizedBox(width: AppSpacing.sm),
-                                _RoundIconButton(
-                                  icon: Icons.settings_outlined,
-                                  onTap: () => context.pushNamed('settings'),
-                                ),
-                              ],
-                            ),
-                          ],
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _DropCountPill(count: today.length),
+                              const SizedBox(width: AppSpacing.sm),
+                              _RoundIconButton(
+                                icon: Icons.settings_outlined,
+                                onTap: () => context.pushNamed('settings'),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         Center(
                           child: SizedBox(
                             width: 280,
@@ -146,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   borderRadius: AppSpacing.heroBorderRadius,
                                 ),
                                 if (avatarConfig != null)
-                                  BlobAvatar(
+                                  PixelAvatar(
                                     mood: mood,
                                     config: avatarConfig,
                                     size: 180,
@@ -210,8 +193,24 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: AppSpacing.lg),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('Badges', style: Theme.of(context).textTheme.labelMedium),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'BADGES',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium
+                                      ?.copyWith(letterSpacing: 1.2),
+                                ),
+                                Text(
+                                  'Top 6 — drag to reorder',
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ],
+                            ),
                             TextButton(
                               onPressed: () => context.pushNamed('badges'),
                               child: const Row(

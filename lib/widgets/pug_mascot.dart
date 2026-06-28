@@ -21,7 +21,7 @@ class PugMascot extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _PugMascotFallback(size: size),
+        errorBuilder: (_, _, _) => _PugMascotFallback(size: size),
       ),
     );
   }

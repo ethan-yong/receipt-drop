@@ -70,6 +70,9 @@ class OutboxTransactions extends Table {
   IntColumn get retryCount =>
       integer().withDefault(const Constant(0))();
 
+  /// Set after the receipt has been shown in the ritual animation.
+  DateTimeColumn get ritualledAt => dateTime().nullable()();
+
   @override
   Set<Column<Object>>? get primaryKey => {id};
 }

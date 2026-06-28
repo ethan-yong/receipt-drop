@@ -51,7 +51,7 @@ class BadgeDetailDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            BadgeHex(badge: badge, earned: earned, size: 96),
+            BadgeHex(badge: badge, earned: earned && !badge.comingSoon, size: 96),
             const SizedBox(height: AppSpacing.md),
             Text(badge.label, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 4),
@@ -70,18 +70,32 @@ class BadgeDetailDialog extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.md),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(value: ratio, minHeight: 8),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              earned
-                  ? 'Earned'
-                  : '$progress / ${badge.goal}'
-                      '${badge.hint != null ? ' — ${badge.hint}' : ''}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            if (badge.comingSoon) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Coming soon',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+            ] else ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(value: ratio, minHeight: 8),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                earned
+                    ? 'Earned'
+                    : '$progress / ${badge.goal}'
+                        '${badge.hint != null ? ' — ${badge.hint}' : ''}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),

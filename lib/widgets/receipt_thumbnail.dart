@@ -40,15 +40,15 @@ class ReceiptThumbnail extends StatelessWidget {
       return Image.memory(
         thumbnailBytes!,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _placeholder(),
+        errorBuilder: (_, _, _) => _placeholder(),
       );
     }
     if (imageUrl != null && imageUrl!.isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: imageUrl!,
         fit: BoxFit.cover,
-        placeholder: (_, __) => _placeholder(),
-        errorWidget: (_, __, ___) => _placeholder(),
+        placeholder: (_, _) => _placeholder(),
+        errorWidget: (_, _, _) => _placeholder(),
       );
     }
     if (localPath != null &&
