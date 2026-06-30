@@ -42,9 +42,17 @@ First debug builds download Android SDK components (CMake, etc.) and compile nat
 2. From `C:\dev\receipt-drop`: `flutter pub get` then `flutter run` (phone connected with USB debugging).
 3. A successful first build produces `build\app\outputs\flutter-apk\app-debug.apk` in ~2–5 minutes off OneDrive; later runs are much faster.
 
-## Friends leaderboard API (FastAPI + Redis)
+## Leaderboard API (FastAPI + Redis)
 
-Optional Redis-backed cache in front of Postgres for the **Ranks** tab. When `LEADERBOARD_API_URL` is unset, the app uses the Supabase `get_friend_leaderboard()` RPC directly.
+Optional Redis-backed leaderboard service for the **Ranks** tab (Friends + Global). When `LEADERBOARD_API_URL` is unset, the Friends tab uses the Supabase `get_friend_leaderboard()` RPC directly; Global requires the API.
+
+### Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/friends-leaderboard?fresh=false` | Friends ranks (JSON cache-aside, 10s TTL) |
+| GET | `/leaderboard/global` | Global top 100 (`ZREVRANGE leaderboard:global 0 99`) |
+| POST | `/leaderboard/score` | Upsert caller's score from Postgres into Redis ZSET |
 
 ### Prerequisites
 
@@ -84,10 +92,18 @@ curl http://localhost:8080/health
 
 Signed-in app flow:
 
-1. Open **Ranks** — first load hits Postgres (`cached: false` in API response if you curl with a valid JWT).
+**Friends tab**
+
+1. Open **Ranks → Friends** — first load hits Postgres (`cached: false` in API response if you curl with a valid JWT).
 2. Reload within 10 seconds — Redis cache hit (`cached: true`).
 3. Pull-to-refresh — bypasses cache (`?fresh=true`).
 4. Remove `LEADERBOARD_API_URL` from `.env` — app falls back to Supabase RPC.
+
+**Global tab**
+
+1. Open home screen once — syncs streak/badge to Postgres and calls `POST /leaderboard/score`.
+2. Open **Ranks → Global** — top 100 from Redis ZSET, hydrated with profile metadata from Postgres.
+3. Verify in Redis: `docker exec -it receipt-drop-redis redis-cli ZREVRANGE leaderboard:global 0 9 WITHSCORES`
 
 ### RLS checks (psql)
 

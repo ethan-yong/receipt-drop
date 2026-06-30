@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
@@ -9,10 +10,10 @@ import '../../widgets/blob_avatar.dart';
 
 const _medals = ['🥇', '🥈', '🥉'];
 
-/// Port of Impact Drops' leaderboard.tsx, Friends-only (the prototype's
-/// "Uni Group" toggle is dropped — no cohort/group concept exists in this
-/// app; see plan judgment call #7). Ranked by `get_friend_leaderboard()`:
-/// current daily-logging streak, then earned-badge count.
+enum _LeaderboardMode { friends, global }
+
+/// Friends + global ranks. Friends uses Postgres RPC/API cache; global uses
+/// Redis ZSET via FastAPI when `LEADERBOARD_API_URL` is configured.
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
 
@@ -21,6 +22,7 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
+  _LeaderboardMode _mode = _LeaderboardMode.friends;
   List<LeaderboardEntry>? _entries;
 
   @override
@@ -30,8 +32,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Future<void> _load({bool fresh = false}) async {
-    final entries = await SocialRepository.getFriendLeaderboard(fresh: fresh);
+    setState(() => _entries = null);
+    final entries = _mode == _LeaderboardMode.friends
+        ? await SocialRepository.getFriendLeaderboard(fresh: fresh)
+        : await SocialRepository.getGlobalLeaderboard();
     if (mounted) setState(() => _entries = entries);
+  }
+
+  void _setMode(_LeaderboardMode mode) {
+    if (_mode == mode) return;
+    setState(() => _mode = mode);
+    _load();
   }
 
   @override
@@ -41,7 +52,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       backgroundColor: AppColors.scaffold,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => _load(fresh: true),
+          onRefresh: () => _load(fresh: _mode == _LeaderboardMode.friends),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.md,
@@ -57,21 +68,30 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: AppSpacing.lg),
+              _ModeToggle(mode: _mode, onChanged: _setMode),
+              const SizedBox(height: AppSpacing.lg),
               if (entries == null)
                 const Padding(
                   padding: EdgeInsets.only(top: AppSpacing.xl),
                   child: Center(child: CircularProgressIndicator()),
                 )
+              else if (_mode == _LeaderboardMode.global &&
+                  !Env.hasLeaderboardApiConfig)
+                const _GlobalApiRequiredNotice()
+              else if (entries.isEmpty)
+                _EmptyNotice(isGlobal: _mode == _LeaderboardMode.global)
               else ...[
                 for (final (i, entry) in entries.indexed)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: _LeaderboardRow(rank: i + 1, entry: entry),
+                    child: _LeaderboardRow(
+                      rank: i + 1,
+                      entry: entry,
+                      isGlobal: _mode == _LeaderboardMode.global,
+                    ),
                   ),
-                // get_friend_leaderboard() always includes the caller, so an
-                // empty list only happens when signed out; "just me" means
-                // no accepted friends yet.
-                if (entries.length <= 1) const _EmptyLeaderboardNotice(),
+                if (_mode == _LeaderboardMode.friends && entries.length <= 1)
+                  const _EmptyLeaderboardNotice(),
               ],
             ],
           ),
@@ -81,11 +101,70 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 }
 
+class _ModeToggle extends StatelessWidget {
+  const _ModeToggle({required this.mode, required this.onChanged});
+
+  final _LeaderboardMode mode;
+  final ValueChanged<_LeaderboardMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.divider.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        children: [
+          for (final option in _LeaderboardMode.values)
+            Expanded(
+              child: GestureDetector(
+                onTap: () => onChanged(option),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: mode == option ? AppColors.cardSurface : Colors.transparent,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: mode == option
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    option == _LeaderboardMode.friends ? 'Friends' : 'Global',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: mode == option
+                              ? AppColors.textPrimary
+                              : AppColors.textMuted,
+                        ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LeaderboardRow extends StatelessWidget {
-  const _LeaderboardRow({required this.rank, required this.entry});
+  const _LeaderboardRow({
+    required this.rank,
+    required this.entry,
+    required this.isGlobal,
+  });
 
   final int rank;
   final LeaderboardEntry entry;
+  final bool isGlobal;
 
   @override
   Widget build(BuildContext context) {
@@ -94,6 +173,7 @@ class _LeaderboardRow extends StatelessWidget {
         : AvatarConfig.defaultConfig();
     final mood = moodFromName(entry.currentMood);
     final label = leaderboardLabel(mood: mood, streak: entry.currentStreak);
+    final fallbackName = isGlobal ? 'User' : 'Friend';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.sm),
@@ -122,7 +202,7 @@ class _LeaderboardRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  entry.isMe ? 'You' : (entry.displayName ?? 'Friend'),
+                  entry.isMe ? 'You' : (entry.displayName ?? fallbackName),
                   style: Theme.of(context).textTheme.titleSmall,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -137,8 +217,38 @@ class _LeaderboardRow extends StatelessWidget {
   }
 }
 
-class _EmptyLeaderboardNotice extends StatelessWidget {
-  const _EmptyLeaderboardNotice();
+class _GlobalApiRequiredNotice extends StatelessWidget {
+  const _GlobalApiRequiredNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
+      child: Column(
+        children: [
+          const Icon(Icons.public_outlined, size: 40, color: AppColors.textMuted),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Global ranks unavailable',
+            style: Theme.of(context).textTheme.titleMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Set LEADERBOARD_API_URL to view global ranks.',
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyNotice extends StatelessWidget {
+  const _EmptyNotice({required this.isGlobal});
+
+  final bool isGlobal;
 
   @override
   Widget build(BuildContext context) {
@@ -155,11 +265,29 @@ class _EmptyLeaderboardNotice extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Add friends from Settings to start a leaderboard.',
+            isGlobal
+                ? 'Log streaks on the home screen to join the global board.'
+                : 'Add friends from Settings to start a leaderboard.',
             style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyLeaderboardNotice extends StatelessWidget {
+  const _EmptyLeaderboardNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Text(
+        'Add friends from Settings to compare ranks.',
+        style: Theme.of(context).textTheme.bodyMedium,
+        textAlign: TextAlign.center,
       ),
     );
   }

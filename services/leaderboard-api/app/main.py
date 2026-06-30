@@ -4,14 +4,26 @@ from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 
-from app.auth import AuthUser, bearer_scheme, verify_bearer
+from app.auth import bearer_scheme, verify_bearer
 from app.cache import close_redis, get_cached_leaderboard, set_cached_leaderboard
-from app.db import close_pool, fetch_leaderboard_as_user
+from app.db import close_pool, fetch_caller_profile_scores, fetch_leaderboard_as_user
+from app.global_service import (
+    build_global_entries,
+    rebuild_from_postgres,
+    upsert_user_score,
+    zset_cardinality,
+)
 from app.models import LeaderboardEntry, LeaderboardResponse
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    try:
+        if await zset_cardinality() == 0:
+            await rebuild_from_postgres()
+    except Exception:
+        # Best-effort cold start when Redis/Postgres are unavailable (e.g. unit tests).
+        pass
     yield
     await close_redis()
     await close_pool()
@@ -54,3 +66,28 @@ async def friends_leaderboard(
         entries=[LeaderboardEntry.model_validate(e) for e in entries],
         cached=False,
     )
+
+
+@app.get("/leaderboard/global", response_model=LeaderboardResponse)
+async def global_leaderboard(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme()),
+) -> LeaderboardResponse:
+    user = verify_bearer(credentials)
+    entries = await build_global_entries(user.user_id)
+    return LeaderboardResponse(
+        entries=[LeaderboardEntry.model_validate(e) for e in entries],
+        cached=False,
+    )
+
+
+@app.post("/leaderboard/score")
+async def sync_leaderboard_score(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme()),
+) -> dict[str, str]:
+    user = verify_bearer(credentials)
+    scores = await fetch_caller_profile_scores(user.user_id)
+    if scores is None:
+        return {"status": "no_profile"}
+    streak, badge_count = scores
+    await upsert_user_score(user.user_id, streak, badge_count)
+    return {"status": "ok"}

@@ -224,6 +224,52 @@ class SocialRepository {
     return _getFriendLeaderboardFromRpc();
   }
 
+  static Future<List<LeaderboardEntry>> getGlobalLeaderboard() async {
+    if (_userId == null || !Env.hasLeaderboardApiConfig) return const [];
+    try {
+      final session = Supabase.instance.client.auth.currentSession;
+      final token = session?.accessToken;
+      if (token == null) return const [];
+
+      final base = Env.leaderboardApiUrl.replaceAll(RegExp(r'/+$'), '');
+      final uri = Uri.parse('$base/leaderboard/global');
+      final response = await http.get(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return const [];
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final entries = body['entries'] as List<dynamic>?;
+      if (entries == null) return const [];
+
+      return entries
+          .map((e) => _leaderboardEntryFromRow(e as Map<String, dynamic>))
+          .toList();
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// Best-effort upsert of the caller's score into the global Redis ZSET.
+  static Future<void> syncLeaderboardScore() async {
+    if (_userId == null || !Env.hasLeaderboardApiConfig) return;
+    try {
+      final session = Supabase.instance.client.auth.currentSession;
+      final token = session?.accessToken;
+      if (token == null) return;
+
+      final base = Env.leaderboardApiUrl.replaceAll(RegExp(r'/+$'), '');
+      final uri = Uri.parse('$base/leaderboard/score');
+      await http.post(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } on Object {
+      // Best-effort.
+    }
+  }
+
   static Future<List<LeaderboardEntry>?> _getFriendLeaderboardFromApi({
     required bool fresh,
   }) async {
