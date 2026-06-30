@@ -51,6 +51,18 @@ class Env {
   static bool get hasSupabaseConfig =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
+  static String get leaderboardApiUrl {
+    const fromDefine = String.fromEnvironment('LEADERBOARD_API_URL');
+    if (fromDefine.isNotEmpty) return fromDefine;
+    if (kDebugMode) {
+      final v = dotenv.maybeGet('LEADERBOARD_API_URL');
+      if (v != null && v.isNotEmpty) return v.trim();
+    }
+    return '';
+  }
+
+  static bool get hasLeaderboardApiConfig => leaderboardApiUrl.isNotEmpty;
+
   /// Skip onboarding + auth redirects while building features (debug only by default).
   ///
   /// Enabled when `SKIP_AUTH=true` in `.env` or `--dart-define=SKIP_AUTH=true`,

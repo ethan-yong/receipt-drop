@@ -29,8 +29,8 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     _load();
   }
 
-  Future<void> _load() async {
-    final entries = await SocialRepository.getFriendLeaderboard();
+  Future<void> _load({bool fresh = false}) async {
+    final entries = await SocialRepository.getFriendLeaderboard(fresh: fresh);
     if (mounted) setState(() => _entries = entries);
   }
 
@@ -41,7 +41,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       backgroundColor: AppColors.scaffold,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: () => _load(fresh: true),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(
               AppSpacing.md,
