@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
 
-class PuggyPrimaryButton extends StatelessWidget {
-  const PuggyPrimaryButton({
+class ReceiptDropPrimaryButton extends StatelessWidget {
+  const ReceiptDropPrimaryButton({
     super.key,
     required this.label,
     required this.onPressed,
@@ -35,8 +35,8 @@ class PuggyPrimaryButton extends StatelessWidget {
   }
 }
 
-class PuggyOAuthButton extends StatelessWidget {
-  const PuggyOAuthButton({
+class ReceiptDropOAuthButton extends StatelessWidget {
+  const ReceiptDropOAuthButton({
     super.key,
     required this.label,
     required this.icon,

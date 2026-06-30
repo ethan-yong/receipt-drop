@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 /// Plus Jakarta Sans throughout, per the Impact Drops design system.
-TextTheme buildPuggyTextTheme() {
+TextTheme buildReceiptDropTextTheme() {
   final display = GoogleFonts.plusJakartaSans(
     color: AppColors.textPrimary,
     fontWeight: FontWeight.w800,

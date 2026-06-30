@@ -2,15 +2,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/app.dart';
-import 'package:puggy_bank/core/bootstrap/app_prefs.dart';
-import 'package:puggy_bank/core/bootstrap/app_services.dart';
-import 'package:puggy_bank/core/routing/app_router.dart';
-import 'package:puggy_bank/core/routing/auth_refresh.dart';
-import 'package:puggy_bank/core/theme/app_theme.dart';
-import 'package:puggy_bank/data/remote/supabase_client_holder.dart';
-import 'package:puggy_bank/data/repositories/ingest_receipt_request.dart';
-import 'package:puggy_bank/features/share/receipt_file_store.dart';
+import 'package:receipt_drop/app.dart';
+import 'package:receipt_drop/core/bootstrap/app_prefs.dart';
+import 'package:receipt_drop/core/bootstrap/app_services.dart';
+import 'package:receipt_drop/core/routing/app_router.dart';
+import 'package:receipt_drop/core/routing/auth_refresh.dart';
+import 'package:receipt_drop/core/theme/app_theme.dart';
+import 'package:receipt_drop/data/remote/supabase_client_holder.dart';
+import 'package:receipt_drop/data/repositories/ingest_receipt_request.dart';
+import 'package:receipt_drop/features/share/receipt_file_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -56,7 +56,7 @@ void main() {
     final router = createAppRouter(refresh);
 
     await tester.pumpWidget(
-      PuggyBankApp(routerConfig: router, theme: buildPuggyTestTheme()),
+      ReceiptDropApp(routerConfig: router, theme: buildReceiptDropTestTheme()),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 800));
@@ -73,7 +73,7 @@ void main() {
     final router = createAppRouter(refresh);
 
     await tester.pumpWidget(
-      PuggyBankApp(routerConfig: router, theme: buildPuggyTestTheme()),
+      ReceiptDropApp(routerConfig: router, theme: buildReceiptDropTestTheme()),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 800));

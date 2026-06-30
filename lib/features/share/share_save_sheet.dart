@@ -6,7 +6,7 @@ import '../../core/platform/platform_utils.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../widgets/amount_field.dart';
-import '../../widgets/puggy_primary_button.dart';
+import '../../widgets/receipt_drop_primary_button.dart';
 import '../../widgets/receipt_strip.dart';
 import 'receipt_ingest_draft.dart';
 
@@ -177,7 +177,7 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
     final actions = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        PuggyPrimaryButton(
+        ReceiptDropPrimaryButton(
           label: 'Save',
           onPressed: _saving ? null : _save,
         ),

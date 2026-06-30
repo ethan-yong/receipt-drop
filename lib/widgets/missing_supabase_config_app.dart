@@ -7,7 +7,7 @@ class MissingSupabaseConfigApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PuggyBank',
+      title: 'Receipt Drop',
       home: Scaffold(
         body: SafeArea(
           child: Padding(

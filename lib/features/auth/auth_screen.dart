@@ -4,7 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../widgets/pug_mascot.dart';
-import '../../widgets/puggy_primary_button.dart';
+import '../../widgets/receipt_drop_primary_button.dart';
 
 /// Email/password + OAuth (Google, Apple).
 class AuthScreen extends StatefulWidget {
@@ -112,7 +112,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Text(
-                    'PuggyBank',
+                    'Receipt Drop',
                     style: Theme.of(context).textTheme.displaySmall?.copyWith(
                           color: AppColors.primaryGreen,
                         ),
@@ -127,7 +127,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  PuggyOAuthButton(
+                  ReceiptDropOAuthButton(
                     label: 'Continue with Google',
                     icon: const Icon(Icons.g_mobiledata, size: 28),
                     onPressed: _loading
@@ -135,7 +135,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         : () => _oauth(OAuthProvider.google),
                   ),
                   const SizedBox(height: AppSpacing.sm + 4),
-                  PuggyOAuthButton(
+                  ReceiptDropOAuthButton(
                     label: 'Continue with Apple',
                     icon: const Icon(Icons.apple, size: 22),
                     onPressed: _loading
@@ -188,7 +188,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     },
                   ),
                   const SizedBox(height: AppSpacing.lg),
-                  PuggyPrimaryButton(
+                  ReceiptDropPrimaryButton(
                     label: _isSignUp ? 'Create account' : 'Sign in',
                     loading: _loading,
                     onPressed: _submitEmailPassword,

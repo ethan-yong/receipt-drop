@@ -41,7 +41,7 @@ class AppDatabase extends _$AppDatabase {
 LazyDatabase openAppDatabaseConnection() {
   return LazyDatabase(() async {
     final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, 'puggy_bank.sqlite'));
+    final file = File(p.join(dir.path, 'receipt_drop.sqlite'));
     return NativeDatabase.createInBackground(file);
   });
 }

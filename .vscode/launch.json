@@ -2,14 +2,14 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "PuggyBank (Chrome)",
+      "name": "Receipt Drop (Chrome)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
       "deviceId": "chrome"
     },
     {
-      "name": "PuggyBank (Windows)",
+      "name": "Receipt Drop (Windows)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",

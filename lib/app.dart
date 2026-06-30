@@ -6,8 +6,8 @@ import 'core/platform/platform_utils.dart';
 import 'core/theme/app_theme.dart';
 import 'features/share/share_intent_listener.dart';
 
-class PuggyBankApp extends StatelessWidget {
-  const PuggyBankApp({
+class ReceiptDropApp extends StatelessWidget {
+  const ReceiptDropApp({
     super.key,
     required this.routerConfig,
     this.theme,
@@ -19,9 +19,9 @@ class PuggyBankApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'PuggyBank',
+      title: 'Receipt Drop',
       debugShowCheckedModeBanner: false,
-      theme: theme ?? buildPuggyTheme(),
+      theme: theme ?? buildReceiptDropTheme(),
       routerConfig: routerConfig,
       builder: (context, child) {
         Widget result = ShareIntentListener(

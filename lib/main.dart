@@ -28,5 +28,5 @@ Future<void> main() async {
   final authRefresh = AuthRefreshNotifier();
   final router = createAppRouter(authRefresh);
 
-  runApp(PuggyBankApp(routerConfig: router));
+  runApp(ReceiptDropApp(routerConfig: router));
 }

@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/bootstrap/app_prefs.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/pug_mascot.dart';
-import '../../widgets/puggy_primary_button.dart';
+import '../../widgets/receipt_drop_primary_button.dart';
 
 /// Three slides matching design mock, then routes to sign-in.
 class OnboardingScreen extends StatefulWidget {
@@ -22,7 +22,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     (
       asset: 'assets/branding/pug-onboarding-1.png',
       title: 'Share any RM receipt',
-      body: 'We log it. Use your bank or TNG receipt — tap Share and choose PuggyBank.',
+      body: 'We log it. Use your bank or TNG receipt — tap Share and choose Receipt Drop.',
     ),
     (
       asset: 'assets/branding/pug-onboarding-2.png',
@@ -32,7 +32,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     (
       asset: 'assets/branding/pug-onboarding-3.png',
       title: 'Your data, your map',
-      body: 'Private. Secure. Yours. PuggyBank is not a bank.',
+      body: 'Private. Secure. Yours. Receipt Drop is not a bank.',
     ),
   ];
 
@@ -136,7 +136,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             const SizedBox(height: AppSpacing.md),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-              child: PuggyPrimaryButton(
+              child: ReceiptDropPrimaryButton(
                 label: _index == _slides.length - 1
                     ? "Let's get started"
                     : 'Next',

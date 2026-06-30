@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/domain/logic/category_matcher.dart';
+import 'package:receipt_drop/domain/logic/category_matcher.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

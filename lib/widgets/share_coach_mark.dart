@@ -39,7 +39,7 @@ class ShareCoachMark extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     'Open a receipt in your bank or TNG app, tap Share, then '
-                    'choose PuggyBank — no need to open this app first.',
+                    'choose Receipt Drop — no need to open this app first.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppColors.textSecondary,
                         ),

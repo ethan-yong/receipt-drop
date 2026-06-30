@@ -1,8 +1,8 @@
-# PuggyBank — v1 Design Spec
+# Receipt Drop — v1 Design Spec
 
 - **Date:** 2026-05-11
 - **Status:** Approved for planning (pending user spec review)
-- **Repo:** `puggy-bank` (display name: **PuggyBank**)
+- **Repo:** `receipt-drop` (display name: **Receipt Drop**)
 - **Scope:** Version 1 (MVP) only. Friends, shared goals, and location-frequency feeds are **explicitly out of scope** for v1 except as a single teaser surface.
 
 ---
@@ -11,7 +11,7 @@
 
 Malaysians pay via QR across multiple, fragmented rails: Maybank QR, Touch 'n Go eWallet, CIMB Pay, DuitNow QR, etc. Each app has its own dashboard, most are weak, and many QR codes are bank-specific — so spend done outside a given app is invisible inside that app's dashboard. The result is that users have **no single, honest view of where their money goes**, and they don't trust or look at any of the existing dashboards.
 
-PuggyBank's wedge: **the receipt is the universal artifact**. Every QR payment produces a digital receipt the user already has. If we make it trivial to feed receipts into one app via the OS share sheet, we get a unified spend ledger across rails without any bank integration.
+Receipt Drop's wedge: **the receipt is the universal artifact**. Every QR payment produces a digital receipt the user already has. If we make it trivial to feed receipts into one app via the OS share sheet, we get a unified spend ledger across rails without any bank integration.
 
 ## 2. Product principles
 
@@ -25,7 +25,7 @@ PuggyBank's wedge: **the receipt is the universal artifact**. Every QR payment p
 
 **In scope (v1):**
 
-- OS Share → PuggyBank intake of **images and PDFs** (best-effort: anything we can decode as those).
+- OS Share → Receipt Drop intake of **images and PDFs** (best-effort: anything we can decode as those).
 - On-device OCR-driven extraction of **MYR amount** + **merchant text**.
 - Immediate **provisional save** of every shared receipt.
 - **Hybrid place auto-suggest**: receipt text + share-time device location + Google Places candidates → best guess saved automatically; user can change later.
@@ -142,7 +142,7 @@ All tables enforce Row-Level Security: a user can read/write only rows where `us
 
 ### 8.1 Happy path — image/PDF share
 
-1. User shares a receipt to PuggyBank.
+1. User shares a receipt to Receipt Drop.
 2. Share extension reads the file, runs ML Kit OCR, picks the best MYR amount candidate, and writes a provisional row to the local outbox.
 3. The extension shows a **brief confirmation toast** ("Saved — RM 8.90 at 7-Eleven Sunway"). It does **not** require user input on the happy path.
 4. Sync worker uploads when network returns; enrichment fills in normalized merchant + place candidates.
@@ -188,7 +188,7 @@ For each shared receipt, the client computes ranked place candidates:
 
 ## 10. Screens
 
-Visual reference: `assets/c__Users_USER_AppData_Roaming_Cursor_User_workspaceStorage_empty-window_images_image-3fd6e86f-ec37-4d57-a2ef-ff421f7ce0a5.png` (PuggyBank mock — green primary, pug mascot, four-tab nav with centered + action). This mock is the visual source of truth for v1.
+Visual reference: `assets/c__Users_USER_AppData_Roaming_Cursor_User_workspaceStorage_empty-window_images_image-3fd6e86f-ec37-4d57-a2ef-ff421f7ce0a5.png` (Receipt Drop mock — green primary, pug mascot, four-tab nav with centered + action). This mock is the visual source of truth for v1.
 
 1. **Onboarding (3 slides)** — "Share any RM receipt", "We guess place + category, you can fix", "Your data, your map." Then sign-in.
 2. **Sign-in** — Continue with Google, Continue with Apple, or email + password. "Sign up" link below.
@@ -209,7 +209,7 @@ Visual reference: `assets/c__Users_USER_AppData_Roaming_Cursor_User_workspaceSto
 - **Storage:** the `receipts` bucket is private. The app fetches signed URLs on demand for in-app viewing.
 - **RLS:** every user-owned table policy is `user_id = auth.uid()`.
 - **Secrets:** Google Places API keys live only in the Supabase Edge Function's environment, never in the client.
-- **Copy:** onboarding and Settings clearly state PuggyBank is not a bank, not financial advice, and that data is the user's.
+- **Copy:** onboarding and Settings clearly state Receipt Drop is not a bank, not financial advice, and that data is the user's.
 
 ## 12. Error handling matrix
 

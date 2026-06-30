@@ -17,7 +17,7 @@ async def lifespan(_app: FastAPI):
     await close_pool()
 
 
-app = FastAPI(title="PuggyBank Leaderboard API", lifespan=lifespan)
+app = FastAPI(title="Receipt Drop Leaderboard API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
