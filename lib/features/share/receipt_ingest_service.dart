@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../domain/logic/category_matcher.dart';
+import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/logic/rm_amount_parser.dart';
 import 'ocr_pipeline.dart';
 import 'receipt_file_store.dart';
@@ -50,8 +51,8 @@ class ReceiptIngestService {
     final parseResult = parseRmAmountFromOcr(ocrText);
     final amount = parseResult.amount;
     final needsAmount = amount == null;
-    final merchantRaw = _firstMeaningfulLine(ocrText);
     final categories = await _categories();
+    final merchantRaw = extractMerchant(ocrText, categories);
     final categoryGuess = categories
         .guessForMerchant(merchantRaw ?? '')
         .category;
@@ -71,14 +72,6 @@ class ReceiptIngestService {
       shareLocationCapturedAt: location != null ? DateTime.now().toUtc() : null,
       ocrConfidence: parseResult.confidence,
     );
-  }
-
-  static String? _firstMeaningfulLine(String ocrText) {
-    for (final line in ocrText.split(RegExp(r'\r?\n'))) {
-      final trimmed = line.trim();
-      if (trimmed.length >= 3) return trimmed;
-    }
-    return null;
   }
 
   static Future<Position?> _captureLocation() async {

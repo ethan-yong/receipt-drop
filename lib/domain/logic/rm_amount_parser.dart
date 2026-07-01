@@ -4,6 +4,10 @@ class AmountParseResult {
   final double confidence;
 }
 
+/// Below this, the parser's own scoring says the picked amount is a guess
+/// (e.g. only a plain "RM x.xx" match with no "total"/"tunai" context, or worse).
+const lowOcrConfidenceThreshold = 0.5;
+
 final _rmRegex = RegExp(r'RM\s*([\d,]+\.\d{2})', caseSensitive: false);
 
 AmountParseResult parseRmAmountFromOcr(String raw) {
