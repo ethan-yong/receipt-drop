@@ -5,6 +5,7 @@ import '../../core/platform/platform_feedback.dart';
 import '../../core/platform/platform_utils.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/logic/impact_level.dart';
+import '../../domain/logic/rm_amount_parser.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/puggy_primary_button.dart';
 import '../../widgets/receipt_strip.dart';
@@ -59,6 +60,10 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
   ImpactLevel? _impactOverride;
   var _saving = false;
 
+  bool get _lowConfidence =>
+      !widget.draft.needsAmount &&
+      (widget.draft.ocrConfidence ?? 0) < lowOcrConfidenceThreshold;
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +71,12 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
     _amountController = TextEditingController(
       text: amount != null ? amount.toStringAsFixed(2) : '',
     );
+    if (_lowConfidence) {
+      _amountController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _amountController.text.length,
+      );
+    }
     _amountController.addListener(_onAmountChanged);
   }
 
@@ -148,6 +159,37 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
             widget.draft.merchantRaw!,
             style: Theme.of(context).textTheme.bodySmall,
             textAlign: TextAlign.center,
+          ),
+        ],
+        if (_lowConfidence) ...[
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.badgePendingBg,
+              borderRadius: AppSpacing.chipBorderRadius,
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  size: 18,
+                  color: AppColors.badgePendingText,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    "Double-check this amount — we're not fully sure we read it correctly.",
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.badgePendingText,
+                        ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
         const SizedBox(height: AppSpacing.lg),
