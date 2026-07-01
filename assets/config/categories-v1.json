@@ -1,0 +1,41 @@
+{
+  "version": "2026-07-02.1",
+  "default_category": "Others",
+  "rules": [
+    {
+      "category": "Food & Drink",
+      "any_of": [
+        "mcdonald", "kfc", "pizza hut", "domino", "subway", "burger king",
+        "starbucks", "coffee bean", "tealive", "chatime", "zus coffee",
+        "old town", "oldtown", "secret recipe", "nando", "sushi king",
+        "marrybrown", "a&w", "texas chicken", "papa john", "mixue",
+        "kenny rogers", "wendy", "dunkin", "7-eleven", "kopitiam", "restoran"
+      ]
+    },
+    {
+      "category": "Groceries",
+      "any_of": [
+        "aeon big", "aeon", "village grocer", "jaya grocer", "lotus",
+        "mydin", "nsk", "econsave", "99 speedmart", "giant", "cold storage",
+        "mercato", "jusco"
+      ]
+    },
+    {
+      "category": "Transport",
+      "any_of": [
+        "touch n go", "touch 'n go", "tng", "grab", "petron", "shell",
+        "petronas", "caltex", "bhpetrol", "rapidkl", "mrt", "lrt", "ktm",
+        "gocar", "mypark"
+      ]
+    },
+    {
+      "category": "Shopping",
+      "any_of": [
+        "uniqlo", "h&m", "padini", "brands outlet", "watsons", "guardian",
+        "sephora", "sasa", "cotton on", "popular", "mr diy", "daiso",
+        "ikea", "courts", "harvey norman", "senheng", "decathlon",
+        "parkson", "sogo", "isetan"
+      ]
+    }
+  ]
+}

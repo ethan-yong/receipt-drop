@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# NOTE: never ignore `lib/` — Flutter Dart sources live there.
 lib64/
 parts/
 sdist/
@@ -25,6 +25,22 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Local git worktrees (superpowers workflow)
+.worktrees/
+
+# Cursor
+.cursor/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.idea/
+*.iml
 
 # PyInstaller
 #   Usually these files are written by a python script from a template

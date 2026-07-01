@@ -1,0 +1,252 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --radius-2xl: calc(var(--radius) + 12px);
+  --radius-3xl: calc(var(--radius) + 20px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-calm: var(--calm);
+  --color-active: var(--active);
+  --color-spiky: var(--spiky);
+  --color-balanced: var(--balanced);
+  --color-impact-low: var(--impact-low);
+  --color-impact-med: var(--impact-med);
+  --color-impact-high: var(--impact-high);
+
+  --font-sans: "Plus Jakarta Sans", "Nunito", ui-sans-serif, system-ui, sans-serif;
+
+  --animate-wobble: wobble 4s ease-in-out infinite;
+  --animate-float: float 5s ease-in-out infinite;
+  --animate-drop-in: drop-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-chomp: chomp 0.5s ease-in-out;
+  --animate-machine-pulse: machine-pulse 1.2s ease-in-out infinite;
+
+  @keyframes wobble {
+    0%, 100% { transform: translateY(0) rotate(-1deg) scale(1); }
+    50% { transform: translateY(-6px) rotate(1deg) scale(1.02); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes drop-in {
+    0% { transform: translateY(-120%) rotate(-8deg); opacity: 0; }
+    100% { transform: translateY(0) rotate(0); opacity: 1; }
+  }
+  @keyframes chomp {
+    0%, 100% { transform: scaleY(1); }
+    50% { transform: scaleY(0.85); }
+  }
+  @keyframes machine-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 40%, transparent); }
+    50% { box-shadow: 0 0 0 16px color-mix(in oklab, var(--primary) 0%, transparent); }
+  }
+  @keyframes pixel-spin {
+    0% { transform: rotateY(0deg); }
+    100% { transform: rotateY(360deg); }
+  }
+  @keyframes pixel-bob {
+    0%, 100% { transform: rotateX(-18deg) translateY(0); }
+    50% { transform: rotateX(-18deg) translateY(-6px); }
+  }
+  @keyframes pixel-jitter {
+    0% { transform: rotateX(-18deg) translate(0, 0); }
+    25% { transform: rotateX(-18deg) translate(-2px, 1px); }
+    50% { transform: rotateX(-18deg) translate(2px, -1px); }
+    75% { transform: rotateX(-18deg) translate(-1px, 2px); }
+    100% { transform: rotateX(-18deg) translate(0, 0); }
+  }
+  @keyframes propeller-spin {
+    0% { transform: rotateY(0deg); }
+    100% { transform: rotateY(360deg); }
+  }
+
+  /* Diorama avatar idle animations — additive transforms only (no rotateX). */
+  @keyframes diorama-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+  @keyframes diorama-sip {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    40% { transform: translateY(-2px) rotate(-2deg); }
+    60% { transform: translateY(-2px) rotate(2deg); }
+  }
+  @keyframes diorama-walk {
+    0% { transform: translateX(-18px) translateY(0); }
+    25% { transform: translateX(-18px) translateY(-3px); }
+    50% { transform: translateX(18px) translateY(0); }
+    75% { transform: translateX(18px) translateY(-3px); }
+    100% { transform: translateX(-18px) translateY(0); }
+  }
+  @keyframes diorama-hop {
+    0%, 100% { transform: translateY(0) scaleY(1); }
+    40% { transform: translateY(-12px) scaleY(1.05); }
+    60% { transform: translateY(-12px) scaleY(1.05); }
+    80% { transform: translateY(0) scaleY(0.95); }
+  }
+  @keyframes diorama-wiggle {
+    0%, 100% { transform: translateY(0) rotate(0); }
+    25% { transform: translateY(-2px) rotate(-3deg); }
+    75% { transform: translateY(-2px) rotate(3deg); }
+  }
+  @keyframes diorama-sway {
+    0%, 100% { transform: translateX(-4px) rotate(-2deg); }
+    50% { transform: translateX(4px) rotate(2deg); }
+  }
+  @keyframes diorama-gaze {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  @keyframes diorama-tap {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-1px) rotate(1deg); }
+  }
+  @keyframes diorama-crouch {
+    0%, 100% { transform: translateY(0) scaleY(1); }
+    50% { transform: translateY(6px) scaleY(0.85); }
+  }
+  @keyframes diorama-slump {
+    0%, 100% { transform: translateY(6px) scaleY(0.95); }
+    50% { transform: translateY(8px) scaleY(0.92); }
+  }
+  @keyframes diorama-dance {
+    0% { transform: translateX(-6px) rotate(-6deg); }
+    50% { transform: translateX(6px) rotate(6deg); }
+    100% { transform: translateX(-6px) rotate(-6deg); }
+  }
+  @keyframes diorama-cart {
+    0% { transform: translateX(-22px) translateY(0); }
+    25% { transform: translateX(-22px) translateY(-2px); }
+    50% { transform: translateX(22px) translateY(0); }
+    75% { transform: translateX(22px) translateY(-2px); }
+    100% { transform: translateX(-22px) translateY(0); }
+  }
+  @keyframes diorama-spin-mirror {
+    0%, 100% { transform: rotate(-8deg) translateY(0); }
+    50% { transform: rotate(8deg) translateY(-3px); }
+  }
+  @keyframes diorama-eat {
+    0%, 100% { transform: translateY(0) scaleY(1); }
+    50% { transform: translateY(-2px) scaleY(0.94); }
+  }
+  @keyframes diorama-lift {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px) scaleY(0.96); }
+  }
+  @keyframes diorama-press {
+    0%, 100% { transform: translateY(0) rotate(0); }
+    50% { transform: translateY(-1px) rotate(2deg); }
+  }
+  @keyframes diorama-sparkle {
+    0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
+    50% { transform: translateY(-2px) scale(1.02); filter: brightness(1.08); }
+  }
+  @keyframes indicator-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68,0.5); }
+    50% { transform: scale(1.08); box-shadow: 0 0 24px 6px rgba(239,68,68,0.15); }
+  }
+  @keyframes ping-radar {
+    0% { transform: scale(0.4); opacity: 0.9; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+  --animate-ping-radar: ping-radar 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+:root {
+  --radius: 1.25rem;
+
+  /* Warm off-white background, deep ink fg */
+  --background: oklch(0.985 0.012 95);
+  --foreground: oklch(0.20 0.02 80);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.20 0.02 80);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.20 0.02 80);
+
+  /* Warm Malaysian yellow (Maybank/Grab/TnG) */
+  --primary: oklch(0.88 0.17 92);
+  --primary-foreground: oklch(0.20 0.02 80);
+
+  --secondary: oklch(0.96 0.02 90);
+  --secondary-foreground: oklch(0.25 0.02 80);
+
+  --muted: oklch(0.95 0.015 90);
+  --muted-foreground: oklch(0.48 0.02 80);
+
+  --accent: oklch(0.92 0.06 50);
+  --accent-foreground: oklch(0.22 0.02 80);
+
+  --destructive: oklch(0.65 0.22 28);
+  --destructive-foreground: oklch(0.98 0 0);
+
+  --border: oklch(0.91 0.015 90);
+  --input: oklch(0.91 0.015 90);
+  --ring: oklch(0.78 0.14 90);
+
+  /* Avatar states */
+  --calm: oklch(0.82 0.10 200);
+  --active: oklch(0.85 0.15 130);
+  --spiky: oklch(0.72 0.20 32);
+  --balanced: oklch(0.85 0.12 90);
+
+  /* Impact (qualitative — never numeric) */
+  --impact-low: oklch(0.85 0.10 180);
+  --impact-med: oklch(0.85 0.14 90);
+  --impact-high: oklch(0.70 0.20 32);
+}
+
+.dark {
+  --background: oklch(0.20 0.02 80);
+  --foreground: oklch(0.98 0.01 90);
+  --card: oklch(0.25 0.02 80);
+  --card-foreground: oklch(0.98 0.01 90);
+  --popover: oklch(0.25 0.02 80);
+  --popover-foreground: oklch(0.98 0.01 90);
+  --primary: oklch(0.88 0.17 92);
+  --primary-foreground: oklch(0.20 0.02 80);
+  --secondary: oklch(0.30 0.02 80);
+  --secondary-foreground: oklch(0.98 0.01 90);
+  --muted: oklch(0.30 0.02 80);
+  --muted-foreground: oklch(0.72 0.02 80);
+  --accent: oklch(0.30 0.02 80);
+  --accent-foreground: oklch(0.98 0.01 90);
+  --destructive: oklch(0.65 0.22 28);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.78 0.14 90);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body { background-color: var(--color-background); color: var(--color-foreground); }
+  body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+}
