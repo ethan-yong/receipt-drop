@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../data/local/app_database.dart';
 import '../../data/repositories/transaction_repository_native.dart';
 
@@ -26,6 +28,9 @@ abstract final class AppServices {
     _database = AppDatabase();
     _transactions = TransactionRepository(_database!);
     await _transactions!.seedDemoDataIfEmpty();
+    if (kDebugMode) {
+      await _transactions!.seedReceiptShowcaseIfEmpty();
+    }
   }
 
   static Future<void> initForTest() async {
@@ -33,6 +38,9 @@ abstract final class AppServices {
     _database = AppDatabase.memory();
     _transactions = TransactionRepository(_database!);
     await _transactions!.seedDemoDataIfEmpty();
+    if (kDebugMode) {
+      await _transactions!.seedReceiptShowcaseIfEmpty();
+    }
   }
 
   static Future<void> dispose() async {

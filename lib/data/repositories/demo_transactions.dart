@@ -115,3 +115,96 @@ List<TransactionView> demoTransactions({String userId = 'demo-user'}) {
       ),
   ];
 }
+
+/// Categories covered by [receiptShowcaseTransactions].
+const kReceiptShowcaseCategories = [
+  'Cafe',
+  'Restaurant',
+  'Grocery',
+  'Clothing',
+  'Tech',
+];
+
+bool hasFullReceiptShowcase(List<TransactionView> todayRows) {
+  final categories = todayRows.map((t) => t.effectiveCategory).toSet();
+  return kReceiptShowcaseCategories.every(categories.contains);
+}
+
+/// Fixed-ID today rows for the home receipt carousel (one per card palette).
+List<TransactionView> receiptShowcaseTransactions({String userId = 'demo-user'}) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+
+  DateTime at(int hour, int minute) =>
+      today.add(Duration(hours: hour, minutes: minute));
+
+  const showcases = <({
+    String id,
+    String merchant,
+    String category,
+    double amount,
+    int hour,
+    int minute,
+  })>[
+    (
+      id: 'showcase-receipt-cafe',
+      merchant: 'Brew & Co.',
+      category: 'Cafe',
+      amount: 27.30,
+      hour: 10,
+      minute: 42,
+    ),
+    (
+      id: 'showcase-receipt-restaurant',
+      merchant: 'The Copper Pot',
+      category: 'Restaurant',
+      amount: 59.50,
+      hour: 19,
+      minute: 28,
+    ),
+    (
+      id: 'showcase-receipt-grocery',
+      merchant: 'FreshMart',
+      category: 'Grocery',
+      amount: 34.50,
+      hour: 17,
+      minute: 14,
+    ),
+    (
+      id: 'showcase-receipt-clothing',
+      merchant: 'Thread & Co.',
+      category: 'Clothing',
+      amount: 197.00,
+      hour: 14,
+      minute: 5,
+    ),
+    (
+      id: 'showcase-receipt-tech',
+      merchant: 'PixelTech',
+      category: 'Tech',
+      amount: 223.00,
+      hour: 11,
+      minute: 20,
+    ),
+  ];
+
+  return [
+    for (final s in showcases)
+      TransactionView(
+        id: s.id,
+        occurredAt: at(s.hour, s.minute),
+        amountMyr: s.amount,
+        needsAmount: false,
+        merchantRaw: s.merchant,
+        categoryGuess: s.category,
+        categoryUser: null,
+        placeName: s.merchant,
+        placeGooglePlaceId: null,
+        placeLat: 3.1390,
+        placeLng: 101.6869,
+        syncStatus: 'synced',
+        pipelineStatus: 'provisional',
+        localThumbnailPath: null,
+      ),
+  ];
+}
