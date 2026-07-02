@@ -7,7 +7,7 @@
 # Easiest reliable flow: CLOSE the IDE OR run from a standalone PowerShell, then:
 #   .\scripts\flutter_build_web_windows.ps1 -StopDartProcesses --no-wasm-dry-run
 #
-# Prefer keeping the repo outside OneDrive sync (e.g. C:\dev\puggy-bank) — OneDrive worsens locking.
+# Prefer keeping the repo outside OneDrive sync (e.g. C:\dev\receipt-drop) — OneDrive worsens locking.
 
 param(
     [switch]$StopDartProcesses,

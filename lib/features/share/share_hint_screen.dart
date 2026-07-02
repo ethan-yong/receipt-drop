@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/platform/platform_utils.dart';
 import '../../core/theme/app_theme.dart';
 import '../../widgets/pug_mascot.dart';
-import '../../widgets/puggy_primary_button.dart';
+import '../../widgets/receipt_drop_primary_button.dart';
 import 'receipt_capture_flow.dart';
 
 class ShareHintScreen extends StatelessWidget {
@@ -52,14 +52,14 @@ class ShareHintScreen extends StatelessWidget {
             ),
             _ShareStep(
               number: 3,
-              title: 'Choose PuggyBank',
+              title: 'Choose Receipt Drop',
               subtitle: isIos
-                  ? 'Scroll the share sheet and tap PuggyBank. We read the amount and save it to your feed.'
-                  : 'Pick PuggyBank from the share targets. We extract the amount when possible.',
+                  ? 'Scroll the share sheet and tap Receipt Drop. We read the amount and save it to your feed.'
+                  : 'Pick Receipt Drop from the share targets. We extract the amount when possible.',
               highlight: true,
             ),
             const Spacer(),
-            PuggyPrimaryButton(
+            ReceiptDropPrimaryButton(
               label: 'Upload instead',
               onPressed: () => ReceiptCaptureFlow.start(context),
             ),

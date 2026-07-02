@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/core/utils/place_key.dart';
+import 'package:receipt_drop/core/utils/place_key.dart';
 
 void main() {
   test('uses place_id when present', () {

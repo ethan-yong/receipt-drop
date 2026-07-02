@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -210,26 +213,116 @@ class SocialRepository {
     }
   }
 
-  static Future<List<LeaderboardEntry>> getFriendLeaderboard() async {
+  static Future<List<LeaderboardEntry>> getFriendLeaderboard({
+    bool fresh = false,
+  }) async {
     if (_userId == null) return const [];
+    if (Env.hasLeaderboardApiConfig) {
+      final fromApi = await _getFriendLeaderboardFromApi(fresh: fresh);
+      if (fromApi != null) return fromApi;
+    }
+    return _getFriendLeaderboardFromRpc();
+  }
+
+  static Future<List<LeaderboardEntry>> getGlobalLeaderboard() async {
+    if (_userId == null || !Env.hasLeaderboardApiConfig) return const [];
     try {
-      final rows =
-          await Supabase.instance.client.rpc('get_friend_leaderboard') as List;
-      return rows.map((r) {
-        final row = r as Map<String, dynamic>;
-        return LeaderboardEntry(
-          userId: row['user_id'] as String,
-          displayName: row['display_name'] as String?,
-          avatarConfigJson: row['avatar_config'] as Map<String, dynamic>?,
-          currentMood: row['current_mood'] as String?,
-          badgeCount: (row['badge_count'] as num).toInt(),
-          currentStreak: (row['current_streak'] as num).toInt(),
-          isMe: row['is_me'] as bool,
-        );
-      }).toList();
+      final session = Supabase.instance.client.auth.currentSession;
+      final token = session?.accessToken;
+      if (token == null) return const [];
+
+      final base = Env.leaderboardApiUrl.replaceAll(RegExp(r'/+$'), '');
+      final uri = Uri.parse('$base/leaderboard/global');
+      final response = await http.get(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return const [];
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final entries = body['entries'] as List<dynamic>?;
+      if (entries == null) return const [];
+
+      return entries
+          .map((e) => _leaderboardEntryFromRow(e as Map<String, dynamic>))
+          .toList();
     } on Object {
       return const [];
     }
+  }
+
+  /// Best-effort upsert of the caller's score into the global Redis ZSET.
+  static Future<void> syncLeaderboardScore() async {
+    if (_userId == null || !Env.hasLeaderboardApiConfig) return;
+    try {
+      final session = Supabase.instance.client.auth.currentSession;
+      final token = session?.accessToken;
+      if (token == null) return;
+
+      final base = Env.leaderboardApiUrl.replaceAll(RegExp(r'/+$'), '');
+      final uri = Uri.parse('$base/leaderboard/score');
+      await http.post(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } on Object {
+      // Best-effort.
+    }
+  }
+
+  static Future<List<LeaderboardEntry>?> _getFriendLeaderboardFromApi({
+    required bool fresh,
+  }) async {
+    try {
+      final session = Supabase.instance.client.auth.currentSession;
+      final token = session?.accessToken;
+      if (token == null) return null;
+
+      final base = Env.leaderboardApiUrl.replaceAll(RegExp(r'/+$'), '');
+      final uri = Uri.parse('$base/friends-leaderboard').replace(
+        queryParameters: {'fresh': fresh.toString()},
+      );
+      final response = await http.get(
+        uri,
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode != 200) return null;
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final entries = body['entries'] as List<dynamic>?;
+      if (entries == null) return null;
+
+      return entries.map((e) {
+        final row = e as Map<String, dynamic>;
+        return _leaderboardEntryFromRow(row);
+      }).toList();
+    } on Object {
+      return null;
+    }
+  }
+
+  static Future<List<LeaderboardEntry>> _getFriendLeaderboardFromRpc() async {
+    try {
+      final rows =
+          await Supabase.instance.client.rpc('get_friend_leaderboard') as List;
+      return rows
+          .map((r) => _leaderboardEntryFromRow(r as Map<String, dynamic>))
+          .toList();
+    } on Object {
+      return const [];
+    }
+  }
+
+  static LeaderboardEntry _leaderboardEntryFromRow(Map<String, dynamic> row) {
+    return LeaderboardEntry(
+      userId: row['user_id'] as String,
+      displayName: row['display_name'] as String?,
+      avatarConfigJson: row['avatar_config'] as Map<String, dynamic>?,
+      currentMood: row['current_mood'] as String?,
+      badgeCount: (row['badge_count'] as num).toInt(),
+      currentStreak: (row['current_streak'] as num).toInt(),
+      isMe: row['is_me'] as bool,
+    );
   }
 
   /// Best-effort: a feed post is social flavor, never required for the

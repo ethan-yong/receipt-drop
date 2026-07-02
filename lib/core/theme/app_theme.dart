@@ -10,8 +10,8 @@ export 'app_spacing.dart';
 export 'app_typography.dart';
 
 /// System-font theme for widget tests (no Google Fonts network fetch).
-ThemeData buildPuggyTestTheme() {
-  return buildPuggyTheme(
+ThemeData buildReceiptDropTestTheme() {
+  return buildReceiptDropTheme(
     textTheme: Typography.material2021().black.apply(
       bodyColor: AppColors.textPrimary,
       displayColor: AppColors.textPrimary,
@@ -19,8 +19,8 @@ ThemeData buildPuggyTestTheme() {
   );
 }
 
-ThemeData buildPuggyTheme({TextTheme? textTheme}) {
-  final resolvedTextTheme = textTheme ?? buildPuggyTextTheme();
+ThemeData buildReceiptDropTheme({TextTheme? textTheme}) {
+  final resolvedTextTheme = textTheme ?? buildReceiptDropTextTheme();
   final colorScheme = ColorScheme.fromSeed(
     seedColor: AppColors.primaryGreen,
     primary: AppColors.primaryGreen,

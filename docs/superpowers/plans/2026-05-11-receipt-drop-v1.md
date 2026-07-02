@@ -1,8 +1,8 @@
-# PuggyBank v1 Implementation Plan
+# Receipt Drop v1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship a Flutter + Supabase mobile app where Malaysians share QR receipts into PuggyBank, get instant MYR extraction and place/category guesses with offline-first sync, and browse spend on a dashboard and map—matching `docs/superpowers/specs/2026-05-11-puggybank-design.md`.
+**Goal:** Ship a Flutter + Supabase mobile app where Malaysians share QR receipts into Receipt Drop, get instant MYR extraction and place/category guesses with offline-first sync, and browse spend on a dashboard and map—matching `docs/superpowers/specs/2026-05-11-receipt-drop-design.md`.
 
 **Architecture:** Device-first capture: ML Kit OCR + heuristics run locally; every share writes to a Drift SQLite outbox immediately; a background sync worker uploads artifacts to Supabase Storage and upserts `transactions` with the same client UUID. A Supabase Edge Function proxies Google Places (New) for venue search; enrichment updates `pipeline_status` without blocking the user. UI merges outbox + remote rows.
 
@@ -22,7 +22,7 @@
 
 - `assets/config/categories-v1.json` — bundled category rules (versioned).
 - `assets/branding/` — pug mascot, app icon source (PNG/SVG per designer handoff).
-- `assets/c__Users_USER_AppData_Roaming_Cursor_User_workspaceStorage_empty-window_images_image-3fd6e86f-ec37-4d57-a2ef-ff421f7ce0a5.png` — copy the approved mock from workspace `assets/` for designer reference in-repo (optional rename to `docs/design/puggybank-mock.png` if you prefer not under `assets/`).
+- `assets/c__Users_USER_AppData_Roaming_Cursor_User_workspaceStorage_empty-window_images_image-3fd6e86f-ec37-4d57-a2ef-ff421f7ce0a5.png` — copy the approved mock from workspace `assets/` for designer reference in-repo (optional rename to `docs/design/receipt-drop-mock.png` if you prefer not under `assets/`).
 
 **`lib/`**
 
@@ -97,10 +97,10 @@ I'll lock Task 14 to **receive_sharing_intent + immediate in-app sheet** for bot
 
 - [ ] **Step 1: Create Flutter skeleton**
 
-Run from `c:\Users\USER\OneDrive\Desktop\puggy-bank`:
+Run from `c:\Users\USER\OneDrive\Desktop\receipt-drop`:
 
 ```powershell
-flutter create . --org com.puggybank --project-name puggy_bank
+flutter create . --org com.receiptdrop --project-name receipt_drop
 ```
 
 Expected: `lib/main.dart` created, `pubspec.yaml` exists. If `flutter create` refuses non-empty dir, create `mobile/` subdir instead and adjust all paths in this plan from `./` to `mobile/`.
@@ -120,7 +120,7 @@ Expected: analyze clean (or only infos), default widget test passes.
 
 ```powershell
 git add pubspec.yaml analysis_options.yaml lib test android ios
-git commit -m "chore: bootstrap Flutter app for PuggyBank"
+git commit -m "chore: bootstrap Flutter app for Receipt Drop"
 ```
 
 ---
@@ -197,7 +197,7 @@ class AppColors {
   static const accentOrange = Color(0xFFE67E22);
 }
 
-ThemeData buildPuggyTheme() {
+ThemeData buildReceiptDropTheme() {
   final base = ThemeData(
     useMaterial3: true,
     colorScheme: ColorScheme.fromSeed(
@@ -226,7 +226,7 @@ ThemeData buildPuggyTheme() {
 
 - [ ] **Step 2: Write `lib/core/routing/app_router.dart`** — `GoRouter` with `StatefulShellRoute` for 4 tabs + placeholder routes for onboarding/auth/friends/teaser/tx detail.
 
-Use `StatefulNavigationShell` pattern so each tab keeps state. Center FAB navigates to a placeholder `ShareHintRoute` showing "Use OS Share → PuggyBank on any receipt screenshot."
+Use `StatefulNavigationShell` pattern so each tab keeps state. Center FAB navigates to a placeholder `ShareHintRoute` showing "Use OS Share → Receipt Drop on any receipt screenshot."
 
 - [ ] **Step 3: Wire `lib/main.dart`**
 
@@ -236,11 +236,11 @@ import 'app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const PuggyBankApp());
+  runApp(const ReceiptDropApp());
 }
 ```
 
-`lib/app.dart` returns `MaterialApp.router(theme: buildPuggyTheme(), routerConfig: goRouter)`.
+`lib/app.dart` returns `MaterialApp.router(theme: buildReceiptDropTheme(), routerConfig: goRouter)`.
 
 - [ ] **Step 4: Run analyzer**
 
@@ -272,7 +272,7 @@ Create `test/rm_amount_parser_test.dart`:
 
 ```dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/domain/logic/rm_amount_parser.dart';
+import 'package:receipt_drop/domain/logic/rm_amount_parser.dart';
 
 void main() {
   test('picks total paid over change line', () {
@@ -406,7 +406,7 @@ git commit -m "feat: add RM OCR amount parser with heuristics"
 ```dart
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/domain/logic/category_matcher.dart';
+import 'package:receipt_drop/domain/logic/category_matcher.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -453,7 +453,7 @@ git commit -m "feat: add bundled category config and matcher"
 
 ```dart
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/core/utils/place_key.dart';
+import 'package:receipt_drop/core/utils/place_key.dart';
 
 void main() {
   test('uses place_id when present', () {
@@ -1083,7 +1083,7 @@ git commit -m "feat: refresh category rules from Supabase Storage"
 
 ---
 
-Plan complete and saved to `docs/superpowers/plans/2026-05-11-puggybank-v1.md`. Two execution options:
+Plan complete and saved to `docs/superpowers/plans/2026-05-11-receipt-drop-v1.md`. Two execution options:
 
 **1. Subagent-Driven (recommended)** — dispatch a fresh subagent per task, review between tasks, fast iteration.
 

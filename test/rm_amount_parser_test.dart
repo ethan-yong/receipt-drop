@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/domain/logic/rm_amount_parser.dart';
+import 'package:receipt_drop/domain/logic/rm_amount_parser.dart';
 
 void main() {
   test('picks total paid over change line', () {

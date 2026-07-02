@@ -1,4 +1,4 @@
--- PuggyBank v1: profiles, transactions, receipt_artifacts + RLS (design spec §6)
+-- Receipt Drop v1: profiles, transactions, receipt_artifacts + RLS (design spec §6)
 
 -- profiles
 create table if not exists public.profiles (

@@ -8,7 +8,7 @@ import '../../data/repositories/places_repository.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/place_block.dart';
-import '../../widgets/puggy_primary_button.dart';
+import '../../widgets/receipt_drop_primary_button.dart';
 import '../../widgets/receipt_strip.dart';
 import '../../widgets/receipt_thumbnail.dart';
 
@@ -255,7 +255,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
-            PuggyPrimaryButton(label: 'Save changes', onPressed: _save),
+            ReceiptDropPrimaryButton(label: 'Save changes', onPressed: _save),
             const SizedBox(height: AppSpacing.md),
             TextButton(
               onPressed: _delete,

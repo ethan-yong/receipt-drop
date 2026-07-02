@@ -1,4 +1,4 @@
-package com.puggybank.puggy_bank
+package com.receiptdrop.receipt_drop
 
 import io.flutter.embedding.android.FlutterActivity
 

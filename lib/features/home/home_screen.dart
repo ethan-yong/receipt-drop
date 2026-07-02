@@ -3,8 +3,10 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
+import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/avatar_repository.dart';
+import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
 import '../../domain/logic/badge_catalog.dart';
 import '../../domain/logic/badge_progress.dart';
@@ -80,6 +82,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 AvatarRepository.syncBadgeCount(
                   badgeEntries.where((e) => e.earned).length,
                 );
+              }
+              if (Env.hasLeaderboardApiConfig) {
+                SocialRepository.syncLeaderboardScore();
               }
             });
             final isIdle = theme.id == DioramaThemeId.idle;
