@@ -101,4 +101,42 @@ TOTAL                     RM 18.00
     final withOcr = result.toJson(includeOcrText: true);
     expect(withOcr['ocrText'], contains('SECRET OCR TEXT'));
   });
+
+  test('parseReceiptOcrText includes lineItems for an itemized fixture', () {
+    const ocrText = '''
+ROCK CAFE SDN BHD
+Latte                      RM 12.50
+Croissant                  RM 7.90
+TOTAL                      RM 20.40
+''';
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/rock_cafe_items.png',
+      ocrText: ocrText,
+      categories: categories,
+    );
+
+    expect(result.lineItems.length, greaterThanOrEqualTo(2));
+    final json = result.toJson();
+    expect(json['lineItems'], isA<List>());
+    expect((json['lineItems'] as List).length, greaterThanOrEqualTo(2));
+    expect(json['itemsMatchTotal'], isTrue);
+  });
+
+  test('parseReceiptOcrText yields empty lineItems when no item rows found',
+      () {
+    const ocrText = '''
+UNKNOWN SHOP
+Receipt #12345
+No price on this scan
+''';
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/blank2.png',
+      ocrText: ocrText,
+      categories: categories,
+    );
+
+    expect(result.lineItems, isEmpty);
+    final json = result.toJson();
+    expect(json['lineItems'], isEmpty);
+  });
 }

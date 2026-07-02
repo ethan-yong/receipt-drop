@@ -4,16 +4,16 @@ import 'category_matcher.dart';
 /// merchant name never appears buried deep in the itemized body.
 const merchantScanLines = 8;
 
-final _boilerplateHints = RegExp(
+final boilerplateHints = RegExp(
   r'(tax invoice|simplified tax invoice|cash bill|official receipt|'
   r'gst reg|gst no|sst reg|sst no|company reg|tel:|phone:|www\.|receipt no)',
   caseSensitive: false,
 );
 
-final _numericOrPunctuationOnly = RegExp(r'^[\d\s\-+()/:.,]+$');
+final numericOrPunctuationOnly = RegExp(r'^[\d\s\-+()/:.,]+$');
 
-bool _looksLikeBoilerplate(String line) =>
-    _boilerplateHints.hasMatch(line) || _numericOrPunctuationOnly.hasMatch(line);
+bool looksLikeBoilerplate(String line) =>
+    boilerplateHints.hasMatch(line) || numericOrPunctuationOnly.hasMatch(line);
 
 /// Picks the most likely merchant name from raw OCR text.
 ///
@@ -41,7 +41,7 @@ String? extractMerchant(String ocrText, CategoryConfig categories) {
   }
 
   for (final line in lines) {
-    if (!_looksLikeBoilerplate(line)) return line;
+    if (!looksLikeBoilerplate(line)) return line;
   }
   return lines.first;
 }

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../logic/impact_level.dart';
+import 'receipt_line_item.dart';
 
 /// Unified transaction row for UI (outbox-first; cloud merge later).
 class TransactionView {
@@ -22,6 +23,7 @@ class TransactionView {
     this.thumbnailBytes,
     this.impactUser,
     this.ritualledAt,
+    this.lineItems,
   });
 
   final String id;
@@ -41,6 +43,7 @@ class TransactionView {
   final Uint8List? thumbnailBytes;
   final String? impactUser;
   final DateTime? ritualledAt;
+  final List<ReceiptLineItem>? lineItems;
 
   String get effectiveCategory {
     final user = categoryUser?.trim();
@@ -101,6 +104,7 @@ class TransactionView {
     required String pipelineStatus,
     String? impactUser,
     DateTime? ritualledAt,
+    List<ReceiptLineItem>? lineItems,
   }) {
     return TransactionView(
       id: id,
@@ -119,6 +123,7 @@ class TransactionView {
       localThumbnailPath: null,
       impactUser: impactUser,
       ritualledAt: ritualledAt,
+      lineItems: lineItems,
     );
   }
 
@@ -133,6 +138,7 @@ class TransactionView {
     DateTime? occurredAt,
     String? impactUser,
     DateTime? ritualledAt,
+    List<ReceiptLineItem>? lineItems,
   }) {
     return TransactionView(
       id: id,
@@ -153,6 +159,7 @@ class TransactionView {
       thumbnailBytes: thumbnailBytes,
       impactUser: impactUser ?? this.impactUser,
       ritualledAt: ritualledAt ?? this.ritualledAt,
+      lineItems: lineItems ?? this.lineItems,
     );
   }
 }

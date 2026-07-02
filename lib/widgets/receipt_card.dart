@@ -367,55 +367,24 @@ class ReceiptCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
               child: Column(
                 children: [
-                  // Single item row
-                  Row(
-                    children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: palette.tile,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          palette.emoji,
-                          style: const TextStyle(fontSize: 17),
-                        ),
+                  // Item row(s): one row per line item when available,
+                  // otherwise the merchant/place summary row.
+                  if (tx.lineItems != null && tx.lineItems!.isNotEmpty)
+                    for (var i = 0; i < tx.lineItems!.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 14),
+                      _buildItemRow(
+                        palette: palette,
+                        name: tx.lineItems![i].name,
+                        priceText:
+                            'RM ${tx.lineItems![i].priceMyr.toStringAsFixed(2)}',
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: tx.needsAmount
-                            ? Text(
-                                'Needs amount',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  fontStyle: FontStyle.italic,
-                                  color: palette.ink.withValues(alpha: 0.6),
-                                ),
-                              )
-                            : Text(
-                                tx.displayPlace,
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: palette.ink,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                      ),
-                      Text(
-                        tx.needsAmount ? '' : amountText,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: palette.ink,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ]
+                  else
+                    _buildItemRow(
+                      palette: palette,
+                      name: tx.needsAmount ? null : tx.displayPlace,
+                      priceText: tx.needsAmount ? '' : amountText,
+                    ),
 
                   // Dashed divider
                   Padding(
@@ -466,6 +435,58 @@ class ReceiptCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _buildItemRow({
+  required ReceiptCardPalette palette,
+  required String? name,
+  required String priceText,
+}) {
+  return Row(
+    children: [
+      Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: palette.tile,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Text(palette.emoji, style: const TextStyle(fontSize: 17)),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: name == null
+            ? Text(
+                'Needs amount',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontStyle: FontStyle.italic,
+                  color: palette.ink.withValues(alpha: 0.6),
+                ),
+              )
+            : Text(
+                name,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: palette.ink,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+      ),
+      Text(
+        priceText,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: palette.ink,
+        ),
+      ),
+    ],
+  );
 }
 
 class _ReceiptIllustration extends StatelessWidget {

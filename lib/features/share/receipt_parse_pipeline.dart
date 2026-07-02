@@ -1,7 +1,9 @@
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/merchant_extractor.dart';
+import '../../domain/logic/receipt_line_item_extractor.dart';
 import '../../domain/logic/rm_amount_parser.dart';
+import '../../domain/models/receipt_line_item.dart';
 
 /// Parsed fields from a receipt image or OCR text (before user confirmation).
 class ReceiptParseResult {
@@ -15,6 +17,10 @@ class ReceiptParseResult {
     required this.categoryGuess,
     required this.impactLevel,
     this.ocrServiceConfidence,
+    this.lineItems = const [],
+    this.lineItemsConfidence = 0.0,
+    this.itemsSubtotalMyr,
+    this.itemsMatchTotal = false,
   });
 
   final String filePath;
@@ -26,6 +32,10 @@ class ReceiptParseResult {
   final String categoryGuess;
   final String impactLevel;
   final double? ocrServiceConfidence;
+  final List<ReceiptLineItem> lineItems;
+  final double lineItemsConfidence;
+  final double? itemsSubtotalMyr;
+  final bool itemsMatchTotal;
 
   bool get lowConfidence =>
       !needsAmount && ocrConfidence < lowOcrConfidenceThreshold;
@@ -41,6 +51,10 @@ class ReceiptParseResult {
       'categoryGuess': categoryGuess,
       'impactLevel': impactLevel,
       'lowConfidence': lowConfidence,
+      'lineItems': lineItems.map((it) => it.toJson()).toList(),
+      'lineItemsConfidence': lineItemsConfidence,
+      'itemsSubtotalMyr': itemsSubtotalMyr,
+      'itemsMatchTotal': itemsMatchTotal,
       if (ocrServiceConfidence != null)
         'ocrServiceConfidence': ocrServiceConfidence,
     };
@@ -65,6 +79,7 @@ ReceiptParseResult parseReceiptOcrText({
   final merchantRaw = extractMerchant(ocrText, categories);
   final categoryGuess =
       categories.guessForMerchant(merchantRaw ?? '').category;
+  final lineItemsResult = extractReceiptLineItems(ocrText, totalMyr: amount);
 
   return ReceiptParseResult(
     filePath: filePath,
@@ -76,6 +91,10 @@ ReceiptParseResult parseReceiptOcrText({
     categoryGuess: categoryGuess,
     impactLevel: deriveImpactLevel(amount).storageValue,
     ocrServiceConfidence: ocrServiceConfidence,
+    lineItems: lineItemsResult.items,
+    lineItemsConfidence: lineItemsResult.confidence,
+    itemsSubtotalMyr: lineItemsResult.itemsSubtotalMyr,
+    itemsMatchTotal: lineItemsResult.itemsMatchTotal,
   );
 }
 
