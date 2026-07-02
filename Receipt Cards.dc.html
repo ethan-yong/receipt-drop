@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;background:#FAF3E7;font-family:'Baloo 2',sans-serif;}
+  *{box-sizing:border-box;}
+  image-slot{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;display:block!important;}
+</style>
+<script src="./image-slot.js"></script>
+</helmet>
+
+<div ref="{{ setRoot }}" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:42px 24px 64px;">
+
+  <div style="font-size:28px;font-weight:800;color:#2c2c33;letter-spacing:-.4px;">Spending receipts</div>
+  <div style="font-size:15px;font-weight:600;color:#8a8170;margin-top:4px;">Pick a category — drop your own illustration into each card</div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:26px 0 30px;">
+    <div data-chip="0" data-accent="#E2885C" onClick="{{ select }}" style="cursor:pointer;user-select:none;padding:9px 18px;border-radius:999px;font-size:14px;font-weight:700;border:1.5px solid #E2885C;background:#E2885C;color:#fff;box-shadow:0 6px 16px #E2885C55;transition:all .15s;">Cafe</div>
+    <div data-chip="1" data-accent="#C75643" onClick="{{ select }}" style="cursor:pointer;user-select:none;padding:9px 18px;border-radius:999px;font-size:14px;font-weight:700;border:1.5px solid #e9ddca;background:#fff;color:#9a8f7c;transition:all .15s;">Restaurant</div>
+    <div data-chip="2" data-accent="#5E9E51" onClick="{{ select }}" style="cursor:pointer;user-select:none;padding:9px 18px;border-radius:999px;font-size:14px;font-weight:700;border:1.5px solid #e9ddca;background:#fff;color:#9a8f7c;transition:all .15s;">Grocery</div>
+    <div data-chip="3" data-accent="#D26E97" onClick="{{ select }}" style="cursor:pointer;user-select:none;padding:9px 18px;border-radius:999px;font-size:14px;font-weight:700;border:1.5px solid #e9ddca;background:#fff;color:#9a8f7c;transition:all .15s;">Clothing</div>
+    <div data-chip="4" data-accent="#4F86C6" onClick="{{ select }}" style="cursor:pointer;user-select:none;padding:9px 18px;border-radius:999px;font-size:14px;font-weight:700;border:1.5px solid #e9ddca;background:#fff;color:#9a8f7c;transition:all .15s;">Tech</div>
+  </div>
+
+  <!-- ===================== CAFE ===================== -->
+  <div data-card="0" style="display:block;--top:#F4E8D6;--mid:#C9A37C;--acc:#E2885C;--tile:#EFDFC7;--ink:#5A4632;--sub:#9C8A72;--line:rgba(90,70,50,.30);width:380px;border-radius:26px;overflow:hidden;background:var(--top);box-shadow:0 20px 44px rgba(60,40,20,.18);">
+    <div style="height:12px;background:var(--acc);"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 22px 14px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 3px 8px rgba(0,0,0,.10);">☕</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="font-size:21px;font-weight:800;color:var(--ink);letter-spacing:-.3px;">Brew &amp; Co.</div>
+          <div style="font-size:13px;font-weight:600;color:var(--sub);">Today, 10:42 AM</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;background:var(--tile);padding:8px 13px;border-radius:999px;">
+        <span style="font-size:13px;">🧾</span><span style="font-size:13px;font-weight:700;color:var(--ink);">#1024</span>
+      </div>
+    </div>
+    <div style="position:relative;height:216px;margin-top:-4px;">
+      <image-slot id="slot-cafe" shape="rect" radius="0" fit="cover" placeholder="Drop cafe illustration" style="position:absolute;inset:0;display:block;width:100%;height:100%;"></image-slot>
+    </div>
+    <div style="background:var(--mid);padding:20px 22px 22px;">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">☕</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Latte</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 12.50</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🥐</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Croissant</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 7.90</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🧁</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Blueberry Muffin</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 6.90</span>
+        </div>
+      </div>
+      <div style="border-top:2px dashed var(--line);margin-top:18px;"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;background:rgba(255,255,255,.24);border-radius:16px;padding:14px 18px;">
+        <span style="font-size:18px;font-weight:800;color:var(--ink);">Total</span>
+        <span style="font-size:25px;font-weight:800;color:var(--ink);">RM 27.30</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== RESTAURANT ===================== -->
+  <div data-card="1" style="display:none;--top:#F6E9E1;--mid:#C68C76;--acc:#C75643;--tile:#EAD7CC;--ink:#4F2D23;--sub:#A07F72;--line:rgba(79,45,35,.30);width:380px;border-radius:26px;overflow:hidden;background:var(--top);box-shadow:0 20px 44px rgba(60,40,20,.18);">
+    <div style="height:12px;background:var(--acc);"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 22px 14px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 3px 8px rgba(0,0,0,.10);">🍽️</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="font-size:21px;font-weight:800;color:var(--ink);letter-spacing:-.3px;">The Copper Pot</div>
+          <div style="font-size:13px;font-weight:600;color:var(--sub);">Today, 7:28 PM</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;background:var(--tile);padding:8px 13px;border-radius:999px;">
+        <span style="font-size:13px;">🧾</span><span style="font-size:13px;font-weight:700;color:var(--ink);">#2087</span>
+      </div>
+    </div>
+    <div style="position:relative;height:216px;margin-top:-4px;">
+      <image-slot id="slot-restaurant" shape="rect" radius="0" fit="cover" placeholder="Drop restaurant illustration" style="position:absolute;inset:0;display:block;width:100%;height:100%;"></image-slot>
+    </div>
+    <div style="background:var(--mid);padding:20px 22px 22px;">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🍝</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Truffle Pasta</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 32.00</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🥗</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Caesar Salad</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 18.50</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🧃</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Lemonade</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 9.00</span>
+        </div>
+      </div>
+      <div style="border-top:2px dashed var(--line);margin-top:18px;"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;background:rgba(255,255,255,.24);border-radius:16px;padding:14px 18px;">
+        <span style="font-size:18px;font-weight:800;color:var(--ink);">Total</span>
+        <span style="font-size:25px;font-weight:800;color:var(--ink);">RM 59.50</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== GROCERY ===================== -->
+  <div data-card="2" style="display:none;--top:#EAF1E2;--mid:#9FB98A;--acc:#5E9E51;--tile:#DCE8CD;--ink:#36482C;--sub:#7E9070;--line:rgba(54,72,44,.32);width:380px;border-radius:26px;overflow:hidden;background:var(--top);box-shadow:0 20px 44px rgba(40,55,30,.18);">
+    <div style="height:12px;background:var(--acc);"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 22px 14px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 3px 8px rgba(0,0,0,.10);">🛒</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="font-size:21px;font-weight:800;color:var(--ink);letter-spacing:-.3px;">FreshMart</div>
+          <div style="font-size:13px;font-weight:600;color:var(--sub);">Today, 5:14 PM</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;background:var(--tile);padding:8px 13px;border-radius:999px;">
+        <span style="font-size:13px;">🧾</span><span style="font-size:13px;font-weight:700;color:var(--ink);">#4412</span>
+      </div>
+    </div>
+    <div style="position:relative;height:216px;margin-top:-4px;">
+      <image-slot id="slot-grocery" shape="rect" radius="0" fit="cover" placeholder="Drop grocery illustration" style="position:absolute;inset:0;display:block;width:100%;height:100%;"></image-slot>
+    </div>
+    <div style="background:var(--mid);padding:20px 22px 22px;">
+      <div style="display:flex;flex-direction:column;gap:13px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🥚</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Free-Range Eggs</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 11.90</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🥛</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Oat Milk</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 9.90</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🍞</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Sourdough Loaf</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 8.50</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🥦</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Broccoli</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 4.20</span>
+        </div>
+      </div>
+      <div style="border-top:2px dashed var(--line);margin-top:18px;"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;background:rgba(255,255,255,.28);border-radius:16px;padding:14px 18px;">
+        <span style="font-size:18px;font-weight:800;color:var(--ink);">Total</span>
+        <span style="font-size:25px;font-weight:800;color:var(--ink);">RM 34.50</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== CLOTHING ===================== -->
+  <div data-card="3" style="display:none;--top:#F6E7EE;--mid:#CDA0B4;--acc:#D26E97;--tile:#EBD6E0;--ink:#4F2E3B;--sub:#A07F8D;--line:rgba(79,46,59,.30);width:380px;border-radius:26px;overflow:hidden;background:var(--top);box-shadow:0 20px 44px rgba(70,40,55,.18);">
+    <div style="height:12px;background:var(--acc);"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 22px 14px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 3px 8px rgba(0,0,0,.10);">🛍️</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="font-size:21px;font-weight:800;color:var(--ink);letter-spacing:-.3px;">Thread &amp; Co.</div>
+          <div style="font-size:13px;font-weight:600;color:var(--sub);">Today, 2:05 PM</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;background:var(--tile);padding:8px 13px;border-radius:999px;">
+        <span style="font-size:13px;">🧾</span><span style="font-size:13px;font-weight:700;color:var(--ink);">#3398</span>
+      </div>
+    </div>
+    <div style="position:relative;height:216px;margin-top:-4px;">
+      <image-slot id="slot-clothing" shape="rect" radius="0" fit="cover" placeholder="Drop clothing illustration" style="position:absolute;inset:0;display:block;width:100%;height:100%;"></image-slot>
+    </div>
+    <div style="background:var(--mid);padding:20px 22px 22px;">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">👕</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Cotton Tee</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 49.00</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">👖</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Slim Jeans</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 129.00</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🧦</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Socks (3pk)</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 19.00</span>
+        </div>
+      </div>
+      <div style="border-top:2px dashed var(--line);margin-top:18px;"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;background:rgba(255,255,255,.24);border-radius:16px;padding:14px 18px;">
+        <span style="font-size:18px;font-weight:800;color:var(--ink);">Total</span>
+        <span style="font-size:25px;font-weight:800;color:var(--ink);">RM 197.00</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== TECH ===================== -->
+  <div data-card="4" style="display:none;--top:#E8EEF6;--mid:#9FB2CE;--acc:#4F86C6;--tile:#D6E1F0;--ink:#2C3A4E;--sub:#7E8EA5;--line:rgba(44,58,78,.32);width:380px;border-radius:26px;overflow:hidden;background:var(--top);box-shadow:0 20px 44px rgba(30,45,70,.18);">
+    <div style="height:12px;background:var(--acc);"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 22px 14px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:46px;height:46px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 3px 8px rgba(0,0,0,.10);">💻</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <div style="font-size:21px;font-weight:800;color:var(--ink);letter-spacing:-.3px;">PixelTech</div>
+          <div style="font-size:13px;font-weight:600;color:var(--sub);">Today, 11:20 AM</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;background:var(--tile);padding:8px 13px;border-radius:999px;">
+        <span style="font-size:13px;">🧾</span><span style="font-size:13px;font-weight:700;color:var(--ink);">#5176</span>
+      </div>
+    </div>
+    <div style="position:relative;height:216px;margin-top:-4px;">
+      <image-slot id="slot-tech" shape="rect" radius="0" fit="cover" placeholder="Drop tech illustration" style="position:absolute;inset:0;display:block;width:100%;height:100%;"></image-slot>
+    </div>
+    <div style="background:var(--mid);padding:20px 22px 22px;">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🎧</div><span style="font-size:16px;font-weight:700;color:var(--ink);">USB-C Earbuds</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 89.00</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🔌</div><span style="font-size:16px;font-weight:700;color:var(--ink);">65W Charger</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 75.00</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:13px;"><div style="width:34px;height:34px;border-radius:10px;background:var(--tile);display:flex;align-items:center;justify-content:center;font-size:17px;">🖱️</div><span style="font-size:16px;font-weight:700;color:var(--ink);">Wireless Mouse</span></div>
+          <span style="font-size:16px;font-weight:700;color:var(--ink);">RM 59.00</span>
+        </div>
+      </div>
+      <div style="border-top:2px dashed var(--line);margin-top:18px;"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;background:rgba(255,255,255,.26);border-radius:16px;padding:14px 18px;">
+        <span style="font-size:18px;font-weight:800;color:var(--ink);">Total</span>
+        <span style="font-size:25px;font-weight:800;color:var(--ink);">RM 223.00</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      setRoot: (el) => { this.rootEl = el; if (el) { this._sizeSlots(); this._apply(); } },
+      select: (e) => { this._select(+e.currentTarget.dataset.chip); },
+    };
+  }
+
+  componentDidMount() { this._sizeSlots(); this._apply(); }
+
+  _sizeSlots() {
+    if (!this.rootEl) return;
+    this.rootEl.querySelectorAll('image-slot').forEach((s) => {
+      s.style.position = 'absolute';
+      s.style.inset = '0';
+      s.style.width = '100%';
+      s.style.height = '100%';
+      s.style.display = 'block';
+    });
+  }
+
+  _apply() {
+    if (!this.rootEl) return;
+    let i = 0;
+    try { i = parseInt(localStorage.getItem('rc.active') || '0', 10) || 0; } catch (e) {}
+    this._select(i);
+  }
+
+  _select(i) {
+    if (!this.rootEl) return;
+    const cards = this.rootEl.querySelectorAll('[data-card]');
+    const chips = this.rootEl.querySelectorAll('[data-chip]');
+    if (!(i >= 0 && i < cards.length)) i = 0;
+    cards.forEach((c, j) => { c.style.display = j === i ? 'block' : 'none'; });
+    chips.forEach((ch, j) => {
+      const on = j === i, acc = ch.dataset.accent;
+      ch.style.background = on ? acc : '#fff';
+      ch.style.color = on ? '#fff' : '#9a8f7c';
+      ch.style.borderColor = on ? acc : '#e9ddca';
+      ch.style.boxShadow = on ? ('0 6px 16px ' + acc + '55') : 'none';
+    });
+    try { localStorage.setItem('rc.active', String(i)); } catch (e) {}
+  }
+}
+</script>
+</body>
+</html>

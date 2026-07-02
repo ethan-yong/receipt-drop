@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../domain/logic/avatar_mood.dart';
 import '../../domain/models/transaction_view.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
@@ -130,6 +132,22 @@ class TransactionRepository {
   Future<void> seedDemoDataIfEmpty({String userId = 'demo-user'}) async {
     if (_rows.isNotEmpty) return;
     _rows.addAll(demoTransactions(userId: userId));
+    _emit();
+  }
+
+  Future<void> seedReceiptShowcaseIfEmpty({String userId = 'demo-user'}) async {
+    if (!kDebugMode) return;
+    final today = todaysTransactions(_rows, DateTime.now());
+    if (hasFullReceiptShowcase(today)) return;
+
+    for (final view in receiptShowcaseTransactions(userId: userId)) {
+      final i = _rows.indexWhere((r) => r.id == view.id);
+      if (i >= 0) {
+        _rows[i] = view;
+      } else {
+        _rows.add(view);
+      }
+    }
     _emit();
   }
 

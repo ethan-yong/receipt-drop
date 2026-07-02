@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../domain/logic/avatar_mood.dart';
 import '../../domain/models/transaction_view.dart';
 import '../local/app_database.dart';
 import 'demo_transactions.dart';
@@ -199,6 +201,35 @@ class TransactionRepository {
               syncStatus: Value(view.syncStatus),
               pipelineStatus: Value(view.pipelineStatus),
             ),
+          );
+    }
+  }
+
+  Future<void> seedReceiptShowcaseIfEmpty({String userId = 'demo-user'}) async {
+    if (!kDebugMode) return;
+
+    final rows = await _db.select(_db.outboxTransactions).get();
+    final views = await _rowsToViews(rows);
+    final today = todaysTransactions(views, DateTime.now());
+    if (hasFullReceiptShowcase(today)) return;
+
+    for (final view in receiptShowcaseTransactions(userId: userId)) {
+      await _db.into(_db.outboxTransactions).insert(
+            OutboxTransactionsCompanion.insert(
+              id: view.id,
+              userId: userId,
+              occurredAt: Value(view.occurredAt),
+              amountMyr: Value(view.amountMyr),
+              needsAmount: Value(view.needsAmount),
+              merchantRaw: Value(view.merchantRaw),
+              categoryGuess: Value(view.categoryGuess),
+              placeName: Value(view.placeName),
+              placeLat: Value(view.placeLat),
+              placeLng: Value(view.placeLng),
+              syncStatus: Value(view.syncStatus),
+              pipelineStatus: Value(view.pipelineStatus),
+            ),
+            mode: InsertMode.insertOrReplace,
           );
     }
   }

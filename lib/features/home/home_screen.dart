@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -10,14 +11,11 @@ import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
 import '../../domain/logic/badge_catalog.dart';
 import '../../domain/logic/badge_progress.dart';
-import '../../domain/logic/diorama_theme.dart';
-import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../features/share/receipt_capture_flow.dart';
 import '../../widgets/adaptive_sync_banner.dart';
-import '../../widgets/pixel_avatar.dart';
+import '../../widgets/receipt_card_carousel.dart';
 import '../../widgets/share_coach_mark.dart';
-import '../../widgets/themed_scene_background.dart';
 import '../../widgets/top_badges_grid.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -30,15 +28,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   var _showCoachMark =
       AppPrefs.shareCoachMarkPending && !AppPrefs.shareCoachMarkSeen;
-  AvatarConfig? _avatarConfig;
   BadgeCatalog? _badgeCatalog;
 
   @override
   void initState() {
     super.initState();
-    AvatarRepository.getAvatarConfig().then((config) {
-      if (mounted) setState(() => _avatarConfig = config);
-    });
+    if (kDebugMode) {
+      AppServices.transactions.seedReceiptShowcaseIfEmpty();
+    }
     BadgeCatalog.loadBundled().then((catalog) {
       if (mounted) setState(() => _badgeCatalog = catalog);
     });
@@ -48,16 +45,8 @@ class _HomeScreenState extends State<HomeScreen> {
     await AppServices.transactions.retryStuckSync();
   }
 
-  TransactionView? _mostRecent(List<TransactionView> rows) {
-    if (rows.isEmpty) return null;
-    return rows.reduce(
-      (a, b) => a.occurredAt.isAfter(b.occurredAt) ? a : b,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final avatarConfig = _avatarConfig;
     return Scaffold(
       backgroundColor: AppColors.scaffold,
       body: SafeArea(
@@ -68,7 +57,6 @@ class _HomeScreenState extends State<HomeScreen> {
             final stuck = rows.where((t) => t.isStuckSync).length;
             final today = todaysTransactions(rows, DateTime.now());
             final mood = deriveAvatarMood(today);
-            final theme = getThemeForCategory(_mostRecent(rows)?.effectiveCategory);
             final badgeCatalog = _badgeCatalog;
             final badgeEntries = badgeCatalog == null
                 ? null
@@ -87,7 +75,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 SocialRepository.syncLeaderboardScore();
               }
             });
-            final isIdle = theme.id == DioramaThemeId.idle;
 
             return Column(
               children: [
@@ -98,6 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 AdaptiveSyncBanner(stuckCount: stuck, onRetry: _retrySync),
                 Expanded(
                   child: SingleChildScrollView(
+                    clipBehavior: Clip.none,
                     padding: const EdgeInsets.fromLTRB(
                       AppSpacing.md,
                       AppSpacing.xs,
@@ -121,63 +109,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.sm),
-                        Center(
-                          child: SizedBox(
-                            width: 280,
-                            height: 280,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                ThemedSceneBackground(
-                                  theme: theme,
-                                  borderRadius: AppSpacing.heroBorderRadius,
-                                ),
-                                if (avatarConfig != null)
-                                  PixelAvatar(
-                                    mood: mood,
-                                    config: avatarConfig,
-                                    size: 180,
-                                  ),
-                              ],
-                            ),
-                          ),
+                        const SizedBox(height: AppSpacing.lg),
+                        Text(
+                          "TODAY'S RECEIPTS",
+                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                letterSpacing: 1.2,
+                              ),
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        Center(
-                          child: Column(
-                            children: [
-                              Text(
-                                isIdle ? 'No scene yet' : theme.label,
-                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                      letterSpacing: 1.2,
-                                    ),
-                              ),
-                              const SizedBox(height: 4),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                                child: Text(
-                                  theme.caption,
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              ),
-                              const SizedBox(height: AppSpacing.sm),
-                              OutlinedButton.icon(
-                                onPressed: () => context.pushNamed('avatar'),
-                                icon: const Icon(Icons.auto_fix_high, size: 16),
-                                label: const Text('Customize avatar'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: AppSpacing.md,
-                                    vertical: AppSpacing.sm,
-                                  ),
-                                  shape: const StadiumBorder(),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                        ReceiptCardCarousel(transactions: today),
                         const SizedBox(height: AppSpacing.lg),
                         SizedBox(
                           width: double.infinity,

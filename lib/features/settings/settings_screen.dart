@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -29,6 +30,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _clearCache() async {
     await AppServices.transactions.clearAll();
     await AppServices.transactions.seedDemoDataIfEmpty();
+    if (kDebugMode) {
+      await AppServices.transactions.seedReceiptShowcaseIfEmpty();
+    }
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Local cache cleared (cloud data kept)')),
