@@ -76,6 +76,7 @@ class TransactionRepository {
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
       ritualledAt: null,
+      lineItems: request.lineItems,
     );
     _rows.add(view);
     _emit();
@@ -111,6 +112,7 @@ class TransactionRepository {
           localThumbnailPath: _rows[i].localThumbnailPath,
           thumbnailBytes: _rows[i].thumbnailBytes,
           impactUser: _rows[i].impactUser,
+          lineItems: _rows[i].lineItems,
         );
       }
     }

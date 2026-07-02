@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/platform/platform_feedback.dart';
-import '../../data/repositories/ingest_receipt_request.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/models/transaction_view.dart';
 import 'receipt_capture_menu.dart';
@@ -130,18 +129,8 @@ class ReceiptCaptureFlow {
       draft: draft,
       onSave: (amount, draft, impact) async {
         savedTx = await AppServices.transactions.ingestReceipt(
-          IngestReceiptRequest(
-            localFilePath: draft.localFilePath,
-            mimeType: draft.mimeType,
-            amountMyr: amount,
-            needsAmount: false,
-            merchantRaw: draft.merchantRaw,
-            categoryGuess: draft.categoryGuess,
-            thumbnailBytes: draft.thumbnailBytes,
-            shareLocationLat: draft.shareLocationLat,
-            shareLocationLng: draft.shareLocationLng,
-            shareLocationCapturedAt: draft.shareLocationCapturedAt,
-            ocrConfidence: draft.ocrConfidence,
+          draft.toIngestRequest(
+            confirmedAmount: amount,
             impactUser: impact.name,
           ),
         );

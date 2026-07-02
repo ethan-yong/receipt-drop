@@ -1,5 +1,8 @@
 import 'dart:typed_data';
 
+import '../../data/repositories/ingest_receipt_request.dart';
+import '../../domain/models/receipt_line_item.dart';
+
 /// Parsed receipt ready for the save sheet (before user confirms amount).
 class ReceiptIngestDraft {
   const ReceiptIngestDraft({
@@ -14,6 +17,7 @@ class ReceiptIngestDraft {
     this.shareLocationLng,
     this.shareLocationCapturedAt,
     this.ocrConfidence,
+    this.lineItems = const [],
   });
 
   final String localFilePath;
@@ -27,6 +31,7 @@ class ReceiptIngestDraft {
   final double? shareLocationLng;
   final DateTime? shareLocationCapturedAt;
   final double? ocrConfidence;
+  final List<ReceiptLineItem> lineItems;
 
   ReceiptIngestDraft copyWith({
     double? amountMyr,
@@ -46,6 +51,29 @@ class ReceiptIngestDraft {
       shareLocationLng: shareLocationLng,
       shareLocationCapturedAt: shareLocationCapturedAt,
       ocrConfidence: ocrConfidence,
+      lineItems: lineItems,
+    );
+  }
+
+  /// Mirrors [ReceiptCaptureFlow] save: confirmed amount, line items carried through.
+  IngestReceiptRequest toIngestRequest({
+    required double confirmedAmount,
+    String? impactUser,
+  }) {
+    return IngestReceiptRequest(
+      localFilePath: localFilePath,
+      mimeType: mimeType,
+      amountMyr: confirmedAmount,
+      needsAmount: false,
+      merchantRaw: merchantRaw,
+      categoryGuess: categoryGuess,
+      thumbnailBytes: thumbnailBytes,
+      shareLocationLat: shareLocationLat,
+      shareLocationLng: shareLocationLng,
+      shareLocationCapturedAt: shareLocationCapturedAt,
+      ocrConfidence: ocrConfidence,
+      impactUser: impactUser,
+      lineItems: lineItems,
     );
   }
 }

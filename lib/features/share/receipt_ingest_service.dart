@@ -68,6 +68,7 @@ class ReceiptIngestService {
       shareLocationLng: location?.longitude,
       shareLocationCapturedAt: location != null ? DateTime.now().toUtc() : null,
       ocrConfidence: parsed.ocrConfidence,
+      lineItems: parsed.lineItems,
     );
   }
 

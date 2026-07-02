@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../domain/logic/avatar_mood.dart';
+import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/transaction_view.dart';
 import '../local/app_database.dart';
 import 'demo_transactions.dart';
@@ -32,7 +33,8 @@ class TransactionRepository {
     final views = <TransactionView>[];
     for (final row in rows) {
       final path = await _artifactPathFor(row.id);
-      views.add(_mapRow(row, path));
+      final items = await _lineItemsFor(row.id);
+      views.add(_mapRow(row, path, items));
     }
     return views;
   }
@@ -43,7 +45,8 @@ class TransactionRepository {
         .getSingleOrNull();
     if (row == null) return null;
     final path = await _artifactPathFor(id);
-    return _mapRow(row, path);
+    final items = await _lineItemsFor(id);
+    return _mapRow(row, path, items);
   }
 
   Stream<List<TransactionView>> watchUnritualled() {
@@ -101,6 +104,24 @@ class TransactionRepository {
           ),
         );
 
+    if (request.lineItems.isNotEmpty) {
+      await _db.batch((batch) {
+        batch.insertAll(_db.outboxLineItems, [
+          for (var i = 0; i < request.lineItems.length; i++)
+            OutboxLineItemsCompanion.insert(
+              id: _uuid.v4(),
+              userId: request.userId,
+              transactionId: id,
+              name: request.lineItems[i].name,
+              priceMyr: request.lineItems[i].priceMyr,
+              quantity: Value(request.lineItems[i].quantity),
+              confidence: Value(request.lineItems[i].confidence),
+              sortOrder: i,
+            ),
+        ]);
+      });
+    }
+
     unawaited(SyncWorker.run(_db, id));
 
     return TransactionView(
@@ -121,6 +142,7 @@ class TransactionRepository {
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
       ritualledAt: null,
+      lineItems: request.lineItems,
     );
   }
 
@@ -241,7 +263,26 @@ class TransactionRepository {
     return artifact?.localFilePath;
   }
 
-  TransactionView _mapRow(OutboxTransaction row, String? localPath) {
+  Future<List<ReceiptLineItem>> _lineItemsFor(String transactionId) async {
+    final rows = await (_db.select(_db.outboxLineItems)
+          ..where((li) => li.transactionId.equals(transactionId))
+          ..orderBy([(li) => OrderingTerm.asc(li.sortOrder)]))
+        .get();
+    return rows
+        .map((r) => ReceiptLineItem(
+              name: r.name,
+              priceMyr: r.priceMyr,
+              quantity: r.quantity,
+              confidence: r.confidence,
+            ))
+        .toList();
+  }
+
+  TransactionView _mapRow(
+    OutboxTransaction row,
+    String? localPath,
+    List<ReceiptLineItem> lineItems,
+  ) {
     return TransactionView(
       id: row.id,
       occurredAt: row.occurredAt,
@@ -259,6 +300,7 @@ class TransactionRepository {
       localThumbnailPath: localPath,
       impactUser: row.impactUser,
       ritualledAt: row.ritualledAt,
+      lineItems: lineItems,
     );
   }
 }

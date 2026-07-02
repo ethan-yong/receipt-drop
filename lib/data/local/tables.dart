@@ -105,6 +105,37 @@ class OutboxArtifacts extends Table {
   Set<Column<Object>>? get primaryKey => {id};
 }
 
+@DataClassName('OutboxLineItem')
+class OutboxLineItems extends Table {
+  @override
+  String get tableName => 'outbox_line_items';
+
+  TextColumn get id => text()();
+
+  TextColumn get userId => text()();
+
+  TextColumn get transactionId => text().references(
+        OutboxTransactions,
+        #id,
+        onDelete: KeyAction.cascade,
+      )();
+
+  TextColumn get name => text()();
+
+  RealColumn get priceMyr => real()();
+
+  IntColumn get quantity => integer().nullable()();
+
+  RealColumn get confidence => real().nullable()();
+
+  /// 0-based position in the parsed item list; SQLite doesn't guarantee row
+  /// order, so this preserves the original OCR order on read.
+  IntColumn get sortOrder => integer()();
+
+  @override
+  Set<Column<Object>>? get primaryKey => {id};
+}
+
 @DataClassName('CategoryConfigCacheRow')
 class CategoryConfigCache extends Table {
   @override

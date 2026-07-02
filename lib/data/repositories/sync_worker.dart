@@ -88,6 +88,25 @@ class SyncWorker {
         'mime_type': artifact.mimeType,
       });
 
+      final lineItems = await (db.select(db.outboxLineItems)
+            ..where((li) => li.transactionId.equals(transactionId)))
+          .get();
+      if (lineItems.isNotEmpty) {
+        await Supabase.instance.client.from('receipt_line_items').upsert([
+          for (final li in lineItems)
+            {
+              'id': li.id,
+              'user_id': userId,
+              'transaction_id': row.id,
+              'name': li.name,
+              'price_myr': li.priceMyr,
+              'quantity': li.quantity,
+              'confidence': li.confidence,
+              'sort_order': li.sortOrder,
+            },
+        ]);
+      }
+
       await (db.update(db.outboxArtifacts)
             ..where((a) => a.id.equals(artifact.id)))
           .write(OutboxArtifactsCompanion(storagePath: Value(storagePath)));

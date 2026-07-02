@@ -2090,6 +2090,529 @@ class OutboxArtifactsCompanion extends UpdateCompanion<OutboxArtifact> {
   }
 }
 
+class $OutboxLineItemsTable extends OutboxLineItems
+    with TableInfo<$OutboxLineItemsTable, OutboxLineItem> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $OutboxLineItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _transactionIdMeta = const VerificationMeta(
+    'transactionId',
+  );
+  @override
+  late final GeneratedColumn<String> transactionId = GeneratedColumn<String>(
+    'transaction_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES outbox_transactions (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _priceMyrMeta = const VerificationMeta(
+    'priceMyr',
+  );
+  @override
+  late final GeneratedColumn<double> priceMyr = GeneratedColumn<double>(
+    'price_myr',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _quantityMeta = const VerificationMeta(
+    'quantity',
+  );
+  @override
+  late final GeneratedColumn<int> quantity = GeneratedColumn<int>(
+    'quantity',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    transactionId,
+    name,
+    priceMyr,
+    quantity,
+    confidence,
+    sortOrder,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'outbox_line_items';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<OutboxLineItem> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('transaction_id')) {
+      context.handle(
+        _transactionIdMeta,
+        transactionId.isAcceptableOrUnknown(
+          data['transaction_id']!,
+          _transactionIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_transactionIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('price_myr')) {
+      context.handle(
+        _priceMyrMeta,
+        priceMyr.isAcceptableOrUnknown(data['price_myr']!, _priceMyrMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_priceMyrMeta);
+    }
+    if (data.containsKey('quantity')) {
+      context.handle(
+        _quantityMeta,
+        quantity.isAcceptableOrUnknown(data['quantity']!, _quantityMeta),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sortOrderMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  OutboxLineItem map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return OutboxLineItem(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      transactionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transaction_id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      priceMyr: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}price_myr'],
+      )!,
+      quantity: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}quantity'],
+      ),
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      ),
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+    );
+  }
+
+  @override
+  $OutboxLineItemsTable createAlias(String alias) {
+    return $OutboxLineItemsTable(attachedDatabase, alias);
+  }
+}
+
+class OutboxLineItem extends DataClass implements Insertable<OutboxLineItem> {
+  final String id;
+  final String userId;
+  final String transactionId;
+  final String name;
+  final double priceMyr;
+  final int? quantity;
+  final double? confidence;
+
+  /// 0-based position in the parsed item list; SQLite doesn't guarantee row
+  /// order, so this preserves the original OCR order on read.
+  final int sortOrder;
+  const OutboxLineItem({
+    required this.id,
+    required this.userId,
+    required this.transactionId,
+    required this.name,
+    required this.priceMyr,
+    this.quantity,
+    this.confidence,
+    required this.sortOrder,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['transaction_id'] = Variable<String>(transactionId);
+    map['name'] = Variable<String>(name);
+    map['price_myr'] = Variable<double>(priceMyr);
+    if (!nullToAbsent || quantity != null) {
+      map['quantity'] = Variable<int>(quantity);
+    }
+    if (!nullToAbsent || confidence != null) {
+      map['confidence'] = Variable<double>(confidence);
+    }
+    map['sort_order'] = Variable<int>(sortOrder);
+    return map;
+  }
+
+  OutboxLineItemsCompanion toCompanion(bool nullToAbsent) {
+    return OutboxLineItemsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      transactionId: Value(transactionId),
+      name: Value(name),
+      priceMyr: Value(priceMyr),
+      quantity: quantity == null && nullToAbsent
+          ? const Value.absent()
+          : Value(quantity),
+      confidence: confidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confidence),
+      sortOrder: Value(sortOrder),
+    );
+  }
+
+  factory OutboxLineItem.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return OutboxLineItem(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      transactionId: serializer.fromJson<String>(json['transactionId']),
+      name: serializer.fromJson<String>(json['name']),
+      priceMyr: serializer.fromJson<double>(json['priceMyr']),
+      quantity: serializer.fromJson<int?>(json['quantity']),
+      confidence: serializer.fromJson<double?>(json['confidence']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'transactionId': serializer.toJson<String>(transactionId),
+      'name': serializer.toJson<String>(name),
+      'priceMyr': serializer.toJson<double>(priceMyr),
+      'quantity': serializer.toJson<int?>(quantity),
+      'confidence': serializer.toJson<double?>(confidence),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+    };
+  }
+
+  OutboxLineItem copyWith({
+    String? id,
+    String? userId,
+    String? transactionId,
+    String? name,
+    double? priceMyr,
+    Value<int?> quantity = const Value.absent(),
+    Value<double?> confidence = const Value.absent(),
+    int? sortOrder,
+  }) => OutboxLineItem(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    transactionId: transactionId ?? this.transactionId,
+    name: name ?? this.name,
+    priceMyr: priceMyr ?? this.priceMyr,
+    quantity: quantity.present ? quantity.value : this.quantity,
+    confidence: confidence.present ? confidence.value : this.confidence,
+    sortOrder: sortOrder ?? this.sortOrder,
+  );
+  OutboxLineItem copyWithCompanion(OutboxLineItemsCompanion data) {
+    return OutboxLineItem(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      transactionId: data.transactionId.present
+          ? data.transactionId.value
+          : this.transactionId,
+      name: data.name.present ? data.name.value : this.name,
+      priceMyr: data.priceMyr.present ? data.priceMyr.value : this.priceMyr,
+      quantity: data.quantity.present ? data.quantity.value : this.quantity,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OutboxLineItem(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('transactionId: $transactionId, ')
+          ..write('name: $name, ')
+          ..write('priceMyr: $priceMyr, ')
+          ..write('quantity: $quantity, ')
+          ..write('confidence: $confidence, ')
+          ..write('sortOrder: $sortOrder')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    transactionId,
+    name,
+    priceMyr,
+    quantity,
+    confidence,
+    sortOrder,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is OutboxLineItem &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.transactionId == this.transactionId &&
+          other.name == this.name &&
+          other.priceMyr == this.priceMyr &&
+          other.quantity == this.quantity &&
+          other.confidence == this.confidence &&
+          other.sortOrder == this.sortOrder);
+}
+
+class OutboxLineItemsCompanion extends UpdateCompanion<OutboxLineItem> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<String> transactionId;
+  final Value<String> name;
+  final Value<double> priceMyr;
+  final Value<int?> quantity;
+  final Value<double?> confidence;
+  final Value<int> sortOrder;
+  final Value<int> rowid;
+  const OutboxLineItemsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.transactionId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.priceMyr = const Value.absent(),
+    this.quantity = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  OutboxLineItemsCompanion.insert({
+    required String id,
+    required String userId,
+    required String transactionId,
+    required String name,
+    required double priceMyr,
+    this.quantity = const Value.absent(),
+    this.confidence = const Value.absent(),
+    required int sortOrder,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       transactionId = Value(transactionId),
+       name = Value(name),
+       priceMyr = Value(priceMyr),
+       sortOrder = Value(sortOrder);
+  static Insertable<OutboxLineItem> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<String>? transactionId,
+    Expression<String>? name,
+    Expression<double>? priceMyr,
+    Expression<int>? quantity,
+    Expression<double>? confidence,
+    Expression<int>? sortOrder,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (transactionId != null) 'transaction_id': transactionId,
+      if (name != null) 'name': name,
+      if (priceMyr != null) 'price_myr': priceMyr,
+      if (quantity != null) 'quantity': quantity,
+      if (confidence != null) 'confidence': confidence,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  OutboxLineItemsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<String>? transactionId,
+    Value<String>? name,
+    Value<double>? priceMyr,
+    Value<int?>? quantity,
+    Value<double?>? confidence,
+    Value<int>? sortOrder,
+    Value<int>? rowid,
+  }) {
+    return OutboxLineItemsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      transactionId: transactionId ?? this.transactionId,
+      name: name ?? this.name,
+      priceMyr: priceMyr ?? this.priceMyr,
+      quantity: quantity ?? this.quantity,
+      confidence: confidence ?? this.confidence,
+      sortOrder: sortOrder ?? this.sortOrder,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (transactionId.present) {
+      map['transaction_id'] = Variable<String>(transactionId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (priceMyr.present) {
+      map['price_myr'] = Variable<double>(priceMyr.value);
+    }
+    if (quantity.present) {
+      map['quantity'] = Variable<int>(quantity.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OutboxLineItemsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('transactionId: $transactionId, ')
+          ..write('name: $name, ')
+          ..write('priceMyr: $priceMyr, ')
+          ..write('quantity: $quantity, ')
+          ..write('confidence: $confidence, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $CategoryConfigCacheTable extends CategoryConfigCache
     with TableInfo<$CategoryConfigCacheTable, CategoryConfigCacheRow> {
   @override
@@ -2453,6 +2976,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $OutboxArtifactsTable outboxArtifacts = $OutboxArtifactsTable(
     this,
   );
+  late final $OutboxLineItemsTable outboxLineItems = $OutboxLineItemsTable(
+    this,
+  );
   late final $CategoryConfigCacheTable categoryConfigCache =
       $CategoryConfigCacheTable(this);
   @override
@@ -2462,6 +2988,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     outboxTransactions,
     outboxArtifacts,
+    outboxLineItems,
     categoryConfigCache,
   ];
   @override
@@ -2472,6 +2999,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('outbox_artifacts', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'outbox_transactions',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('outbox_line_items', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -2571,6 +3105,29 @@ final class $$OutboxTransactionsTableReferences
 
     final cache = $_typedResult.readTableOrNull(
       _outboxArtifactsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$OutboxLineItemsTable, List<OutboxLineItem>>
+  _outboxLineItemsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.outboxLineItems,
+    aliasName: $_aliasNameGenerator(
+      db.outboxTransactions.id,
+      db.outboxLineItems.transactionId,
+    ),
+  );
+
+  $$OutboxLineItemsTableProcessedTableManager get outboxLineItemsRefs {
+    final manager = $$OutboxLineItemsTableTableManager(
+      $_db,
+      $_db.outboxLineItems,
+    ).filter((f) => f.transactionId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _outboxLineItemsRefsTable($_db),
     );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
@@ -2743,6 +3300,31 @@ class $$OutboxTransactionsTableFilterComposer
           }) => $$OutboxArtifactsTableFilterComposer(
             $db: $db,
             $table: $db.outboxArtifacts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> outboxLineItemsRefs(
+    Expression<bool> Function($$OutboxLineItemsTableFilterComposer f) f,
+  ) {
+    final $$OutboxLineItemsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.outboxLineItems,
+      getReferencedColumn: (t) => t.transactionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxLineItemsTableFilterComposer(
+            $db: $db,
+            $table: $db.outboxLineItems,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -3060,6 +3642,31 @@ class $$OutboxTransactionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> outboxLineItemsRefs<T extends Object>(
+    Expression<T> Function($$OutboxLineItemsTableAnnotationComposer a) f,
+  ) {
+    final $$OutboxLineItemsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.outboxLineItems,
+      getReferencedColumn: (t) => t.transactionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxLineItemsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.outboxLineItems,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$OutboxTransactionsTableTableManager
@@ -3075,7 +3682,10 @@ class $$OutboxTransactionsTableTableManager
           $$OutboxTransactionsTableUpdateCompanionBuilder,
           (OutboxTransaction, $$OutboxTransactionsTableReferences),
           OutboxTransaction,
-          PrefetchHooks Function({bool outboxArtifactsRefs})
+          PrefetchHooks Function({
+            bool outboxArtifactsRefs,
+            bool outboxLineItemsRefs,
+          })
         > {
   $$OutboxTransactionsTableTableManager(
     _$AppDatabase db,
@@ -3225,40 +3835,63 @@ class $$OutboxTransactionsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({outboxArtifactsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [
-                if (outboxArtifactsRefs) db.outboxArtifacts,
-              ],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (outboxArtifactsRefs)
-                    await $_getPrefetchedData<
-                      OutboxTransaction,
-                      $OutboxTransactionsTable,
-                      OutboxArtifact
-                    >(
-                      currentTable: table,
-                      referencedTable: $$OutboxTransactionsTableReferences
-                          ._outboxArtifactsRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$OutboxTransactionsTableReferences(
-                            db,
-                            table,
-                            p0,
-                          ).outboxArtifactsRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where(
-                            (e) => e.transactionId == item.id,
-                          ),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({outboxArtifactsRefs = false, outboxLineItemsRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (outboxArtifactsRefs) db.outboxArtifacts,
+                    if (outboxLineItemsRefs) db.outboxLineItems,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (outboxArtifactsRefs)
+                        await $_getPrefetchedData<
+                          OutboxTransaction,
+                          $OutboxTransactionsTable,
+                          OutboxArtifact
+                        >(
+                          currentTable: table,
+                          referencedTable: $$OutboxTransactionsTableReferences
+                              ._outboxArtifactsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$OutboxTransactionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).outboxArtifactsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.transactionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (outboxLineItemsRefs)
+                        await $_getPrefetchedData<
+                          OutboxTransaction,
+                          $OutboxTransactionsTable,
+                          OutboxLineItem
+                        >(
+                          currentTable: table,
+                          referencedTable: $$OutboxTransactionsTableReferences
+                              ._outboxLineItemsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$OutboxTransactionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).outboxLineItemsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.transactionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -3275,7 +3908,10 @@ typedef $$OutboxTransactionsTableProcessedTableManager =
       $$OutboxTransactionsTableUpdateCompanionBuilder,
       (OutboxTransaction, $$OutboxTransactionsTableReferences),
       OutboxTransaction,
-      PrefetchHooks Function({bool outboxArtifactsRefs})
+      PrefetchHooks Function({
+        bool outboxArtifactsRefs,
+        bool outboxLineItemsRefs,
+      })
     >;
 typedef $$OutboxArtifactsTableCreateCompanionBuilder =
     OutboxArtifactsCompanion Function({
@@ -3651,6 +4287,397 @@ typedef $$OutboxArtifactsTableProcessedTableManager =
       OutboxArtifact,
       PrefetchHooks Function({bool transactionId})
     >;
+typedef $$OutboxLineItemsTableCreateCompanionBuilder =
+    OutboxLineItemsCompanion Function({
+      required String id,
+      required String userId,
+      required String transactionId,
+      required String name,
+      required double priceMyr,
+      Value<int?> quantity,
+      Value<double?> confidence,
+      required int sortOrder,
+      Value<int> rowid,
+    });
+typedef $$OutboxLineItemsTableUpdateCompanionBuilder =
+    OutboxLineItemsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<String> transactionId,
+      Value<String> name,
+      Value<double> priceMyr,
+      Value<int?> quantity,
+      Value<double?> confidence,
+      Value<int> sortOrder,
+      Value<int> rowid,
+    });
+
+final class $$OutboxLineItemsTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $OutboxLineItemsTable, OutboxLineItem> {
+  $$OutboxLineItemsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $OutboxTransactionsTable _transactionIdTable(_$AppDatabase db) =>
+      db.outboxTransactions.createAlias(
+        $_aliasNameGenerator(
+          db.outboxLineItems.transactionId,
+          db.outboxTransactions.id,
+        ),
+      );
+
+  $$OutboxTransactionsTableProcessedTableManager get transactionId {
+    final $_column = $_itemColumn<String>('transaction_id')!;
+
+    final manager = $$OutboxTransactionsTableTableManager(
+      $_db,
+      $_db.outboxTransactions,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_transactionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$OutboxLineItemsTableFilterComposer
+    extends Composer<_$AppDatabase, $OutboxLineItemsTable> {
+  $$OutboxLineItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get priceMyr => $composableBuilder(
+    column: $table.priceMyr,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get quantity => $composableBuilder(
+    column: $table.quantity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$OutboxTransactionsTableFilterComposer get transactionId {
+    final $$OutboxTransactionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.transactionId,
+      referencedTable: $db.outboxTransactions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxTransactionsTableFilterComposer(
+            $db: $db,
+            $table: $db.outboxTransactions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OutboxLineItemsTableOrderingComposer
+    extends Composer<_$AppDatabase, $OutboxLineItemsTable> {
+  $$OutboxLineItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get priceMyr => $composableBuilder(
+    column: $table.priceMyr,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get quantity => $composableBuilder(
+    column: $table.quantity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$OutboxTransactionsTableOrderingComposer get transactionId {
+    final $$OutboxTransactionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.transactionId,
+      referencedTable: $db.outboxTransactions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxTransactionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.outboxTransactions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OutboxLineItemsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $OutboxLineItemsTable> {
+  $$OutboxLineItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<double> get priceMyr =>
+      $composableBuilder(column: $table.priceMyr, builder: (column) => column);
+
+  GeneratedColumn<int> get quantity =>
+      $composableBuilder(column: $table.quantity, builder: (column) => column);
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  $$OutboxTransactionsTableAnnotationComposer get transactionId {
+    final $$OutboxTransactionsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.transactionId,
+          referencedTable: $db.outboxTransactions,
+          getReferencedColumn: (t) => t.id,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$OutboxTransactionsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.outboxTransactions,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return composer;
+  }
+}
+
+class $$OutboxLineItemsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $OutboxLineItemsTable,
+          OutboxLineItem,
+          $$OutboxLineItemsTableFilterComposer,
+          $$OutboxLineItemsTableOrderingComposer,
+          $$OutboxLineItemsTableAnnotationComposer,
+          $$OutboxLineItemsTableCreateCompanionBuilder,
+          $$OutboxLineItemsTableUpdateCompanionBuilder,
+          (OutboxLineItem, $$OutboxLineItemsTableReferences),
+          OutboxLineItem,
+          PrefetchHooks Function({bool transactionId})
+        > {
+  $$OutboxLineItemsTableTableManager(
+    _$AppDatabase db,
+    $OutboxLineItemsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$OutboxLineItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$OutboxLineItemsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$OutboxLineItemsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> transactionId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<double> priceMyr = const Value.absent(),
+                Value<int?> quantity = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => OutboxLineItemsCompanion(
+                id: id,
+                userId: userId,
+                transactionId: transactionId,
+                name: name,
+                priceMyr: priceMyr,
+                quantity: quantity,
+                confidence: confidence,
+                sortOrder: sortOrder,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required String transactionId,
+                required String name,
+                required double priceMyr,
+                Value<int?> quantity = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                required int sortOrder,
+                Value<int> rowid = const Value.absent(),
+              }) => OutboxLineItemsCompanion.insert(
+                id: id,
+                userId: userId,
+                transactionId: transactionId,
+                name: name,
+                priceMyr: priceMyr,
+                quantity: quantity,
+                confidence: confidence,
+                sortOrder: sortOrder,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$OutboxLineItemsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({transactionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (transactionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.transactionId,
+                                referencedTable:
+                                    $$OutboxLineItemsTableReferences
+                                        ._transactionIdTable(db),
+                                referencedColumn:
+                                    $$OutboxLineItemsTableReferences
+                                        ._transactionIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$OutboxLineItemsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $OutboxLineItemsTable,
+      OutboxLineItem,
+      $$OutboxLineItemsTableFilterComposer,
+      $$OutboxLineItemsTableOrderingComposer,
+      $$OutboxLineItemsTableAnnotationComposer,
+      $$OutboxLineItemsTableCreateCompanionBuilder,
+      $$OutboxLineItemsTableUpdateCompanionBuilder,
+      (OutboxLineItem, $$OutboxLineItemsTableReferences),
+      OutboxLineItem,
+      PrefetchHooks Function({bool transactionId})
+    >;
 typedef $$CategoryConfigCacheTableCreateCompanionBuilder =
     CategoryConfigCacheCompanion Function({
       Value<int> id,
@@ -3869,6 +4896,8 @@ class $AppDatabaseManager {
       $$OutboxTransactionsTableTableManager(_db, _db.outboxTransactions);
   $$OutboxArtifactsTableTableManager get outboxArtifacts =>
       $$OutboxArtifactsTableTableManager(_db, _db.outboxArtifacts);
+  $$OutboxLineItemsTableTableManager get outboxLineItems =>
+      $$OutboxLineItemsTableTableManager(_db, _db.outboxLineItems);
   $$CategoryConfigCacheTableTableManager get categoryConfigCache =>
       $$CategoryConfigCacheTableTableManager(_db, _db.categoryConfigCache);
 }

@@ -1,17 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:receipt_drop/domain/logic/category_matcher.dart';
 import 'package:receipt_drop/domain/logic/category_matcher_io.dart';
 import 'package:receipt_drop/features/share/ocr_api_client.dart';
+import 'package:receipt_drop/features/share/receipt_batch_e2e.dart';
 import 'package:receipt_drop/features/share/receipt_parse_pipeline.dart';
 
-/// Batch-processes receipt images via the self-hosted OCR API + app parse pipeline.
+/// Batch-processes receipt images: OCR API → parse → optional in-memory save E2E.
 ///
 /// ```powershell
 /// # OCR API running locally (services/ocr-api):
 /// $env:OCR_SHARED_SECRET = "your-secret"
-/// dart run bin/process_receipts.dart --receipts-dir receipts
+/// dart run bin/process_receipts.dart
+/// dart run bin/process_receipts.dart --e2e
 /// ```
 Future<void> main(List<String> args) async {
   final options = _parseArgs(args);
@@ -45,7 +46,12 @@ Future<void> main(List<String> args) async {
   final categories = await loadCategoryConfigFromFile(options.categoriesFile);
   final ocrUrl = options.ocrUrl ?? defaultOcrApiUrl();
 
-  _log('[receipt_batch] Found ${await _countReceiptFiles(receiptsDir)} receipt file(s)');
+  _log(
+    '[receipt_batch] Found ${await _countReceiptFiles(receiptsDir)} receipt file(s) in ${options.receiptsDir}',
+  );
+  if (options.e2e) {
+    _log('[receipt_batch] E2E mode: parse → draft → outbox → sync payload preview');
+  }
 
   if (options.checkHealth) {
     final healthUrl = ocrUrl.replace(path: '/health', query: null);
@@ -70,6 +76,7 @@ Future<void> main(List<String> args) async {
       files.add(entity);
     }
   }
+  files.sort((a, b) => _basename(a.path).compareTo(_basename(b.path)));
 
   if (files.isEmpty) {
     stderr.writeln(
@@ -122,6 +129,19 @@ Future<void> main(List<String> args) async {
       );
 
       final json = parsed.toJson(includeOcrText: options.includeOcrText);
+
+      if (options.e2e) {
+        final e2e = await persistParsedReceiptE2e(parsed: parsed, mimeType: mime);
+        if (e2e == null) {
+          json['e2e'] = {
+            'skipped': true,
+            'reason': 'needs_amount',
+          };
+        } else {
+          json['e2e'] = e2e.toJson();
+        }
+      }
+
       results.add(json);
       stdout.writeln('[receipt_batch] ${jsonEncode(json)}');
     } catch (e) {
@@ -164,6 +184,7 @@ class _CliOptions {
     this.secret,
     this.includeOcrText = false,
     this.checkHealth = true,
+    this.e2e = false,
   });
 
   final String receiptsDir;
@@ -172,15 +193,17 @@ class _CliOptions {
   final String? secret;
   final bool includeOcrText;
   final bool checkHealth;
+  final bool e2e;
 }
 
 _CliOptions? _parseArgs(List<String> args) {
-  var receiptsDir = 'receipts';
+  var receiptsDir = 'receipt_images';
   var categoriesFile = 'assets/config/categories-v1.json';
   Uri? ocrUrl;
   String? secret;
   var includeOcrText = false;
   var checkHealth = true;
+  var e2e = false;
 
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
@@ -201,6 +224,8 @@ _CliOptions? _parseArgs(List<String> args) {
         includeOcrText = true;
       case '--skip-health-check':
         checkHealth = false;
+      case '--e2e':
+        e2e = true;
       case '--help':
       case '-h':
         return null;
@@ -217,6 +242,7 @@ _CliOptions? _parseArgs(List<String> args) {
     secret: secret,
     includeOcrText: includeOcrText,
     checkHealth: checkHealth,
+    e2e: e2e,
   );
 }
 
@@ -224,12 +250,15 @@ void _printUsage() {
   stdout.writeln('''
 Usage: dart run bin/process_receipts.dart [options]
 
+Batch flow: OCR API → parse (amount, merchant, lineItems) → optional E2E save.
+
 Options:
-  --receipts-dir <path>       Folder of receipt images (default: receipts)
+  --receipts-dir <path>       Folder of receipt images (default: receipt_images)
   --categories-file <path>    Category rules JSON (default: assets/config/categories-v1.json)
   --ocr-url <url>             OCR API endpoint (default: http://127.0.0.1:8080/ocr)
   --ocr-secret <secret>       X-OCR-Secret (default: OCR_SHARED_SECRET env)
   --include-ocr-text          Include raw OCR text in JSON output
+  --e2e                       Persist to in-memory outbox + preview sync payload
   --skip-health-check         Skip GET /health before processing
   -h, --help                  Show this help
 ''');

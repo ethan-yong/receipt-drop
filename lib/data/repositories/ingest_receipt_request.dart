@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import '../../domain/models/receipt_line_item.dart';
+
 /// Parameters for saving a confirmed receipt to the local outbox.
 class IngestReceiptRequest {
   const IngestReceiptRequest({
@@ -16,6 +18,7 @@ class IngestReceiptRequest {
     this.ocrConfidence,
     this.userId = 'demo-user',
     this.impactUser,
+    this.lineItems = const [],
   });
 
   final String localFilePath;
@@ -31,4 +34,5 @@ class IngestReceiptRequest {
   final double? ocrConfidence;
   final String userId;
   final String? impactUser;
+  final List<ReceiptLineItem> lineItems;
 }
