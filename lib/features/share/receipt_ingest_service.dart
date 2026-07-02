@@ -2,11 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../domain/logic/category_matcher.dart';
-import '../../domain/logic/merchant_extractor.dart';
-import '../../domain/logic/rm_amount_parser.dart';
-import 'ocr_pipeline.dart';
+import '../../domain/logic/category_matcher_bundled.dart';
 import 'receipt_file_store.dart';
 import 'receipt_ingest_draft.dart';
+import 'receipt_parse_file.dart';
+import 'receipt_parse_pipeline.dart';
 import 'receipt_ingest_service_io.dart'
     if (dart.library.html) 'receipt_ingest_service_web.dart' as path_reader;
 import 'stored_receipt_file.dart';
@@ -18,7 +18,7 @@ class ReceiptIngestService {
   static CategoryConfig? _categoryConfig;
 
   static Future<CategoryConfig> _categories() async {
-    _categoryConfig ??= await CategoryConfig.loadBundled();
+    _categoryConfig ??= await loadBundledCategoryConfig();
     return _categoryConfig!;
   }
 
@@ -41,36 +41,33 @@ class ReceiptIngestService {
   }
 
   static Future<ReceiptIngestDraft> _buildDraft(StoredReceiptFile stored) async {
-    final ocrText = stored.localPath.startsWith('web:')
-        ? ''
-        : await runOcrOnReceiptFile(
+    final categories = await _categories();
+    final parsed = stored.localPath.startsWith('web:')
+        ? parseReceiptOcrText(
+            filePath: stored.localPath,
+            ocrText: '',
+            categories: categories,
+          )
+        : await parseReceiptFile(
             filePath: stored.localPath,
             mimeType: stored.mimeType,
+            categories: categories,
           );
-
-    final parseResult = parseRmAmountFromOcr(ocrText);
-    final amount = parseResult.amount;
-    final needsAmount = amount == null;
-    final categories = await _categories();
-    final merchantRaw = extractMerchant(ocrText, categories);
-    final categoryGuess = categories
-        .guessForMerchant(merchantRaw ?? '')
-        .category;
 
     final location = await _captureLocation();
 
     return ReceiptIngestDraft(
       localFilePath: stored.localPath,
       mimeType: stored.mimeType,
-      amountMyr: amount,
-      needsAmount: needsAmount,
-      merchantRaw: merchantRaw,
-      categoryGuess: categoryGuess,
+      amountMyr: parsed.amountMyr,
+      needsAmount: parsed.needsAmount,
+      merchantRaw: parsed.merchantRaw,
+      categoryGuess: parsed.categoryGuess,
       thumbnailBytes: stored.bytes,
       shareLocationLat: location?.latitude,
       shareLocationLng: location?.longitude,
       shareLocationCapturedAt: location != null ? DateTime.now().toUtc() : null,
-      ocrConfidence: parseResult.confidence,
+      ocrConfidence: parsed.ocrConfidence,
     );
   }
 

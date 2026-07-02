@@ -1,0 +1,14 @@
+[
+  {
+    "file": "rock_cafe.png.jpeg",
+    "ocrText": "RESTORAN ANWAR MAJU\nDimilki Olh\nNO.1-A NADAYU28JLN PJS 11/7\nBANDAR SUNWAY 47500 SELANGOR\nTEL:\nINVOICE\n*** MOBILE PAY ***\n346131\nTAXNO.\nTABLENO62\nTRAN NO390705\n10/Jun/20260117:26\n7.00-Z\nDATE\n8.70-Z\nRsb Biasa\n11.00-Z\n1\nTeh O Limau Ais\n3.00-Z\n3\n4.20-Z\nMaggi G Double\nLimau Ais Bungkus\n7-006\nMilo Ais Bungkus\n12.50-Z\nMaggi Goreng Telur M\n7-009\nNasi G Ayam Mamak\n3.40-Z\n1\nAyam Goreng\nTeh Ais Bungkus\n64.80\nRM\n64.80\nRM\n0.00\nTOTAL\nRM\nCASH\nCHANGE\nSTAFF :MASTER\nTHANK YOU COME AGAIN",
+    "amountMyr": null,
+    "needsAmount": true,
+    "ocrConfidence": 0.1,
+    "merchantRaw": "RESTORAN ANWAR MAJU",
+    "categoryGuess": "Food & Drink",
+    "impactLevel": "low",
+    "lowConfidence": false,
+    "ocrServiceConfidence": 0.9412612080574035
+  }
+]

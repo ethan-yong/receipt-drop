@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/services.dart';
-
 /// Result of applying keyword rules to a merchant string.
 class CategoryGuess {
   const CategoryGuess({required this.category});
@@ -19,12 +17,6 @@ class CategoryConfig {
   final String version;
   final String defaultCategory;
   final List<({String category, List<String> keywords})> rules;
-
-  /// Loads [assets/config/categories-v1.json] from the app bundle.
-  static Future<CategoryConfig> loadBundled() async {
-    final raw = await rootBundle.loadString('assets/config/categories-v1.json');
-    return CategoryConfig.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-  }
 
   factory CategoryConfig.fromJson(Map<String, dynamic> json) {
     final rulesJson = json['rules'] as List<dynamic>? ?? [];

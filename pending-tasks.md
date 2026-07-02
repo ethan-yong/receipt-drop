@@ -1,0 +1,170 @@
+# Pending tasks
+
+Backlog of planned work not yet implemented in the main app pipeline.
+
+---
+
+## Receipt line-item extraction (item + price pairs)
+
+### Problem
+
+The current ingest pipeline only extracts **receipt-level** fields:
+
+- Total amount (`amountMyr`) via [`lib/domain/logic/rm_amount_parser.dart`](../lib/domain/logic/rm_amount_parser.dart)
+- Merchant name via [`lib/domain/logic/merchant_extractor.dart`](../lib/domain/logic/merchant_extractor.dart)
+- Category guess via [`lib/domain/logic/category_matcher.dart`](../lib/domain/logic/category_matcher.dart)
+
+It does **not** parse individual purchased items or their prices. OCR returns full text (especially when using `-IncludeOcrText` on the batch script), but nothing structures that into line items.
+
+The UI prototype in [`receipt_cards.dart`](../receipt_cards.dart) already shows the desired shape (`ReceiptItem`: name + price + optional emoji), but that data is **hardcoded demo content**, not wired to OCR or `TransactionView`.
+
+[`lib/widgets/receipt_card.dart`](../lib/widgets/receipt_card.dart) currently renders a **single summary row** (merchant + total), not a list of items.
+
+### Goal
+
+Extract structured **item / price pairs** from receipt OCR text so the frontend can render an itemized receipt card without manual entry.
+
+### Proposed domain model
+
+Add a shared, frontend-friendly type (location TBD, e.g. `lib/domain/models/receipt_line_item.dart`):
+
+```dart
+class ReceiptLineItem {
+  const ReceiptLineItem({
+    required this.name,
+    required this.priceMyr,
+    this.quantity,
+    this.confidence,
+    this.lineIndex,
+  });
+
+  final String name;
+  final double priceMyr;
+  final int? quantity;       // when detectable, e.g. "2 x"
+  final double? confidence;  // parser confidence for this row
+  final int? lineIndex;      // source line in OCR text (debug / UI)
+}
+```
+
+JSON shape for API / batch output / Supabase (stable for frontend):
+
+```json
+{
+  "file": "rock_cafe.png.jpeg",
+  "amountMyr": 42.5,
+  "merchantRaw": "ROCK CAFE",
+  "lineItems": [
+    { "name": "Latte", "priceMyr": 12.5, "quantity": 1, "confidence": 0.82 },
+    { "name": "Croissant", "priceMyr": 7.9, "quantity": 1, "confidence": 0.79 }
+  ],
+  "lineItemsConfidence": 0.8,
+  "itemsSubtotalMyr": 20.4,
+  "itemsMatchTotal": false
+}
+```
+
+Frontend integration targets:
+
+| Surface | Change |
+|--------|--------|
+| [`TransactionView`](../lib/domain/models/transaction_view.dart) | Add optional `List<ReceiptLineItem> lineItems` |
+| [`ReceiptParseResult`](../lib/features/share/receipt_parse_pipeline.dart) | Include `lineItems` in `toJson()` |
+| [`bin/process_receipts.dart`](../bin/process_receipts.dart) | Emit `lineItems` in `_results.json` |
+| [`lib/widgets/receipt_card.dart`](../lib/widgets/receipt_card.dart) | Render multiple rows when `lineItems` is non-empty; fall back to current single-row layout |
+| [`receipt_cards.dart`](../receipt_cards.dart) prototype | Replace hardcoded `ReceiptItem` lists with parsed data once available |
+
+### Parser design (heuristic v1)
+
+New module: `lib/domain/logic/receipt_line_item_extractor.dart`
+
+**Input:** raw OCR text (same string used by `parseRmAmountFromOcr` / `extractMerchant`).
+
+**Output:** `List<ReceiptLineItem>` + aggregate metadata.
+
+**Suggested rules (Malaysian thermal receipts):**
+
+1. Split OCR into lines; trim and skip empty lines.
+2. Skip header/footer zones (reuse boilerplate hints from `merchant_extractor.dart` + total/tax/change lines matched by `rm_amount_parser` discount hints).
+3. For each remaining line, try patterns in order:
+   - `(.+?)\s+RM\s*([\d,]+\.\d{2})\s*$` — item left, price right (most common)
+   - `(\d+)\s*x\s*(.+?)\s+RM\s*([\d,]+\.\d{2})` — quantity prefix
+   - `(.+?)\s+([\d,]+\.\d{2})\s*$` — price without `RM` prefix (lower confidence)
+4. Reject lines where the "name" is only digits/punctuation or matches total/subtotal/tax keywords.
+5. Optionally cap to N items (e.g. 30) to avoid runaway OCR noise.
+6. Compute `itemsSubtotalMyr` and set `itemsMatchTotal` when sum is within tolerance of parsed total (e.g. ±RM 0.05 or accounting for SST/service charge).
+
+**Confidence:**
+
+- Per line: based on pattern match quality + name length + price sanity.
+- Overall: mean of line confidences, penalized if subtotal ≠ total.
+
+### Pipeline integration
+
+```mermaid
+flowchart LR
+  OCR[OCR text] --> Total[parseRmAmountFromOcr]
+  OCR --> Merchant[extractMerchant]
+  OCR --> Items[extractReceiptLineItems]
+  Total --> Result[ReceiptParseResult]
+  Merchant --> Result
+  Items --> Result
+  Result --> UI[ReceiptCard / TransactionDetail]
+  Result --> Batch[bin/process_receipts.dart JSON]
+  Result --> DB[Drift + Supabase sync]
+```
+
+Update [`lib/features/share/receipt_parse_pipeline.dart`](../lib/features/share/receipt_parse_pipeline.dart):
+
+- Call `extractReceiptLineItems(ocrText)` inside `parseReceiptOcrText`.
+- Extend `ReceiptParseResult` with `lineItems`, `lineItemsConfidence`, `itemsSubtotalMyr`, `itemsMatchTotal`.
+
+No change required to OCR service for v1 — line extraction runs on the same PaddleOCR / ML Kit text the app already receives.
+
+### Persistence and sync (v2)
+
+Not required for first frontend integration (can live on parse result only), but planned:
+
+| Layer | Work |
+|-------|------|
+| Drift | New table `outbox_line_items` (`transaction_id`, `sort_order`, `name`, `price_myr`, `quantity`, `confidence`) |
+| Supabase | Migration: `receipt_line_items` table + RLS mirroring `transactions` |
+| [`SyncWorker`](../lib/data/repositories/sync_worker.dart) | Upsert line items after transaction sync |
+| [`IngestReceiptRequest`](../lib/data/repositories/ingest_receipt_request.dart) | Accept optional `lineItems` on save |
+
+### Testing
+
+| Test file | Cases |
+|-----------|--------|
+| `test/receipt_line_item_extractor_test.dart` | Typical cafe receipt; grocery multi-line; total/tax lines excluded; quantity prefix; empty OCR; mismatched subtotal |
+| `test/receipt_parse_pipeline_test.dart` | `parseReceiptOcrText` includes `lineItems` when OCR fixture has item rows |
+| `services/ocr-api/tests/` | Optional: end-to-end fixture asserting item lines appear in OCR text before Dart parsing |
+
+Fixtures: add `test/fixtures/ocr/` with sample receipt text snippets (no binary images required for unit tests).
+
+### Acceptance criteria
+
+- [ ] `extractReceiptLineItems` returns name + `priceMyr` for ≥2 items on a standard itemized receipt OCR fixture.
+- [ ] Total/subtotal/tax/change lines are **not** included as line items.
+- [ ] `ReceiptParseResult.toJson()` includes `lineItems` array (empty when none found).
+- [ ] Batch script `_results.json` includes `lineItems` per file when `-IncludeOcrText` or always (TBD).
+- [ ] `ReceiptCard` shows item rows when `TransactionView.lineItems` is non-empty.
+- [ ] Existing flows without line items behave unchanged (backward compatible).
+
+### Out of scope (for this task)
+
+- Per-item category classification
+- SKU / barcode extraction
+- Multi-page PDF line-item tables
+- LLM-based parsing (heuristics first)
+
+### Related files (current)
+
+- OCR: [`lib/features/share/ocr_pipeline_io.dart`](../lib/features/share/ocr_pipeline_io.dart), [`services/ocr-api/`](../services/ocr-api/)
+- Parse pipeline: [`lib/features/share/receipt_parse_pipeline.dart`](../lib/features/share/receipt_parse_pipeline.dart)
+- Batch tool: [`bin/process_receipts.dart`](../bin/process_receipts.dart), [`scripts/process_receipts.ps1`](../scripts/process_receipts.ps1)
+- UI prototype: [`receipt_cards.dart`](../receipt_cards.dart)
+- Production card: [`lib/widgets/receipt_card.dart`](../lib/widgets/receipt_card.dart)
+
+---
+
+_Add new pending tasks below as separate `##` sections._

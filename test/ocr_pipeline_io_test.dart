@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/features/share/ocr_pipeline_io.dart';
+import 'package:receipt_drop/features/share/ocr_pipeline_io.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
