@@ -4,7 +4,10 @@ import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
+import '../../domain/models/transaction_view.dart';
 import '../../data/repositories/places_repository.dart';
+import '../../domain/logic/category_matcher.dart';
+import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/place_block.dart';
@@ -32,15 +35,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   DateTime? _occurredAt;
   ImpactLevel? _impactOverride;
   bool _loading = true;
-
-  static const _categories = [
-    'Food & Drink',
-    'Groceries',
-    'Transport',
-    'Shopping',
-    'Others',
-    'Unclassified',
-  ];
+  CategoryConfig? _categoryConfig;
 
   @override
   void dispose() {
@@ -49,11 +44,15 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<void> _load() async {
-    final tx = await AppServices.transactions.getById(widget.transactionId);
+    final results = await Future.wait([
+      AppServices.transactions.getById(widget.transactionId),
+      loadBundledCategoryConfig(),
+    ]);
+    final tx = results[0] as TransactionView?;
+    final config = results[1] as CategoryConfig;
     if (tx == null || !mounted) return;
     setState(() {
-      _amountController.text =
-          tx.amountMyr?.toStringAsFixed(2) ?? '';
+      _amountController.text = tx.amountMyr?.toStringAsFixed(2) ?? '';
       _category = tx.effectiveCategory;
       _placeName = tx.displayPlace;
       _placeGooglePlaceId = tx.placeGooglePlaceId;
@@ -61,6 +60,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       _placeLng = tx.placeLng;
       _occurredAt = tx.occurredAt;
       _impactOverride = impactLevelFromStorage(tx.impactUser);
+      _categoryConfig = config;
       _loading = false;
     });
   }
@@ -163,6 +163,16 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }
   }
 
+  List<String> _buildCategoryItems() {
+    final config = _categoryConfig;
+    if (config == null) return [_category ?? 'Unclassified'];
+    return {
+      ...config.rules.map((r) => r.category),
+      config.defaultCategory,
+      'Unclassified',
+    }.toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -238,7 +248,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     border: InputBorder.none,
                     filled: false,
                   ),
-                  items: _categories
+                  items: _buildCategoryItems()
                       .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                       .toList(),
                   onChanged: (v) => setState(() => _category = v),

@@ -11,6 +11,8 @@ class IngestReceiptRequest {
     required this.needsAmount,
     required this.merchantRaw,
     required this.categoryGuess,
+    this.categoryConfidence,
+    this.categoryUser,
     this.thumbnailBytes,
     this.shareLocationLat,
     this.shareLocationLng,
@@ -32,6 +34,8 @@ class IngestReceiptRequest {
   final bool needsAmount;
   final String? merchantRaw;
   final String categoryGuess;
+  final double? categoryConfidence;
+  final String? categoryUser;
   final Uint8List? thumbnailBytes;
   final double? shareLocationLat;
   final double? shareLocationLng;

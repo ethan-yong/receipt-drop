@@ -50,11 +50,10 @@ def run_ocr(image: np.ndarray) -> tuple[str, float]:
     # hurt clean thermal-print receipts.
     if os.environ.get("PREPROCESS_ADAPTIVE_BINARIZE"):
         from app.preprocessing import shadow_binarize  # lazy import avoids cycle
+
         image = shadow_binarize(image)
 
-    data = pytesseract.image_to_data(
-        image, output_type=Output.DICT, config=_config()
-    )
+    data = pytesseract.image_to_data(image, output_type=Output.DICT, config=_config())
 
     # Group words into lines keyed by Tesseract's block/paragraph/line ids.
     # image_to_data returns rows in reading order, so insertion order of the

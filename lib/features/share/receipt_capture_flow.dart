@@ -8,10 +8,12 @@ import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../data/repositories/social_repository.dart';
+import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/models/transaction_view.dart';
 import 'receipt_capture_menu.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_ingest_service.dart';
+import 'receipt_summary_card.dart';
 import 'share_save_sheet.dart';
 
 /// Picks a receipt, runs ingest, and shows the save sheet.
@@ -124,9 +126,20 @@ class ReceiptCaptureFlow {
   }) async {
     TransactionView? savedTx;
 
+    final categories = await loadBundledCategoryConfig();
+    if (!context.mounted) return;
+
+    final proceed = await ReceiptSummaryCard.show(context, draft: draft);
+    if (!context.mounted) return;
+    if (!proceed) {
+      await ReceiptIngestService.discardDraft(draft);
+      return;
+    }
+
     final saved = await ShareSaveSheet.show(
       context,
       draft: draft,
+      categories: categories,
       onSave: (amount, draft, impact) async {
         if (amount == null) return;
         savedTx = await AppServices.transactions.ingestReceipt(

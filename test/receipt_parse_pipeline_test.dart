@@ -213,6 +213,49 @@ We appreciate your business.
     expect(result.combinedConfidence, greaterThan(0.6));
   });
 
+  test('categoryConfidence is 0.85 when brand keyword is in merchant name', () {
+    const ocrText = '''
+STARBUCKS KLCC
+Latte                      RM 18.00
+TOTAL                      RM 18.00
+''';
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/starbucks.png',
+      ocrText: ocrText,
+      categories: categories,
+    );
+    expect(result.categoryGuess, 'Food & Drink');
+    expect(result.categoryConfidence, 0.85);
+  });
+
+  test(
+      'categoryConfidence is 0.55 and correct category when brand only in OCR body',
+      () {
+    // Place the recognisable brand on line 9 so the merchant extractor
+    // (which only scans the first 8 non-empty lines for brand matching)
+    // falls back to "LOREM IPSUM SDN BHD", while guessWithConfidence's
+    // 15-line OCR body scan catches "Petron" on line 9.
+    const ocrText = '''
+LOREM IPSUM SDN BHD
+Company Reg: 123456
+Tel: 03-12345678
+Receipt No: R001
+Date: 2026-07-05
+Item 1              RM 30.00
+Item 2              RM 50.00
+TOTAL               RM 80.00
+Petron self-service kiosk
+''';
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/petron.png',
+      ocrText: ocrText,
+      categories: categories,
+    );
+    expect(result.categoryGuess, 'Transport');
+    expect(result.categoryConfidence, greaterThanOrEqualTo(0.50));
+    expect(result.categoryConfidence, lessThan(0.80));
+  });
+
   test('mamak receipt with tax-code suffixes and no RM prefix parses', () {
     // The original failure case: every item is "name  price -Z" and the
     // total line has no readable RM prefix.

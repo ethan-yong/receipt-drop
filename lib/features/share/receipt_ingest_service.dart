@@ -63,6 +63,7 @@ class ReceiptIngestService {
       needsAmount: parsed.needsAmount,
       merchantRaw: parsed.merchantRaw,
       categoryGuess: parsed.categoryGuess,
+      categoryConfidence: parsed.categoryConfidence,
       thumbnailBytes: stored.bytes,
       shareLocationLat: location?.latitude,
       shareLocationLng: location?.longitude,

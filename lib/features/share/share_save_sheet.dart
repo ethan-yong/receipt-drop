@@ -4,6 +4,7 @@ import '../../core/platform/adaptive_sheet.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../core/platform/platform_utils.dart';
 import '../../core/theme/app_theme.dart';
+import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/rm_amount_parser.dart';
 import '../../widgets/amount_field.dart';
@@ -16,12 +17,17 @@ class ShareSaveSheet extends StatefulWidget {
   const ShareSaveSheet({
     super.key,
     required this.draft,
+    required this.categories,
     required this.onSave,
     required this.onCancel,
     this.onSaveForLater,
   });
 
   final ReceiptIngestDraft draft;
+
+  /// Category rules used to populate the inline category picker.
+  final CategoryConfig categories;
+
   final Future<void> Function(
     double? amount,
     ReceiptIngestDraft draft,
@@ -37,6 +43,7 @@ class ShareSaveSheet extends StatefulWidget {
   static Future<bool> show(
     BuildContext context, {
     required ReceiptIngestDraft draft,
+    required CategoryConfig categories,
     required Future<void> Function(
       double? amount,
       ReceiptIngestDraft draft,
@@ -50,6 +57,7 @@ class ShareSaveSheet extends StatefulWidget {
       isScrollControlled: true,
       child: ShareSaveSheet(
         draft: draft,
+        categories: categories,
         onSave: onSave,
         onCancel: onCancel,
         onSaveForLater: onSaveForLater,
@@ -65,6 +73,7 @@ class ShareSaveSheet extends StatefulWidget {
 class _ShareSaveSheetState extends State<ShareSaveSheet> {
   late final TextEditingController _amountController;
   ImpactLevel? _impactOverride;
+  String? _categoryOverride;
   var _saving = false;
 
   // Draft carries the combined-confidence verdict from the parse pipeline;
@@ -119,8 +128,11 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
       return;
     }
     setState(() => _saving = true);
+    final draft = _categoryOverride != null
+        ? widget.draft.copyWith(categoryUser: _categoryOverride)
+        : widget.draft;
     try {
-      await widget.onSave(amount, widget.draft, _effectiveImpact);
+      await widget.onSave(amount, draft, _effectiveImpact);
       if (mounted) {
         PlatformFeedback.mediumTap();
         Navigator.pop(context, true);
@@ -221,6 +233,14 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
         ],
         const SizedBox(height: AppSpacing.lg),
         AmountField(controller: _amountController),
+        const SizedBox(height: AppSpacing.md),
+        Text('Category', style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: AppSpacing.sm),
+        _CategoryDropdown(
+          value: _categoryOverride ?? widget.draft.categoryGuess,
+          categories: widget.categories,
+          onChanged: (v) => setState(() => _categoryOverride = v),
+        ),
         const SizedBox(height: AppSpacing.lg),
         Text('Impact', style: Theme.of(context).textTheme.labelMedium),
         const SizedBox(height: AppSpacing.sm),
@@ -313,6 +333,42 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CategoryDropdown extends StatelessWidget {
+  const _CategoryDropdown({
+    required this.value,
+    required this.categories,
+    required this.onChanged,
+  });
+
+  final String value;
+  final CategoryConfig categories;
+  final ValueChanged<String?> onChanged;
+
+  List<String> get _items => {
+        ...categories.rules.map((r) => r.category),
+        categories.defaultCategory,
+      }.toList();
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _items;
+    final safeValue = items.contains(value) ? value : items.first;
+    return DropdownButtonFormField<String>(
+      value: safeValue,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        isDense: true,
+      ),
+      items: items.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+      onChanged: onChanged,
     );
   }
 }

@@ -48,4 +48,36 @@ class CategoryConfig {
     }
     return CategoryGuess(category: defaultCategory);
   }
+
+  /// Tries [merchantRaw] first; if that returns the default, scans the first
+  /// [scanLines] lines of [ocrText] for a keyword match.
+  ///
+  /// Returns `(category, confidence)`:
+  ///   - Merchant-name hit → 0.85
+  ///   - OCR-body hit      → 0.55
+  ///   - No match          → (defaultCategory, 0.10)
+  ({String category, double confidence}) guessWithConfidence(
+    String merchantRaw,
+    String ocrText, {
+    int scanLines = 15,
+  }) {
+    final merchantGuess = guessForMerchant(merchantRaw);
+    if (merchantGuess.category != defaultCategory) {
+      return (category: merchantGuess.category, confidence: 0.85);
+    }
+
+    final lines = ocrText.split(RegExp(r'\r?\n')).take(scanLines);
+    for (final line in lines) {
+      final haystack = line.toLowerCase();
+      for (final rule in rules) {
+        for (final kw in rule.keywords) {
+          if (haystack.contains(kw.toLowerCase())) {
+            return (category: rule.category, confidence: 0.55);
+          }
+        }
+      }
+    }
+
+    return (category: defaultCategory, confidence: 0.10);
+  }
 }

@@ -29,6 +29,7 @@ class ReceiptParseResult {
     required this.merchantRaw,
     required this.categoryGuess,
     required this.impactLevel,
+    this.categoryConfidence = 0.0,
     this.ocrServiceConfidence,
     this.lineItems = const [],
     this.lineItemsConfidence = 0.0,
@@ -49,6 +50,10 @@ class ReceiptParseResult {
 
   final String? merchantRaw;
   final String categoryGuess;
+
+  /// How confident the category guesser is: 0.85 (merchant-name hit),
+  /// 0.55 (OCR-body fallback), 0.10 (default).
+  final double categoryConfidence;
   final String impactLevel;
 
   /// Scan quality: the OCR engine's mean word confidence. Says nothing about
@@ -106,6 +111,7 @@ class ReceiptParseResult {
       if (parseFailureReason != null) 'parseFailureReason': parseFailureReason,
       'merchantRaw': merchantRaw,
       'categoryGuess': categoryGuess,
+      'categoryConfidence': categoryConfidence,
       'impactLevel': impactLevel,
       'lowConfidence': lowConfidence,
       'lineItems': lineItems.map((it) => it.toJson()).toList(),
@@ -151,8 +157,10 @@ ReceiptParseResult parseReceiptOcrText({
   final lineItemsResult = reconcileWithTotal(extracted, amount);
 
   final merchantRaw = extractMerchant(ocrText, categories);
-  final categoryGuess =
-      categories.guessForMerchant(merchantRaw ?? '').category;
+  final (:category, :confidence) =
+      categories.guessWithConfidence(merchantRaw ?? '', ocrText);
+  final categoryGuess = category;
+  final categoryConfidence = confidence;
 
   return ReceiptParseResult(
     filePath: filePath,
@@ -162,6 +170,7 @@ ReceiptParseResult parseReceiptOcrText({
     ocrConfidence: parseResult.confidence,
     merchantRaw: merchantRaw,
     categoryGuess: categoryGuess,
+    categoryConfidence: categoryConfidence,
     impactLevel: deriveImpactLevel(amount).storageValue,
     ocrServiceConfidence: ocrServiceConfidence,
     lineItems: lineItemsResult.items,

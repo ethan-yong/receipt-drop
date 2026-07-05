@@ -21,9 +21,7 @@ def test_preprocess_raises_on_garbage_bytes() -> None:
 def test_deskew_reduces_skew_angle(skewed_low_contrast_image_bytes: bytes) -> None:
     image = decode_image(skewed_low_contrast_image_bytes)
     original_angle = _skew_angle(
-        np.ascontiguousarray(image[:, :, 0])
-        if image.ndim == 3
-        else image
+        np.ascontiguousarray(image[:, :, 0]) if image.ndim == 3 else image
     )
 
     rotated = deskew(image)

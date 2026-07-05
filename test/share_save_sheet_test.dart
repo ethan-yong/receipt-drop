@@ -1,8 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/core/theme/app_theme.dart';
+import 'package:receipt_drop/domain/logic/category_matcher.dart';
 import 'package:receipt_drop/features/share/receipt_ingest_draft.dart';
 import 'package:receipt_drop/features/share/share_save_sheet.dart';
+
+final _testCategories = CategoryConfig.fromJson({
+  'version': 'test',
+  'default_category': 'Others',
+  'rules': [
+    {
+      'category': 'Food & Drink',
+      'any_of': ['cafe', 'restoran'],
+    }
+  ],
+});
 
 void main() {
   ReceiptIngestDraft draftWith({
@@ -31,6 +43,7 @@ void main() {
         home: Scaffold(
           body: ShareSaveSheet(
             draft: draft,
+            categories: _testCategories,
             onSave: (_, _, _) async {},
             onCancel: (_) async {},
             onSaveForLater: onSaveForLater,

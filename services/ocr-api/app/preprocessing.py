@@ -25,9 +25,7 @@ def decode_image(image_bytes: bytes) -> np.ndarray:
 
 
 def _skew_angle(gray: np.ndarray) -> float:
-    _, thresh = cv2.threshold(
-        gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU
-    )
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
     coords = cv2.findNonZero(thresh)
     if coords is None:
         return 0.0
@@ -80,9 +78,7 @@ def upscale_for_ocr(image: np.ndarray, min_width: int = _MIN_OCR_WIDTH) -> np.nd
 
 
 def enhance_contrast(image: np.ndarray) -> np.ndarray:
-    gray = (
-        cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
-    )
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     return clahe.apply(gray)
 
@@ -112,10 +108,10 @@ def _order_points(pts: np.ndarray) -> np.ndarray:
     diff = np.diff(pts, axis=1)
     return np.array(
         [
-            pts[np.argmin(s)],    # top-left: smallest x+y
-            pts[np.argmin(diff)], # top-right: smallest x-y
-            pts[np.argmax(s)],    # bottom-right: largest x+y
-            pts[np.argmax(diff)], # bottom-left: largest x-y
+            pts[np.argmin(s)],  # top-left: smallest x+y
+            pts[np.argmin(diff)],  # top-right: smallest x-y
+            pts[np.argmax(s)],  # bottom-right: largest x+y
+            pts[np.argmax(diff)],  # bottom-left: largest x-y
         ],
         dtype=np.float32,
     )
@@ -133,9 +129,7 @@ def perspective_correct(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
-    contours, _ = cv2.findContours(
-        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return image
     for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
@@ -178,7 +172,5 @@ def preprocess(image_bytes: bytes) -> np.ndarray:
     rotated = deskew(image)
     upscaled = upscale_for_ocr(rotated)
     return (
-        cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY)
-        if upscaled.ndim == 3
-        else upscaled
+        cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY) if upscaled.ndim == 3 else upscaled
     )

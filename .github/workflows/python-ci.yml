@@ -1,0 +1,50 @@
+name: Python CI
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "services/**"
+      - ".github/workflows/python-ci.yml"
+  pull_request:
+    paths:
+      - "services/**"
+      - ".github/workflows/python-ci.yml"
+
+jobs:
+  lint-and-test:
+    name: ruff + pytest (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [ocr-api, leaderboard-api]
+
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/${{ matrix.service }}/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format
+        run: ruff format --check .
+
+      - name: Pytest
+        run: pytest

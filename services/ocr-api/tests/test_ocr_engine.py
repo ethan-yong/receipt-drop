@@ -26,9 +26,7 @@ def test_run_ocr_groups_words_into_lines(monkeypatch: pytest.MonkeyPatch) -> Non
             ("2.50", 70, (1, 1, 2)),
         ]
     )
-    monkeypatch.setattr(
-        ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data
-    )
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
 
     text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
 
@@ -46,9 +44,7 @@ def test_run_ocr_excludes_nonpositive_conf_from_mean(
             ("7.70", 0, (1, 1, 1)),  # conf 0 = "no confidence", excluded
         ]
     )
-    monkeypatch.setattr(
-        ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data
-    )
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
 
     text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
 
@@ -64,9 +60,7 @@ def test_run_ocr_preserves_block_order(monkeypatch: pytest.MonkeyPatch) -> None:
             ("TOTAL", 90, (3, 1, 1)),
         ]
     )
-    monkeypatch.setattr(
-        ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data
-    )
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
 
     text, _ = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
 
@@ -75,9 +69,7 @@ def test_run_ocr_preserves_block_order(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_run_ocr_empty_returns_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     data = _fake_data([("", -1, (1, 1, 1)), ("   ", -1, (1, 1, 1))])
-    monkeypatch.setattr(
-        ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data
-    )
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
 
     assert ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8)) == ("", 0.0)
 

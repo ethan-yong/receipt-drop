@@ -12,6 +12,8 @@ class ReceiptIngestDraft {
     required this.needsAmount,
     required this.merchantRaw,
     required this.categoryGuess,
+    this.categoryConfidence,
+    this.categoryUser,
     this.thumbnailBytes,
     this.shareLocationLat,
     this.shareLocationLng,
@@ -31,6 +33,11 @@ class ReceiptIngestDraft {
   final bool needsAmount;
   final String? merchantRaw;
   final String categoryGuess;
+  final double? categoryConfidence;
+
+  /// Category override set by the user in the save sheet (writes to
+  /// `category_user`; original `categoryGuess` is preserved).
+  final String? categoryUser;
   final Uint8List? thumbnailBytes;
   final double? shareLocationLat;
   final double? shareLocationLng;
@@ -54,6 +61,7 @@ class ReceiptIngestDraft {
     bool? needsAmount,
     String? merchantRaw,
     String? categoryGuess,
+    String? categoryUser,
   }) {
     return ReceiptIngestDraft(
       localFilePath: localFilePath,
@@ -62,6 +70,8 @@ class ReceiptIngestDraft {
       needsAmount: needsAmount ?? this.needsAmount,
       merchantRaw: merchantRaw ?? this.merchantRaw,
       categoryGuess: categoryGuess ?? this.categoryGuess,
+      categoryConfidence: categoryConfidence,
+      categoryUser: categoryUser ?? this.categoryUser,
       thumbnailBytes: thumbnailBytes,
       shareLocationLat: shareLocationLat,
       shareLocationLng: shareLocationLng,
@@ -88,6 +98,8 @@ class ReceiptIngestDraft {
       needsAmount: false,
       merchantRaw: merchantRaw,
       categoryGuess: categoryGuess,
+      categoryConfidence: categoryConfidence,
+      categoryUser: categoryUser,
       thumbnailBytes: thumbnailBytes,
       shareLocationLat: shareLocationLat,
       shareLocationLng: shareLocationLng,
@@ -113,6 +125,8 @@ class ReceiptIngestDraft {
       needsAmount: needsAmount,
       merchantRaw: merchantRaw,
       categoryGuess: categoryGuess,
+      categoryConfidence: categoryConfidence,
+      categoryUser: categoryUser,
       thumbnailBytes: thumbnailBytes,
       shareLocationLat: shareLocationLat,
       shareLocationLng: shareLocationLng,

@@ -87,6 +87,8 @@ class TransactionRepository {
             needsAmount: Value(request.needsAmount),
             merchantRaw: Value(request.merchantRaw),
             categoryGuess: Value(request.categoryGuess),
+            categoryConfidence: Value(request.categoryConfidence),
+            categoryUser: Value(request.categoryUser),
             shareLocationLat: Value(request.shareLocationLat),
             shareLocationLng: Value(request.shareLocationLng),
             shareLocationCapturedAt: Value(request.shareLocationCapturedAt),
