@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../domain/logic/avatar_mood.dart';
@@ -11,6 +10,8 @@ import '../local/app_database.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
 import 'sync_worker.dart';
+
+const bool _kDebugMode = !bool.fromEnvironment('dart.vm.product');
 
 class TransactionRepository {
   TransactionRepository(this._db);
@@ -73,6 +74,8 @@ class TransactionRepository {
     final artifactId = _uuid.v4();
     final now = DateTime.now();
     final amountSource = request.needsAmount ? null : 'ocr';
+    final pipelineStatus =
+        request.needsReview ? 'needs_review' : 'provisional';
 
     await _db.into(_db.outboxTransactions).insert(
           OutboxTransactionsCompanion.insert(
@@ -88,9 +91,13 @@ class TransactionRepository {
             shareLocationLng: Value(request.shareLocationLng),
             shareLocationCapturedAt: Value(request.shareLocationCapturedAt),
             ocrConfidence: Value(request.ocrConfidence),
+            rawOcrText: Value(request.rawOcrText),
+            ocrServiceConfidence: Value(request.ocrServiceConfidence),
+            lineItemsConfidence: Value(request.lineItemsConfidence),
+            parseFailureReason: Value(request.parseFailureReason),
             impactUser: Value(request.impactUser),
             syncStatus: const Value('pending'),
-            pipelineStatus: const Value('provisional'),
+            pipelineStatus: Value(pipelineStatus),
           ),
         );
 
@@ -137,13 +144,50 @@ class TransactionRepository {
       placeLat: request.shareLocationLat,
       placeLng: request.shareLocationLng,
       syncStatus: 'pending',
-      pipelineStatus: 'provisional',
+      pipelineStatus: pipelineStatus,
       localThumbnailPath: request.localFilePath,
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
       ritualledAt: null,
       lineItems: request.lineItems,
+      rawOcrText: request.rawOcrText,
+      ocrConfidence: request.ocrConfidence,
     );
+  }
+
+  /// Receipts parked in the review queue, newest first.
+  Stream<List<TransactionView>> watchNeedsReview() {
+    return (_db.select(_db.outboxTransactions)
+          ..where((t) => t.pipelineStatus.equals('needs_review'))
+          ..orderBy([
+            (t) => OrderingTerm.desc(t.occurredAt),
+          ]))
+        .watch()
+        .asyncMap(_rowsToViews);
+  }
+
+  /// One-tap confirmation from the review screen: sets the user-entered
+  /// amount, releases the row back into the normal pipeline, and re-queues
+  /// sync (plain updates never re-sync on their own).
+  Future<void> confirmReview(
+    String id,
+    double amountMyr, {
+    String? impactUser,
+  }) async {
+    await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(id)))
+        .write(
+      OutboxTransactionsCompanion(
+        amountMyr: Value(amountMyr),
+        needsAmount: const Value(false),
+        amountSource: const Value('user'),
+        pipelineStatus: const Value('provisional'),
+        syncStatus: const Value('pending'),
+        retryCount: const Value(0),
+        impactUser:
+            impactUser != null ? Value(impactUser) : const Value.absent(),
+      ),
+    );
+    unawaited(SyncWorker.run(_db, id));
   }
 
   Future<void> updateTransaction(TransactionView view) async {
@@ -228,7 +272,7 @@ class TransactionRepository {
   }
 
   Future<void> seedReceiptShowcaseIfEmpty({String userId = 'demo-user'}) async {
-    if (!kDebugMode) return;
+    if (!_kDebugMode) return;
 
     final rows = await _db.select(_db.outboxTransactions).get();
     final views = await _rowsToViews(rows);
@@ -301,6 +345,8 @@ class TransactionRepository {
       impactUser: row.impactUser,
       ritualledAt: row.ritualledAt,
       lineItems: lineItems,
+      rawOcrText: row.rawOcrText,
+      ocrConfidence: row.ocrConfidence,
     );
   }
 }

@@ -59,6 +59,20 @@ class OutboxTransactions extends Table {
 
   RealColumn get ocrConfidence => real().nullable()();
 
+  /// Raw OCR text, kept only when the parse failed or was low-confidence —
+  /// the evidence needed to fix parser rules later.
+  TextColumn get rawOcrText => text().nullable()();
+
+  /// OCR engine's scan-quality confidence (mean word confidence, 0..1).
+  /// Distinct from [ocrConfidence], which scores the amount *extraction*.
+  RealColumn get ocrServiceConfidence => real().nullable()();
+
+  /// Aggregate confidence over extracted line items.
+  RealColumn get lineItemsConfidence => real().nullable()();
+
+  /// Machine-readable reason when amount parsing failed outright.
+  TextColumn get parseFailureReason => text().nullable()();
+
   TextColumn get pipelineStatus =>
       text().withDefault(const Constant('provisional'))();
 

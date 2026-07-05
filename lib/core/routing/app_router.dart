@@ -16,6 +16,7 @@ import '../../features/leaderboard/leaderboard_screen.dart';
 import '../../features/map/spend_map_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/places/places_search_screen.dart';
+import '../../features/review/receipt_review_screen.dart';
 import '../../features/ritual/ritual_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/share/share_hint_screen.dart';
@@ -183,6 +184,12 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/places-search',
         name: 'places-search',
         builder: (context, state) => const PlacesSearchScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/review',
+        name: 'review',
+        builder: (context, state) => const ReceiptReviewScreen(),
       ),
     ],
   );

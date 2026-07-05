@@ -77,4 +77,56 @@ TOTAL                      RM 50.00
     expect(result.itemsSubtotalMyr, 5.00);
     expect(result.itemsMatchTotal, isFalse);
   });
+
+  test('tolerates Malaysian SST tax-code suffixes after the price', () {
+    const ocr = '''
+RESTORAN PELITA
+Teh Tarik                  2.50 SR
+Roti Canai                 RM 1.50-Z
+2 x Nasi Lemak             RM 9.00 ZRL
+JUMLAH                     13.00
+''';
+    final result = extractReceiptLineItems(ocr, totalMyr: 13.00);
+    expect(result.items.length, 3);
+    expect(result.items[0].name, 'Teh Tarik');
+    expect(result.items[0].priceMyr, 2.50);
+    expect(result.items[1].name, 'Roti Canai');
+    expect(result.items[1].priceMyr, 1.50);
+    expect(result.items[2].name, 'Nasi Lemak');
+    expect(result.items[2].priceMyr, 9.00);
+    expect(result.items[2].quantity, 2);
+    expect(result.itemsSubtotalMyr, 13.00);
+    expect(result.itemsMatchTotal, isTrue);
+  });
+
+  test('mamak fixture with bare -Z prices extracts all items', () {
+    const ocr = '''
+RESTORAN MAMAK BISTRO
+Mee Goreng                 7.00 -Z
+Nasi Kandar                11.00 -Z
+''';
+    final result = extractReceiptLineItems(ocr);
+    expect(result.items.length, 2);
+    expect(result.items[0].priceMyr, 7.00);
+    expect(result.items[1].priceMyr, 11.00);
+    expect(result.itemsSubtotalMyr, 18.00);
+  });
+
+  test('reconcileWithTotal applies match flag and penalty after the fact', () {
+    const ocr = '''
+CAFE
+Latte                      RM 12.50
+Croissant                  RM 7.90
+''';
+    final extracted = extractReceiptLineItems(ocr);
+    expect(extracted.itemsMatchTotal, isFalse);
+
+    final matched = reconcileWithTotal(extracted, 20.40);
+    expect(matched.itemsMatchTotal, isTrue);
+    expect(matched.confidence, extracted.confidence);
+
+    final mismatched = reconcileWithTotal(extracted, 99.00);
+    expect(mismatched.itemsMatchTotal, isFalse);
+    expect(mismatched.confidence, lessThan(extracted.confidence));
+  });
 }

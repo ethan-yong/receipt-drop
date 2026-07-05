@@ -128,6 +128,7 @@ class ReceiptCaptureFlow {
       context,
       draft: draft,
       onSave: (amount, draft, impact) async {
+        if (amount == null) return;
         savedTx = await AppServices.transactions.ingestReceipt(
           draft.toIngestRequest(
             confirmedAmount: amount,
@@ -136,6 +137,13 @@ class ReceiptCaptureFlow {
         );
         final tx = savedTx;
         if (tx != null) SocialRepository.createFeedPost(tx);
+      },
+      // Parks the receipt in the review queue (no ritual, no feed post) —
+      // closing the "cancel = receipt lost" hole for unreadable receipts.
+      onSaveForLater: (draft) async {
+        await AppServices.transactions.ingestReceipt(
+          draft.toNeedsReviewRequest(),
+        );
       },
       onCancel: ReceiptIngestService.discardDraft,
     );

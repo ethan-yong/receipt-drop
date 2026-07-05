@@ -24,6 +24,8 @@ class TransactionView {
     this.impactUser,
     this.ritualledAt,
     this.lineItems,
+    this.rawOcrText,
+    this.ocrConfidence,
   });
 
   final String id;
@@ -44,6 +46,16 @@ class TransactionView {
   final String? impactUser;
   final DateTime? ritualledAt;
   final List<ReceiptLineItem>? lineItems;
+
+  /// Raw OCR text kept as evidence on failed/low-confidence parses; shown on
+  /// the review screen so the user can find the amount themselves.
+  final String? rawOcrText;
+
+  /// Amount-extraction confidence (0..1) as stored on the outbox row.
+  final double? ocrConfidence;
+
+  /// Waiting for one-tap human confirmation on the review screen.
+  bool get needsReview => pipelineStatus == 'needs_review';
 
   String get effectiveCategory {
     final user = categoryUser?.trim();
@@ -160,6 +172,8 @@ class TransactionView {
       impactUser: impactUser ?? this.impactUser,
       ritualledAt: ritualledAt ?? this.ritualledAt,
       lineItems: lineItems ?? this.lineItems,
+      rawOcrText: rawOcrText,
+      ocrConfidence: ocrConfidence,
     );
   }
 }

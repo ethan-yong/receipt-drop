@@ -55,8 +55,12 @@ class Env {
     const fromDefine = String.fromEnvironment('LEADERBOARD_API_URL');
     if (fromDefine.isNotEmpty) return fromDefine;
     if (kDebugMode) {
-      final v = dotenv.maybeGet('LEADERBOARD_API_URL');
-      if (v != null && v.isNotEmpty) return v.trim();
+      try {
+        final v = dotenv.maybeGet('LEADERBOARD_API_URL');
+        if (v != null && v.isNotEmpty) return v.trim();
+      } on Object {
+        // dotenv not loaded yet (e.g. widget tests).
+      }
     }
     return '';
   }

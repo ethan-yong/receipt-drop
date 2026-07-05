@@ -139,4 +139,103 @@ No price on this scan
     final json = result.toJson();
     expect(json['lineItems'], isEmpty);
   });
+
+  test('parse failure reports reason and zero confidence in JSON', () {
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/blank3.png',
+      ocrText: 'UNKNOWN SHOP\nNo totals here',
+      categories: categories,
+    );
+
+    expect(result.needsAmount, isTrue);
+    expect(result.ocrConfidence, 0.0);
+    expect(result.combinedConfidence, 0.0);
+    expect(result.amountSource, 'none');
+    expect(result.parseFailureReason, 'no_amount_pattern');
+
+    final json = result.toJson();
+    expect(json['parseFailureReason'], 'no_amount_pattern');
+    expect(json['amountSource'], 'none');
+    expect(json['combinedConfidence'], 0.0);
+  });
+
+  test('combinedConfidence is min-gated by scan quality', () {
+    const ocrText = '''
+ROCK CAFE SDN BHD
+Latte                      RM 12.50
+Croissant                  RM 7.90
+TOTAL                      RM 20.40
+''';
+    final goodScan = parseReceiptOcrText(
+      filePath: '/tmp/scan.png',
+      ocrText: ocrText,
+      categories: categories,
+      ocrServiceConfidence: 0.95,
+    );
+    final badScan = parseReceiptOcrText(
+      filePath: '/tmp/scan.png',
+      ocrText: ocrText,
+      categories: categories,
+      ocrServiceConfidence: 0.2,
+    );
+
+    // Same parse, worse scan: the combined score must drop and stay within
+    // the ceiling margin of the scan quality.
+    expect(goodScan.ocrConfidence, badScan.ocrConfidence);
+    expect(badScan.combinedConfidence, lessThan(goodScan.combinedConfidence));
+    expect(
+      badScan.combinedConfidence,
+      lessThanOrEqualTo(0.2 + combinedScanCeilingMargin),
+    );
+    expect(badScan.lowConfidence, isTrue);
+  });
+
+  test('ocrServiceConfidence 0.95 is squashed before blending', () {
+    // Use a receipt with no extractable items so no subtotal cross-check fires
+    // (that would raise ocrConfidence to 0.85+ and obscure the calibration
+    // signal). With ocrConfidence ≈ 0.675 (TOTAL keyword only):
+    //   uncalibrated blend = 0.6×0.675 + 0.4×0.95 ≈ 0.785
+    //   calibrated blend   = 0.6×0.675 + 0.4×0.832 ≈ 0.738
+    // Assert < 0.76 so code that skips calibration (producing 0.785) trips this.
+    const ocrText = '''
+CAFE
+TOTAL RM 20.00
+Thank you for visiting us today.
+We appreciate your business.
+''';
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/calibration.png',
+      ocrText: ocrText,
+      categories: categories,
+      ocrServiceConfidence: 0.95,
+    );
+    expect(result.combinedConfidence, lessThan(0.76));
+    expect(result.combinedConfidence, greaterThan(0.6));
+  });
+
+  test('mamak receipt with tax-code suffixes and no RM prefix parses', () {
+    // The original failure case: every item is "name  price -Z" and the
+    // total line has no readable RM prefix.
+    const ocrText = '''
+RESTORAN MAMAK BISTRO
+Mee Goreng                 7.00 -Z
+Nasi Kandar                11.00 -Z
+JUMLAH                     18.00
+''';
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/mamak.png',
+      ocrText: ocrText,
+      categories: categories,
+    );
+
+    expect(result.needsAmount, isFalse);
+    expect(result.amountMyr, 18.00);
+    expect(result.amountSource, 'totalKeywordFallback');
+    expect(result.lineItems, hasLength(2));
+    expect(result.itemsSubtotalMyr, 18.00);
+    expect(result.itemsMatchTotal, isTrue);
+    // Fallback-sourced amounts always route to double-checking.
+    expect(result.lowConfidence, isTrue);
+    expect(result.parseFailureReason, isNull);
+  });
 }

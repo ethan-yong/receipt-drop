@@ -54,9 +54,8 @@ def test_ocr_success_returns_text_and_confidence(
     skewed_low_contrast_image_bytes: bytes,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # PaddleOCR's real model isn't loaded in unit tests (slow, needs a model
-    # download) — this exercises the route/preprocessing wiring, not the
-    # recognition engine itself.
+    # The real Tesseract binary isn't invoked in unit tests — this exercises
+    # the route/preprocessing wiring, not the recognition engine itself.
     monkeypatch.setattr(
         "app.main.run_ocr", lambda image: ("TOTAL RM 7.70", 0.93)
     )

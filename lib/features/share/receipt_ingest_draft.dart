@@ -18,6 +18,11 @@ class ReceiptIngestDraft {
     this.shareLocationCapturedAt,
     this.ocrConfidence,
     this.lineItems = const [],
+    this.rawOcrText,
+    this.ocrServiceConfidence,
+    this.lineItemsConfidence,
+    this.parseFailureReason,
+    this.lowConfidence = false,
   });
 
   final String localFilePath;
@@ -32,6 +37,17 @@ class ReceiptIngestDraft {
   final DateTime? shareLocationCapturedAt;
   final double? ocrConfidence;
   final List<ReceiptLineItem> lineItems;
+
+  /// Raw OCR text, carried only when the parse failed or was low-confidence.
+  final String? rawOcrText;
+  final double? ocrServiceConfidence;
+  final double? lineItemsConfidence;
+  final String? parseFailureReason;
+
+  /// Combined-confidence verdict from [ReceiptParseResult.lowConfidence];
+  /// kept on the draft so the save sheet doesn't re-derive it from
+  /// [ocrConfidence] alone.
+  final bool lowConfidence;
 
   ReceiptIngestDraft copyWith({
     double? amountMyr,
@@ -52,6 +68,11 @@ class ReceiptIngestDraft {
       shareLocationCapturedAt: shareLocationCapturedAt,
       ocrConfidence: ocrConfidence,
       lineItems: lineItems,
+      rawOcrText: rawOcrText,
+      ocrServiceConfidence: ocrServiceConfidence,
+      lineItemsConfidence: lineItemsConfidence,
+      parseFailureReason: parseFailureReason,
+      lowConfidence: lowConfidence,
     );
   }
 
@@ -74,6 +95,36 @@ class ReceiptIngestDraft {
       ocrConfidence: ocrConfidence,
       impactUser: impactUser,
       lineItems: lineItems,
+      rawOcrText: rawOcrText,
+      ocrServiceConfidence: ocrServiceConfidence,
+      lineItemsConfidence: lineItemsConfidence,
+      parseFailureReason: parseFailureReason,
+    );
+  }
+
+  /// Saves without a confirmed amount: routes into the review queue instead
+  /// of silently dropping the receipt. Parsed values (if any) are kept so the
+  /// review screen can prefill them.
+  IngestReceiptRequest toNeedsReviewRequest({String? impactUser}) {
+    return IngestReceiptRequest(
+      localFilePath: localFilePath,
+      mimeType: mimeType,
+      amountMyr: amountMyr,
+      needsAmount: needsAmount,
+      merchantRaw: merchantRaw,
+      categoryGuess: categoryGuess,
+      thumbnailBytes: thumbnailBytes,
+      shareLocationLat: shareLocationLat,
+      shareLocationLng: shareLocationLng,
+      shareLocationCapturedAt: shareLocationCapturedAt,
+      ocrConfidence: ocrConfidence,
+      impactUser: impactUser,
+      lineItems: lineItems,
+      rawOcrText: rawOcrText,
+      ocrServiceConfidence: ocrServiceConfidence,
+      lineItemsConfidence: lineItemsConfidence,
+      parseFailureReason: parseFailureReason,
+      needsReview: true,
     );
   }
 }

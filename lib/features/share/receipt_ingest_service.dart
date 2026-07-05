@@ -69,6 +69,16 @@ class ReceiptIngestService {
       shareLocationCapturedAt: location != null ? DateTime.now().toUtc() : null,
       ocrConfidence: parsed.ocrConfidence,
       lineItems: parsed.lineItems,
+      // Failed/shaky parses keep their raw OCR text as evidence for fixing
+      // parser rules later; clean parses don't need the payload.
+      rawOcrText: (parsed.needsAmount || parsed.lowConfidence) &&
+              parsed.ocrText.isNotEmpty
+          ? parsed.ocrText
+          : null,
+      ocrServiceConfidence: parsed.ocrServiceConfidence,
+      lineItemsConfidence: parsed.lineItemsConfidence,
+      parseFailureReason: parsed.parseFailureReason,
+      lowConfidence: parsed.lowConfidence,
     );
   }
 

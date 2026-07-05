@@ -53,16 +53,18 @@ TOTAL                      RM 20.40
       mimeType: 'image/png',
     );
 
-    expect(e2e, isNotNull);
-    expect(e2e!.roundTripOk, isTrue);
+    expect(e2e.roundTripOk, isTrue);
     expect(e2e.persistedLineItemNames, ['Latte', 'Croissant']);
     expect(e2e.syncLineItemsPayload, hasLength(2));
     expect(e2e.syncLineItemsPayload.first['name'], 'Latte');
     expect(e2e.syncLineItemsPayload.first['price_myr'], 12.5);
     expect(e2e.syncLineItemsPayload.first['sort_order'], 0);
+    expect(e2e.needsReview, isFalse);
+    expect(e2e.pipelineStatus, 'provisional');
   });
 
-  test('persistParsedReceiptE2e skips when amount missing', () async {
+  test('persistParsedReceiptE2e queues needs-amount receipts for review',
+      () async {
     final parsed = parseReceiptOcrText(
       filePath: '/tmp/blank.png',
       ocrText: 'UNKNOWN SHOP\nNo totals here',
@@ -73,6 +75,10 @@ TOTAL                      RM 20.40
       parsed: parsed,
       mimeType: 'image/png',
     );
-    expect(e2e, isNull);
+
+    // The receipt is persisted into the review queue, never dropped.
+    expect(e2e.needsReview, isTrue);
+    expect(e2e.pipelineStatus, 'needs_review');
+    expect(e2e.transactionId, isNotEmpty);
   });
 }

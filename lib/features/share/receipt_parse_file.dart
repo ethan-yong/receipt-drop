@@ -8,13 +8,14 @@ Future<ReceiptParseResult> parseReceiptFile({
   required String mimeType,
   required CategoryConfig categories,
 }) async {
-  final ocrText = await runOcrOnReceiptFile(
+  final ocr = await runOcrOnReceiptFile(
     filePath: filePath,
     mimeType: mimeType,
   );
   return parseReceiptOcrText(
     filePath: filePath,
-    ocrText: ocrText,
+    ocrText: ocr.text,
     categories: categories,
+    ocrServiceConfidence: ocr.serviceConfidence,
   );
 }

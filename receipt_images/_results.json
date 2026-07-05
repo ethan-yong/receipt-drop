@@ -1,0 +1,14 @@
+[
+  {
+    "file": "cafe.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "grocery.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "restaurant.png",
+    "error": "ocr_failed_or_empty"
+  }
+]

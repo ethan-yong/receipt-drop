@@ -1,20 +1,16 @@
 [project]
 name = "ocr-api"
-version = "0.1.0"
-description = "Self-hosted receipt OCR (PaddleOCR + OpenCV deskew/contrast preprocessing)"
-requires-python = ">=3.11,<3.12"
+version = "0.2.0"
+description = "Self-hosted receipt OCR (Tesseract + OpenCV deskew/contrast/binarize preprocessing)"
+requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.32.0",
-  # Pinned below PaddleOCR 3.x: the newer default models (PP-OCRv6 + PIR
-  # executor) hit a NotImplementedError in the CPU/oneDNN inference backend.
-  # 2.x + PP-OCRv4 is the mature, widely-deployed combination.
-  "paddleocr>=2.7.0,<3.0.0",
-  "paddlepaddle>=2.6.0,<3.0.0",
-  # cv2 comes transitively from paddleocr (regular opencv-python, not
-  # -headless) — do not add a second opencv package here, the two collide
-  # on the same import namespace. Dockerfile installs libgl1/libglib2.0-0
-  # for its GUI-stub deps.
+  # pytesseract needs the native tesseract binary: the Dockerfile installs
+  # tesseract-ocr via apt; Windows devs set TESSERACT_CMD to the exe path.
+  "pytesseract>=0.3.13",
+  # -headless: no GUI stubs, so the image needs no libgl1/libglib2.0-0.
+  "opencv-python-headless>=4.9.0",
   "numpy>=1.26.0,<2.0.0",
   "pydantic>=2.10.0",
 ]

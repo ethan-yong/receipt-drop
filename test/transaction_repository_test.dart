@@ -104,6 +104,103 @@ void main() {
     await db.close();
   });
 
+  test('needs-review ingest persists evidence and routes to the queue',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/blurry.png',
+        mimeType: 'image/png',
+        amountMyr: null,
+        needsAmount: true,
+        merchantRaw: 'Mamak Bistro',
+        categoryGuess: 'Food & Drink',
+        needsReview: true,
+        rawOcrText: 'MEE GORENG 7.00 -Z\nJUMLAH 18.00',
+        ocrServiceConfidence: 0.42,
+        lineItemsConfidence: 0.3,
+        parseFailureReason: 'no_amount_pattern',
+      ),
+    );
+
+    expect(saved.needsReview, isTrue);
+    expect(saved.pipelineStatus, 'needs_review');
+
+    final queued = await repo.watchNeedsReview().first;
+    expect(queued, hasLength(1));
+    expect(queued.single.id, saved.id);
+    expect(queued.single.rawOcrText, contains('MEE GORENG'));
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+    expect(row.rawOcrText, contains('JUMLAH'));
+    expect(row.ocrServiceConfidence, 0.42);
+    expect(row.lineItemsConfidence, 0.3);
+    expect(row.parseFailureReason, 'no_amount_pattern');
+    expect(row.amountSource, isNull);
+
+    await db.close();
+  });
+
+  test('confirmReview releases the row back into the normal pipeline',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/blurry2.png',
+        mimeType: 'image/png',
+        amountMyr: null,
+        needsAmount: true,
+        merchantRaw: 'Shop',
+        categoryGuess: 'Others',
+        needsReview: true,
+      ),
+    );
+
+    await repo.confirmReview(saved.id, 18.00, impactUser: 'low');
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+    expect(row.amountMyr, 18.00);
+    expect(row.needsAmount, isFalse);
+    expect(row.amountSource, 'user');
+    expect(row.pipelineStatus, 'provisional');
+    expect(row.syncStatus, 'pending');
+    expect(row.impactUser, 'low');
+
+    final queued = await repo.watchNeedsReview().first;
+    expect(queued, isEmpty);
+
+    await db.close();
+  });
+
+  test('normal ingest does not land in the review queue', () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/clean.png',
+        mimeType: 'image/png',
+        amountMyr: 12.5,
+        needsAmount: false,
+        merchantRaw: 'Cafe',
+        categoryGuess: 'Food & Drink',
+      ),
+    );
+
+    final queued = await repo.watchNeedsReview().first;
+    expect(queued, isEmpty);
+
+    await db.close();
+  });
+
   test('ingestReceipt with no line items round-trips to an empty list', () async {
     final db = AppDatabase.memory();
     final repo = TransactionRepository(db);

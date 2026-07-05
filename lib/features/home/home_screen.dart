@@ -55,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (context, snapshot) {
             final rows = snapshot.data ?? const [];
             final stuck = rows.where((t) => t.isStuckSync).length;
+            final needsReview = rows.where((t) => t.needsReview).length;
             final today = todaysTransactions(rows, DateTime.now());
             final mood = deriveAvatarMood(today);
             final badgeCatalog = _badgeCatalog;
@@ -83,6 +84,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     onDismiss: () => setState(() => _showCoachMark = false),
                   ),
                 AdaptiveSyncBanner(stuckCount: stuck, onRetry: _retrySync),
+                if (needsReview > 0)
+                  _NeedsReviewBanner(
+                    count: needsReview,
+                    onTap: () => context.pushNamed('review'),
+                  ),
                 Expanded(
                   child: SingleChildScrollView(
                     clipBehavior: Clip.none,
@@ -177,6 +183,64 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _NeedsReviewBanner extends StatelessWidget {
+  const _NeedsReviewBanner({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.xs,
+        AppSpacing.md,
+        0,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppSpacing.chipBorderRadius,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.badgePendingBg,
+            borderRadius: AppSpacing.chipBorderRadius,
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.rate_review_outlined,
+                size: 18,
+                color: AppColors.badgePendingText,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  count == 1
+                      ? '1 receipt needs review'
+                      : '$count receipts need review',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.badgePendingText,
+                      ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: AppColors.badgePendingText,
+              ),
+            ],
+          ),
         ),
       ),
     );

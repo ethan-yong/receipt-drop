@@ -1,10 +1,8 @@
-import 'dart:io';
-
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
+import 'app_database_connection_stub.dart'
+    if (dart.library.ui) 'app_database_connection_flutter.dart';
 import 'tables.dart';
 
 part 'app_database.g.dart';
@@ -24,7 +22,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.memory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -38,6 +36,15 @@ class AppDatabase extends _$AppDatabase {
           if (from < 4) {
             await m.createTable(outboxLineItems);
           }
+          if (from < 5) {
+            await m.addColumn(outboxTransactions, outboxTransactions.rawOcrText);
+            await m.addColumn(
+                outboxTransactions, outboxTransactions.ocrServiceConfidence);
+            await m.addColumn(
+                outboxTransactions, outboxTransactions.lineItemsConfidence);
+            await m.addColumn(
+                outboxTransactions, outboxTransactions.parseFailureReason);
+          }
         },
         // sqlite disables FK enforcement by default; needed for cascade
         // deletes on outbox_artifacts/outbox_line_items to actually fire.
@@ -47,10 +54,3 @@ class AppDatabase extends _$AppDatabase {
       );
 }
 
-LazyDatabase openAppDatabaseConnection() {
-  return LazyDatabase(() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, 'receipt_drop.sqlite'));
-    return NativeDatabase.createInBackground(file);
-  });
-}

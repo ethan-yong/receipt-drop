@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-/// OCR text + mean line confidence from the self-hosted PaddleOCR API.
+/// OCR text + mean word confidence from the self-hosted Tesseract OCR API.
 class OcrApiResult {
   const OcrApiResult({required this.text, required this.confidence});
 

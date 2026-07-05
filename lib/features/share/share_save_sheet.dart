@@ -18,6 +18,7 @@ class ShareSaveSheet extends StatefulWidget {
     required this.draft,
     required this.onSave,
     required this.onCancel,
+    this.onSaveForLater,
   });
 
   final ReceiptIngestDraft draft;
@@ -27,6 +28,10 @@ class ShareSaveSheet extends StatefulWidget {
     ImpactLevel impact,
   ) onSave;
   final Future<void> Function(ReceiptIngestDraft draft) onCancel;
+
+  /// Parks the receipt in the review queue instead of confirming now.
+  /// Offered only for needs-amount / low-confidence drafts.
+  final Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater;
 
   /// Returns true if the user saved.
   static Future<bool> show(
@@ -38,6 +43,7 @@ class ShareSaveSheet extends StatefulWidget {
       ImpactLevel impact,
     ) onSave,
     required Future<void> Function(ReceiptIngestDraft draft) onCancel,
+    Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater,
   }) async {
     final result = await AdaptiveSheet.showForm<bool>(
       context: context,
@@ -46,6 +52,7 @@ class ShareSaveSheet extends StatefulWidget {
         draft: draft,
         onSave: onSave,
         onCancel: onCancel,
+        onSaveForLater: onSaveForLater,
       ),
     );
     return result ?? false;
@@ -60,9 +67,16 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
   ImpactLevel? _impactOverride;
   var _saving = false;
 
+  // Draft carries the combined-confidence verdict from the parse pipeline;
+  // the raw ocrConfidence threshold is only the fallback for older drafts.
   bool get _lowConfidence =>
-      !widget.draft.needsAmount &&
-      (widget.draft.ocrConfidence ?? 0) < lowOcrConfidenceThreshold;
+      widget.draft.lowConfidence ||
+      (!widget.draft.needsAmount &&
+          (widget.draft.ocrConfidence ?? 0) < lowOcrConfidenceThreshold);
+
+  bool get _canSaveForLater =>
+      widget.onSaveForLater != null &&
+      (widget.draft.needsAmount || _lowConfidence);
 
   @override
   void initState() {
@@ -119,6 +133,19 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
   Future<void> _cancel() async {
     await widget.onCancel(widget.draft);
     if (mounted) Navigator.pop(context, false);
+  }
+
+  Future<void> _saveForLater() async {
+    setState(() => _saving = true);
+    try {
+      await widget.onSaveForLater!(widget.draft);
+      if (mounted) {
+        PlatformFeedback.mediumTap();
+        Navigator.pop(context, false);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -223,6 +250,11 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
           label: 'Save',
           onPressed: _saving ? null : _save,
         ),
+        if (_canSaveForLater)
+          TextButton(
+            onPressed: _saving ? null : _saveForLater,
+            child: const Text('Save for later'),
+          ),
         TextButton(
           onPressed: _saving ? null : _cancel,
           child: const Text('Cancel'),

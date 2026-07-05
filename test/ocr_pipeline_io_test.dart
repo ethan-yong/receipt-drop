@@ -30,7 +30,7 @@ void main() {
       mimeType: 'image/jpeg',
     );
 
-    expect(result, isEmpty);
+    expect(result.text, isEmpty);
     expect(captured, isNotEmpty);
     expect(captured.any((c) => c.error != null), isTrue);
   });
@@ -41,7 +41,7 @@ void main() {
       mimeType: 'application/pdf',
     );
 
-    expect(result, isEmpty);
+    expect(result.text, isEmpty);
     expect(captured, isNotEmpty);
     expect(captured.any((c) => c.error != null), isTrue);
   });

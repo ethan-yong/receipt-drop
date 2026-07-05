@@ -13,12 +13,16 @@ class ReceiptBatchE2eResult {
     required this.persistedLineItemNames,
     required this.syncLineItemsPayload,
     required this.roundTripOk,
+    required this.pipelineStatus,
+    required this.needsReview,
   });
 
   final String transactionId;
   final List<String> persistedLineItemNames;
   final List<Map<String, dynamic>> syncLineItemsPayload;
   final bool roundTripOk;
+  final String pipelineStatus;
+  final bool needsReview;
 
   Map<String, dynamic> toJson() => {
         'transactionId': transactionId,
@@ -26,6 +30,8 @@ class ReceiptBatchE2eResult {
         'persistedLineItemNames': persistedLineItemNames,
         'syncLineItemsPayload': syncLineItemsPayload,
         'roundTripOk': roundTripOk,
+        'pipelineStatus': pipelineStatus,
+        'needsReview': needsReview,
       };
 }
 
@@ -43,21 +49,32 @@ ReceiptIngestDraft draftFromParseResult({
     categoryGuess: parsed.categoryGuess,
     ocrConfidence: parsed.ocrConfidence,
     lineItems: parsed.lineItems,
+    rawOcrText: (parsed.needsAmount || parsed.lowConfidence) &&
+            parsed.ocrText.isNotEmpty
+        ? parsed.ocrText
+        : null,
+    ocrServiceConfidence: parsed.ocrServiceConfidence,
+    lineItemsConfidence: parsed.lineItemsConfidence,
+    parseFailureReason: parsed.parseFailureReason,
+    lowConfidence: parsed.lowConfidence,
   );
 }
 
-/// Auto-confirms amount and persists to an in-memory outbox, mirroring onSave.
-///
-/// Returns `null` when [parsed] still [ReceiptParseResult.needsAmount].
-Future<ReceiptBatchE2eResult?> persistParsedReceiptE2e({
+/// Persists to an in-memory outbox, mirroring onSave. Never drops a receipt:
+/// parses without an amount or with low confidence are saved into the review
+/// queue (pipeline_status = 'needs_review') instead of being skipped.
+Future<ReceiptBatchE2eResult> persistParsedReceiptE2e({
   required ReceiptParseResult parsed,
   required String mimeType,
   String userId = 'demo-user',
 }) async {
-  if (parsed.needsAmount || parsed.amountMyr == null) return null;
-
   final draft = draftFromParseResult(parsed: parsed, mimeType: mimeType);
-  final request = draft.toIngestRequest(confirmedAmount: parsed.amountMyr!);
+  final needsReview = parsed.needsAmount ||
+      parsed.amountMyr == null ||
+      parsed.lowConfidence;
+  final request = needsReview
+      ? draft.toNeedsReviewRequest()
+      : draft.toIngestRequest(confirmedAmount: parsed.amountMyr!);
 
   final db = AppDatabase.memory();
   try {
@@ -73,6 +90,11 @@ Future<ReceiptBatchE2eResult?> persistParsedReceiptE2e({
         ocrConfidence: request.ocrConfidence,
         userId: userId,
         lineItems: request.lineItems,
+        rawOcrText: request.rawOcrText,
+        ocrServiceConfidence: request.ocrServiceConfidence,
+        lineItemsConfidence: request.lineItemsConfidence,
+        parseFailureReason: request.parseFailureReason,
+        needsReview: request.needsReview,
       ),
     );
 
@@ -105,6 +127,8 @@ Future<ReceiptBatchE2eResult?> persistParsedReceiptE2e({
       persistedLineItemNames: persistedNames,
       syncLineItemsPayload: syncPayload,
       roundTripOk: _listsEqual(persistedNames, parsedNames),
+      pipelineStatus: fetched?.pipelineStatus ?? saved.pipelineStatus,
+      needsReview: fetched?.needsReview ?? saved.needsReview,
     );
   } finally {
     await db.close();

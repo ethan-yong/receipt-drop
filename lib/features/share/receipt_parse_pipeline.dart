@@ -1,9 +1,22 @@
+import 'dart:math' as math;
+
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/logic/receipt_line_item_extractor.dart';
 import '../../domain/logic/rm_amount_parser.dart';
 import '../../domain/models/receipt_line_item.dart';
+
+/// Weights for blending extraction confidence with scan quality in
+/// [ReceiptParseResult.combinedConfidence]. Tesseract word confidences skew
+/// high even on mediocre scans, so expect to tune these against batch runs.
+const combinedExtractionWeight = 0.6;
+const combinedScanWeight = 0.4;
+
+/// A good parse can't lift the combined score more than this above the scan
+/// quality — a confident regex match on a barely-readable image is still a
+/// guess.
+const combinedScanCeilingMargin = 0.25;
 
 /// Parsed fields from a receipt image or OCR text (before user confirmation).
 class ReceiptParseResult {
@@ -21,24 +34,65 @@ class ReceiptParseResult {
     this.lineItemsConfidence = 0.0,
     this.itemsSubtotalMyr,
     this.itemsMatchTotal = false,
+    this.amountSource = 'none',
+    this.parseFailureReason,
   });
 
   final String filePath;
   final String ocrText;
   final double? amountMyr;
   final bool needsAmount;
+
+  /// Extraction confidence: how sure the *parser* is that it picked the right
+  /// paid amount. Distinct from [ocrServiceConfidence] (scan quality).
   final double ocrConfidence;
+
   final String? merchantRaw;
   final String categoryGuess;
   final String impactLevel;
+
+  /// Scan quality: the OCR engine's mean word confidence. Says nothing about
+  /// whether the right fields were extracted.
   final double? ocrServiceConfidence;
+
   final List<ReceiptLineItem> lineItems;
   final double lineItemsConfidence;
   final double? itemsSubtotalMyr;
   final bool itemsMatchTotal;
 
+  /// [AmountParseSource] name: how the amount was found.
+  final String amountSource;
+
+  /// Machine-readable reason when parsing failed outright (e.g.
+  /// 'no_amount_pattern'). A failure is a failure — not a confidence score.
+  final String? parseFailureReason;
+
+  /// Sigmoid calibration applied to [ocrServiceConfidence] before blending.
+  /// Tesseract word confidences skew high (85–95 on mediocre scans) because
+  /// the LM fills in probable chars; this de-inflates them before they enter
+  /// the blend. Mirrors the Python-side `_calibrate_confidence` in ocr_engine.py.
+  static double _calibrateScanConfidence(double raw) {
+    const midpoint = 0.75;
+    const steepness = 8.0;
+    return 1.0 / (1.0 + math.exp(-steepness * (raw - midpoint)));
+  }
+
+  /// Calibrated blend of extraction confidence and scan quality, min-gated so
+  /// a bad scan caps the ceiling regardless of how clean the parse looked.
+  double get combinedConfidence {
+    if (needsAmount) return 0.0;
+    final scan = ocrServiceConfidence;
+    if (scan == null) return ocrConfidence;
+    final calibrated = _calibrateScanConfidence(scan);
+    final blend = combinedExtractionWeight * ocrConfidence +
+        combinedScanWeight * calibrated;
+    return math.min(blend, calibrated + combinedScanCeilingMargin).clamp(0.0, 1.0);
+  }
+
   bool get lowConfidence =>
-      !needsAmount && ocrConfidence < lowOcrConfidenceThreshold;
+      !needsAmount &&
+      (combinedConfidence < lowOcrConfidenceThreshold ||
+          amountSource == AmountParseSource.totalKeywordFallback.name);
 
   Map<String, dynamic> toJson({bool includeOcrText = false}) {
     return {
@@ -47,6 +101,9 @@ class ReceiptParseResult {
       'amountMyr': amountMyr,
       'needsAmount': needsAmount,
       'ocrConfidence': ocrConfidence,
+      'combinedConfidence': combinedConfidence,
+      'amountSource': amountSource,
+      if (parseFailureReason != null) 'parseFailureReason': parseFailureReason,
       'merchantRaw': merchantRaw,
       'categoryGuess': categoryGuess,
       'impactLevel': impactLevel,
@@ -74,12 +131,28 @@ ReceiptParseResult parseReceiptOcrText({
   required CategoryConfig categories,
   double? ocrServiceConfidence,
 }) {
-  final parseResult = parseRmAmountFromOcr(ocrText);
+  // Items are extracted before the amount so their subtotal can vote on
+  // which amount candidate is the real paid total (semantic cross-check),
+  // then reconciled against whichever total won.
+  final extracted = extractReceiptLineItems(ocrText);
+  final largestItemPrice = extracted.items.isEmpty
+      ? null
+      : extracted.items
+          .map((it) => it.priceMyr)
+          .reduce((a, b) => a > b ? a : b);
+
+  final parseResult = parseRmAmountFromOcr(
+    ocrText,
+    itemsSubtotalMyr: extracted.itemsSubtotalMyr,
+    largestItemPriceMyr: largestItemPrice,
+    lineItemCount: extracted.items.length,
+  );
   final amount = parseResult.amount;
+  final lineItemsResult = reconcileWithTotal(extracted, amount);
+
   final merchantRaw = extractMerchant(ocrText, categories);
   final categoryGuess =
       categories.guessForMerchant(merchantRaw ?? '').category;
-  final lineItemsResult = extractReceiptLineItems(ocrText, totalMyr: amount);
 
   return ReceiptParseResult(
     filePath: filePath,
@@ -95,6 +168,8 @@ ReceiptParseResult parseReceiptOcrText({
     lineItemsConfidence: lineItemsResult.confidence,
     itemsSubtotalMyr: lineItemsResult.itemsSubtotalMyr,
     itemsMatchTotal: lineItemsResult.itemsMatchTotal,
+    amountSource: parseResult.source.name,
+    parseFailureReason: parseResult.failureReason,
   );
 }
 

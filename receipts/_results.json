@@ -1,7 +1,34 @@
 [
   {
+    "file": "52353147-26fe-497f-b779-c8b729a385fd.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "5f89322b-d37e-4155-a71b-c680d2abe1b6.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "6ed6ffcf-702f-46aa-b9a0-8d2a65622335.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "d2329e01-f974-46dc-9722-bc87d1af630d.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "e122bcaa-9a36-4917-bc65-a1b2acdae633.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "e6f3685b-25f9-4be1-9d00-1d081b3aa6d6.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "fc2089f8-6f04-4ba8-afbc-c81875024b98.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
     "file": "rock_cafe.png.jpeg",
-    "ocrText": "RESTORAN ANWAR MAJU\nDimilki Olh\nNO.1-A NADAYU28JLN PJS 11/7\nBANDAR SUNWAY 47500 SELANGOR\nTEL:\nINVOICE\n*** MOBILE PAY ***\n346131\nTAXNO.\nTABLENO62\nTRAN NO390705\n10/Jun/20260117:26\n7.00-Z\nDATE\n8.70-Z\nRsb Biasa\n11.00-Z\n1\nTeh O Limau Ais\n3.00-Z\n3\n4.20-Z\nMaggi G Double\nLimau Ais Bungkus\n7-006\nMilo Ais Bungkus\n12.50-Z\nMaggi Goreng Telur M\n7-009\nNasi G Ayam Mamak\n3.40-Z\n1\nAyam Goreng\nTeh Ais Bungkus\n64.80\nRM\n64.80\nRM\n0.00\nTOTAL\nRM\nCASH\nCHANGE\nSTAFF :MASTER\nTHANK YOU COME AGAIN",
     "amountMyr": null,
     "needsAmount": true,
     "ocrConfidence": 0.1,
@@ -9,6 +36,14 @@
     "categoryGuess": "Food & Drink",
     "impactLevel": "low",
     "lowConfidence": false,
-    "ocrServiceConfidence": 0.9412612080574035
+    "lineItems": [],
+    "lineItemsConfidence": 0.0,
+    "itemsSubtotalMyr": null,
+    "itemsMatchTotal": false,
+    "ocrServiceConfidence": 0.9412612014346653,
+    "e2e": {
+      "skipped": true,
+      "reason": "needs_amount"
+    }
   }
 ]

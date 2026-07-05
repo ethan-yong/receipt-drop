@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/domain/logic/category_matcher.dart';
-import 'package:puggy_bank/domain/logic/merchant_extractor.dart';
+import 'package:receipt_drop/domain/logic/category_matcher.dart';
+import 'package:receipt_drop/domain/logic/merchant_extractor.dart';
 
 void main() {
   final categories = CategoryConfig.fromJson({

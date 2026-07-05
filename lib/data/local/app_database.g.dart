@@ -265,6 +265,50 @@ class $OutboxTransactionsTable extends OutboxTransactions
     type: DriftSqlType.double,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _rawOcrTextMeta = const VerificationMeta(
+    'rawOcrText',
+  );
+  @override
+  late final GeneratedColumn<String> rawOcrText = GeneratedColumn<String>(
+    'raw_ocr_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ocrServiceConfidenceMeta =
+      const VerificationMeta('ocrServiceConfidence');
+  @override
+  late final GeneratedColumn<double> ocrServiceConfidence =
+      GeneratedColumn<double>(
+        'ocr_service_confidence',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _lineItemsConfidenceMeta =
+      const VerificationMeta('lineItemsConfidence');
+  @override
+  late final GeneratedColumn<double> lineItemsConfidence =
+      GeneratedColumn<double>(
+        'line_items_confidence',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _parseFailureReasonMeta =
+      const VerificationMeta('parseFailureReason');
+  @override
+  late final GeneratedColumn<String> parseFailureReason =
+      GeneratedColumn<String>(
+        'parse_failure_reason',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _pipelineStatusMeta = const VerificationMeta(
     'pipelineStatus',
   );
@@ -348,6 +392,10 @@ class $OutboxTransactionsTable extends OutboxTransactions
     shareLocationLng,
     shareLocationCapturedAt,
     ocrConfidence,
+    rawOcrText,
+    ocrServiceConfidence,
+    lineItemsConfidence,
+    parseFailureReason,
     pipelineStatus,
     syncStatus,
     lastError,
@@ -547,6 +595,42 @@ class $OutboxTransactionsTable extends OutboxTransactions
         ),
       );
     }
+    if (data.containsKey('raw_ocr_text')) {
+      context.handle(
+        _rawOcrTextMeta,
+        rawOcrText.isAcceptableOrUnknown(
+          data['raw_ocr_text']!,
+          _rawOcrTextMeta,
+        ),
+      );
+    }
+    if (data.containsKey('ocr_service_confidence')) {
+      context.handle(
+        _ocrServiceConfidenceMeta,
+        ocrServiceConfidence.isAcceptableOrUnknown(
+          data['ocr_service_confidence']!,
+          _ocrServiceConfidenceMeta,
+        ),
+      );
+    }
+    if (data.containsKey('line_items_confidence')) {
+      context.handle(
+        _lineItemsConfidenceMeta,
+        lineItemsConfidence.isAcceptableOrUnknown(
+          data['line_items_confidence']!,
+          _lineItemsConfidenceMeta,
+        ),
+      );
+    }
+    if (data.containsKey('parse_failure_reason')) {
+      context.handle(
+        _parseFailureReasonMeta,
+        parseFailureReason.isAcceptableOrUnknown(
+          data['parse_failure_reason']!,
+          _parseFailureReasonMeta,
+        ),
+      );
+    }
     if (data.containsKey('pipeline_status')) {
       context.handle(
         _pipelineStatusMeta,
@@ -684,6 +768,22 @@ class $OutboxTransactionsTable extends OutboxTransactions
         DriftSqlType.double,
         data['${effectivePrefix}ocr_confidence'],
       ),
+      rawOcrText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}raw_ocr_text'],
+      ),
+      ocrServiceConfidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}ocr_service_confidence'],
+      ),
+      lineItemsConfidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}line_items_confidence'],
+      ),
+      parseFailureReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parse_failure_reason'],
+      ),
       pipelineStatus: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}pipeline_status'],
@@ -742,6 +842,20 @@ class OutboxTransaction extends DataClass
   final double? shareLocationLng;
   final DateTime? shareLocationCapturedAt;
   final double? ocrConfidence;
+
+  /// Raw OCR text, kept only when the parse failed or was low-confidence —
+  /// the evidence needed to fix parser rules later.
+  final String? rawOcrText;
+
+  /// OCR engine's scan-quality confidence (mean word confidence, 0..1).
+  /// Distinct from [ocrConfidence], which scores the amount *extraction*.
+  final double? ocrServiceConfidence;
+
+  /// Aggregate confidence over extracted line items.
+  final double? lineItemsConfidence;
+
+  /// Machine-readable reason when amount parsing failed outright.
+  final String? parseFailureReason;
   final String pipelineStatus;
   final String syncStatus;
   final String? lastError;
@@ -773,6 +887,10 @@ class OutboxTransaction extends DataClass
     this.shareLocationLng,
     this.shareLocationCapturedAt,
     this.ocrConfidence,
+    this.rawOcrText,
+    this.ocrServiceConfidence,
+    this.lineItemsConfidence,
+    this.parseFailureReason,
     required this.pipelineStatus,
     required this.syncStatus,
     this.lastError,
@@ -840,6 +958,18 @@ class OutboxTransaction extends DataClass
     }
     if (!nullToAbsent || ocrConfidence != null) {
       map['ocr_confidence'] = Variable<double>(ocrConfidence);
+    }
+    if (!nullToAbsent || rawOcrText != null) {
+      map['raw_ocr_text'] = Variable<String>(rawOcrText);
+    }
+    if (!nullToAbsent || ocrServiceConfidence != null) {
+      map['ocr_service_confidence'] = Variable<double>(ocrServiceConfidence);
+    }
+    if (!nullToAbsent || lineItemsConfidence != null) {
+      map['line_items_confidence'] = Variable<double>(lineItemsConfidence);
+    }
+    if (!nullToAbsent || parseFailureReason != null) {
+      map['parse_failure_reason'] = Variable<String>(parseFailureReason);
     }
     map['pipeline_status'] = Variable<String>(pipelineStatus);
     map['sync_status'] = Variable<String>(syncStatus);
@@ -912,6 +1042,18 @@ class OutboxTransaction extends DataClass
       ocrConfidence: ocrConfidence == null && nullToAbsent
           ? const Value.absent()
           : Value(ocrConfidence),
+      rawOcrText: rawOcrText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rawOcrText),
+      ocrServiceConfidence: ocrServiceConfidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ocrServiceConfidence),
+      lineItemsConfidence: lineItemsConfidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lineItemsConfidence),
+      parseFailureReason: parseFailureReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parseFailureReason),
       pipelineStatus: Value(pipelineStatus),
       syncStatus: Value(syncStatus),
       lastError: lastError == null && nullToAbsent
@@ -961,6 +1103,16 @@ class OutboxTransaction extends DataClass
         json['shareLocationCapturedAt'],
       ),
       ocrConfidence: serializer.fromJson<double?>(json['ocrConfidence']),
+      rawOcrText: serializer.fromJson<String?>(json['rawOcrText']),
+      ocrServiceConfidence: serializer.fromJson<double?>(
+        json['ocrServiceConfidence'],
+      ),
+      lineItemsConfidence: serializer.fromJson<double?>(
+        json['lineItemsConfidence'],
+      ),
+      parseFailureReason: serializer.fromJson<String?>(
+        json['parseFailureReason'],
+      ),
       pipelineStatus: serializer.fromJson<String>(json['pipelineStatus']),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       lastError: serializer.fromJson<String?>(json['lastError']),
@@ -997,6 +1149,10 @@ class OutboxTransaction extends DataClass
         shareLocationCapturedAt,
       ),
       'ocrConfidence': serializer.toJson<double?>(ocrConfidence),
+      'rawOcrText': serializer.toJson<String?>(rawOcrText),
+      'ocrServiceConfidence': serializer.toJson<double?>(ocrServiceConfidence),
+      'lineItemsConfidence': serializer.toJson<double?>(lineItemsConfidence),
+      'parseFailureReason': serializer.toJson<String?>(parseFailureReason),
       'pipelineStatus': serializer.toJson<String>(pipelineStatus),
       'syncStatus': serializer.toJson<String>(syncStatus),
       'lastError': serializer.toJson<String?>(lastError),
@@ -1029,6 +1185,10 @@ class OutboxTransaction extends DataClass
     Value<double?> shareLocationLng = const Value.absent(),
     Value<DateTime?> shareLocationCapturedAt = const Value.absent(),
     Value<double?> ocrConfidence = const Value.absent(),
+    Value<String?> rawOcrText = const Value.absent(),
+    Value<double?> ocrServiceConfidence = const Value.absent(),
+    Value<double?> lineItemsConfidence = const Value.absent(),
+    Value<String?> parseFailureReason = const Value.absent(),
     String? pipelineStatus,
     String? syncStatus,
     Value<String?> lastError = const Value.absent(),
@@ -1076,6 +1236,16 @@ class OutboxTransaction extends DataClass
     ocrConfidence: ocrConfidence.present
         ? ocrConfidence.value
         : this.ocrConfidence,
+    rawOcrText: rawOcrText.present ? rawOcrText.value : this.rawOcrText,
+    ocrServiceConfidence: ocrServiceConfidence.present
+        ? ocrServiceConfidence.value
+        : this.ocrServiceConfidence,
+    lineItemsConfidence: lineItemsConfidence.present
+        ? lineItemsConfidence.value
+        : this.lineItemsConfidence,
+    parseFailureReason: parseFailureReason.present
+        ? parseFailureReason.value
+        : this.parseFailureReason,
     pipelineStatus: pipelineStatus ?? this.pipelineStatus,
     syncStatus: syncStatus ?? this.syncStatus,
     lastError: lastError.present ? lastError.value : this.lastError,
@@ -1139,6 +1309,18 @@ class OutboxTransaction extends DataClass
       ocrConfidence: data.ocrConfidence.present
           ? data.ocrConfidence.value
           : this.ocrConfidence,
+      rawOcrText: data.rawOcrText.present
+          ? data.rawOcrText.value
+          : this.rawOcrText,
+      ocrServiceConfidence: data.ocrServiceConfidence.present
+          ? data.ocrServiceConfidence.value
+          : this.ocrServiceConfidence,
+      lineItemsConfidence: data.lineItemsConfidence.present
+          ? data.lineItemsConfidence.value
+          : this.lineItemsConfidence,
+      parseFailureReason: data.parseFailureReason.present
+          ? data.parseFailureReason.value
+          : this.parseFailureReason,
       pipelineStatus: data.pipelineStatus.present
           ? data.pipelineStatus.value
           : this.pipelineStatus,
@@ -1181,6 +1363,10 @@ class OutboxTransaction extends DataClass
           ..write('shareLocationLng: $shareLocationLng, ')
           ..write('shareLocationCapturedAt: $shareLocationCapturedAt, ')
           ..write('ocrConfidence: $ocrConfidence, ')
+          ..write('rawOcrText: $rawOcrText, ')
+          ..write('ocrServiceConfidence: $ocrServiceConfidence, ')
+          ..write('lineItemsConfidence: $lineItemsConfidence, ')
+          ..write('parseFailureReason: $parseFailureReason, ')
           ..write('pipelineStatus: $pipelineStatus, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
@@ -1215,6 +1401,10 @@ class OutboxTransaction extends DataClass
     shareLocationLng,
     shareLocationCapturedAt,
     ocrConfidence,
+    rawOcrText,
+    ocrServiceConfidence,
+    lineItemsConfidence,
+    parseFailureReason,
     pipelineStatus,
     syncStatus,
     lastError,
@@ -1248,6 +1438,10 @@ class OutboxTransaction extends DataClass
           other.shareLocationLng == this.shareLocationLng &&
           other.shareLocationCapturedAt == this.shareLocationCapturedAt &&
           other.ocrConfidence == this.ocrConfidence &&
+          other.rawOcrText == this.rawOcrText &&
+          other.ocrServiceConfidence == this.ocrServiceConfidence &&
+          other.lineItemsConfidence == this.lineItemsConfidence &&
+          other.parseFailureReason == this.parseFailureReason &&
           other.pipelineStatus == this.pipelineStatus &&
           other.syncStatus == this.syncStatus &&
           other.lastError == this.lastError &&
@@ -1279,6 +1473,10 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
   final Value<double?> shareLocationLng;
   final Value<DateTime?> shareLocationCapturedAt;
   final Value<double?> ocrConfidence;
+  final Value<String?> rawOcrText;
+  final Value<double?> ocrServiceConfidence;
+  final Value<double?> lineItemsConfidence;
+  final Value<String?> parseFailureReason;
   final Value<String> pipelineStatus;
   final Value<String> syncStatus;
   final Value<String?> lastError;
@@ -1309,6 +1507,10 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.shareLocationLng = const Value.absent(),
     this.shareLocationCapturedAt = const Value.absent(),
     this.ocrConfidence = const Value.absent(),
+    this.rawOcrText = const Value.absent(),
+    this.ocrServiceConfidence = const Value.absent(),
+    this.lineItemsConfidence = const Value.absent(),
+    this.parseFailureReason = const Value.absent(),
     this.pipelineStatus = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.lastError = const Value.absent(),
@@ -1340,6 +1542,10 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.shareLocationLng = const Value.absent(),
     this.shareLocationCapturedAt = const Value.absent(),
     this.ocrConfidence = const Value.absent(),
+    this.rawOcrText = const Value.absent(),
+    this.ocrServiceConfidence = const Value.absent(),
+    this.lineItemsConfidence = const Value.absent(),
+    this.parseFailureReason = const Value.absent(),
     this.pipelineStatus = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.lastError = const Value.absent(),
@@ -1372,6 +1578,10 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Expression<double>? shareLocationLng,
     Expression<DateTime>? shareLocationCapturedAt,
     Expression<double>? ocrConfidence,
+    Expression<String>? rawOcrText,
+    Expression<double>? ocrServiceConfidence,
+    Expression<double>? lineItemsConfidence,
+    Expression<String>? parseFailureReason,
     Expression<String>? pipelineStatus,
     Expression<String>? syncStatus,
     Expression<String>? lastError,
@@ -1405,6 +1615,13 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       if (shareLocationCapturedAt != null)
         'share_location_captured_at': shareLocationCapturedAt,
       if (ocrConfidence != null) 'ocr_confidence': ocrConfidence,
+      if (rawOcrText != null) 'raw_ocr_text': rawOcrText,
+      if (ocrServiceConfidence != null)
+        'ocr_service_confidence': ocrServiceConfidence,
+      if (lineItemsConfidence != null)
+        'line_items_confidence': lineItemsConfidence,
+      if (parseFailureReason != null)
+        'parse_failure_reason': parseFailureReason,
       if (pipelineStatus != null) 'pipeline_status': pipelineStatus,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (lastError != null) 'last_error': lastError,
@@ -1438,6 +1655,10 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Value<double?>? shareLocationLng,
     Value<DateTime?>? shareLocationCapturedAt,
     Value<double?>? ocrConfidence,
+    Value<String?>? rawOcrText,
+    Value<double?>? ocrServiceConfidence,
+    Value<double?>? lineItemsConfidence,
+    Value<String?>? parseFailureReason,
     Value<String>? pipelineStatus,
     Value<String>? syncStatus,
     Value<String?>? lastError,
@@ -1470,6 +1691,10 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       shareLocationCapturedAt:
           shareLocationCapturedAt ?? this.shareLocationCapturedAt,
       ocrConfidence: ocrConfidence ?? this.ocrConfidence,
+      rawOcrText: rawOcrText ?? this.rawOcrText,
+      ocrServiceConfidence: ocrServiceConfidence ?? this.ocrServiceConfidence,
+      lineItemsConfidence: lineItemsConfidence ?? this.lineItemsConfidence,
+      parseFailureReason: parseFailureReason ?? this.parseFailureReason,
       pipelineStatus: pipelineStatus ?? this.pipelineStatus,
       syncStatus: syncStatus ?? this.syncStatus,
       lastError: lastError ?? this.lastError,
@@ -1553,6 +1778,22 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     if (ocrConfidence.present) {
       map['ocr_confidence'] = Variable<double>(ocrConfidence.value);
     }
+    if (rawOcrText.present) {
+      map['raw_ocr_text'] = Variable<String>(rawOcrText.value);
+    }
+    if (ocrServiceConfidence.present) {
+      map['ocr_service_confidence'] = Variable<double>(
+        ocrServiceConfidence.value,
+      );
+    }
+    if (lineItemsConfidence.present) {
+      map['line_items_confidence'] = Variable<double>(
+        lineItemsConfidence.value,
+      );
+    }
+    if (parseFailureReason.present) {
+      map['parse_failure_reason'] = Variable<String>(parseFailureReason.value);
+    }
     if (pipelineStatus.present) {
       map['pipeline_status'] = Variable<String>(pipelineStatus.value);
     }
@@ -1600,6 +1841,10 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           ..write('shareLocationLng: $shareLocationLng, ')
           ..write('shareLocationCapturedAt: $shareLocationCapturedAt, ')
           ..write('ocrConfidence: $ocrConfidence, ')
+          ..write('rawOcrText: $rawOcrText, ')
+          ..write('ocrServiceConfidence: $ocrServiceConfidence, ')
+          ..write('lineItemsConfidence: $lineItemsConfidence, ')
+          ..write('parseFailureReason: $parseFailureReason, ')
           ..write('pipelineStatus: $pipelineStatus, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
@@ -3035,6 +3280,10 @@ typedef $$OutboxTransactionsTableCreateCompanionBuilder =
       Value<double?> shareLocationLng,
       Value<DateTime?> shareLocationCapturedAt,
       Value<double?> ocrConfidence,
+      Value<String?> rawOcrText,
+      Value<double?> ocrServiceConfidence,
+      Value<double?> lineItemsConfidence,
+      Value<String?> parseFailureReason,
       Value<String> pipelineStatus,
       Value<String> syncStatus,
       Value<String?> lastError,
@@ -3067,6 +3316,10 @@ typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
       Value<double?> shareLocationLng,
       Value<DateTime?> shareLocationCapturedAt,
       Value<double?> ocrConfidence,
+      Value<String?> rawOcrText,
+      Value<double?> ocrServiceConfidence,
+      Value<double?> lineItemsConfidence,
+      Value<String?> parseFailureReason,
       Value<String> pipelineStatus,
       Value<String> syncStatus,
       Value<String?> lastError,
@@ -3256,6 +3509,26 @@ class $$OutboxTransactionsTableFilterComposer
 
   ColumnFilters<double> get ocrConfidence => $composableBuilder(
     column: $table.ocrConfidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get rawOcrText => $composableBuilder(
+    column: $table.rawOcrText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get ocrServiceConfidence => $composableBuilder(
+    column: $table.ocrServiceConfidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get lineItemsConfidence => $composableBuilder(
+    column: $table.lineItemsConfidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parseFailureReason => $composableBuilder(
+    column: $table.parseFailureReason,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3459,6 +3732,26 @@ class $$OutboxTransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get rawOcrText => $composableBuilder(
+    column: $table.rawOcrText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get ocrServiceConfidence => $composableBuilder(
+    column: $table.ocrServiceConfidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get lineItemsConfidence => $composableBuilder(
+    column: $table.lineItemsConfidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get parseFailureReason => $composableBuilder(
+    column: $table.parseFailureReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get pipelineStatus => $composableBuilder(
     column: $table.pipelineStatus,
     builder: (column) => ColumnOrderings(column),
@@ -3595,6 +3888,26 @@ class $$OutboxTransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get rawOcrText => $composableBuilder(
+    column: $table.rawOcrText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get ocrServiceConfidence => $composableBuilder(
+    column: $table.ocrServiceConfidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get lineItemsConfidence => $composableBuilder(
+    column: $table.lineItemsConfidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get parseFailureReason => $composableBuilder(
+    column: $table.parseFailureReason,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get pipelineStatus => $composableBuilder(
     column: $table.pipelineStatus,
     builder: (column) => column,
@@ -3728,6 +4041,10 @@ class $$OutboxTransactionsTableTableManager
                 Value<double?> shareLocationLng = const Value.absent(),
                 Value<DateTime?> shareLocationCapturedAt = const Value.absent(),
                 Value<double?> ocrConfidence = const Value.absent(),
+                Value<String?> rawOcrText = const Value.absent(),
+                Value<double?> ocrServiceConfidence = const Value.absent(),
+                Value<double?> lineItemsConfidence = const Value.absent(),
+                Value<String?> parseFailureReason = const Value.absent(),
                 Value<String> pipelineStatus = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
@@ -3758,6 +4075,10 @@ class $$OutboxTransactionsTableTableManager
                 shareLocationLng: shareLocationLng,
                 shareLocationCapturedAt: shareLocationCapturedAt,
                 ocrConfidence: ocrConfidence,
+                rawOcrText: rawOcrText,
+                ocrServiceConfidence: ocrServiceConfidence,
+                lineItemsConfidence: lineItemsConfidence,
+                parseFailureReason: parseFailureReason,
                 pipelineStatus: pipelineStatus,
                 syncStatus: syncStatus,
                 lastError: lastError,
@@ -3790,6 +4111,10 @@ class $$OutboxTransactionsTableTableManager
                 Value<double?> shareLocationLng = const Value.absent(),
                 Value<DateTime?> shareLocationCapturedAt = const Value.absent(),
                 Value<double?> ocrConfidence = const Value.absent(),
+                Value<String?> rawOcrText = const Value.absent(),
+                Value<double?> ocrServiceConfidence = const Value.absent(),
+                Value<double?> lineItemsConfidence = const Value.absent(),
+                Value<String?> parseFailureReason = const Value.absent(),
                 Value<String> pipelineStatus = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
@@ -3820,6 +4145,10 @@ class $$OutboxTransactionsTableTableManager
                 shareLocationLng: shareLocationLng,
                 shareLocationCapturedAt: shareLocationCapturedAt,
                 ocrConfidence: ocrConfidence,
+                rawOcrText: rawOcrText,
+                ocrServiceConfidence: ocrServiceConfidence,
+                lineItemsConfidence: lineItemsConfidence,
+                parseFailureReason: parseFailureReason,
                 pipelineStatus: pipelineStatus,
                 syncStatus: syncStatus,
                 lastError: lastError,

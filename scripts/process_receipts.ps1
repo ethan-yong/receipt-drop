@@ -1,6 +1,6 @@
 # Batch-process receipt images via OCR API + Dart parse/save pipeline.
 #
-# Default folder: receipt_images/ (bundled category illustrations + test receipts).
+# Default folder: receipts/ (drop your receipt images here).
 # Requires: Dart SDK, OCR API running locally (services/ocr-api).
 #
 # Usage:
@@ -27,7 +27,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 if ($ReceiptsDir -eq "") {
-    $ReceiptsDir = Join-Path $ProjectRoot "receipt_images"
+    $ReceiptsDir = Join-Path $ProjectRoot "receipts"
 }
 
 if (-not (Test-Path $ReceiptsDir)) {
@@ -106,7 +106,7 @@ try {
     if ($E2e) {
         Write-Host "  E2E: OCR -> parse -> draft -> outbox -> sync payload preview"
     }
-    Write-Host "  (first dart run compiles the CLI; each image waits on PaddleOCR - can take a few min)"
+    Write-Host "  (first dart run compiles the CLI; each image waits on Tesseract OCR)"
     if ($Verbose) {
         Write-Host "  Command: dart $($dartArgs -join ' ')"
     }
@@ -144,17 +144,22 @@ try {
             $svc = if ($null -ne $row.ocrServiceConfidence) {
                 " ocr=$([math]::Round($row.ocrServiceConfidence, 2))"
             } else { "" }
+            $combined = if ($null -ne $row.combinedConfidence) {
+                " combined=$([math]::Round($row.combinedConfidence, 2))"
+            } else { "" }
+            $reviewLabel = if ($row.needsAmount -or $row.lowConfidence) { " NEEDS-REVIEW" } else { "" }
             $e2eLabel = ""
             if ($E2e -and $row.e2e) {
-                if ($row.e2e.skipped) {
-                    $e2eLabel = " e2e=skip"
-                } elseif ($row.e2e.roundTripOk) {
+                if ($row.e2e.roundTripOk) {
                     $e2eLabel = " e2e=ok"
                 } else {
                     $e2eLabel = " e2e=fail"
                 }
+                if ($row.e2e.needsReview) {
+                    $e2eLabel += "(review)"
+                }
             }
-            Write-Host ("  {0,-28} {1,12}  {2}{3}{4}{5}{6}" -f $row.file, $amount, $merchant, $itemsLabel, $matchLabel, $svc, $e2eLabel)
+            Write-Host ("  {0,-28} {1,12}  {2}{3}{4}{5}{6}{7}{8}" -f $row.file, $amount, $merchant, $itemsLabel, $matchLabel, $svc, $combined, $e2eLabel, $reviewLabel)
             if ($itemCount -gt 0) {
                 foreach ($item in $row.lineItems) {
                     $qty = if ($null -ne $item.quantity) { "$($item.quantity)x " } else { "" }

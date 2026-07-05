@@ -46,11 +46,11 @@ Future<void> main(List<String> args) async {
   final categories = await loadCategoryConfigFromFile(options.categoriesFile);
   final ocrUrl = options.ocrUrl ?? defaultOcrApiUrl();
 
-  _log(
+  await _log(
     '[receipt_batch] Found ${await _countReceiptFiles(receiptsDir)} receipt file(s) in ${options.receiptsDir}',
   );
   if (options.e2e) {
-    _log('[receipt_batch] E2E mode: parse → draft → outbox → sync payload preview');
+    await _log('[receipt_batch] E2E mode: parse → draft → outbox → sync payload preview');
   }
 
   if (options.checkHealth) {
@@ -91,7 +91,7 @@ Future<void> main(List<String> args) async {
     final mime = mimeFromPath(file.path);
 
     stdout.writeln('[receipt_batch] Processing $name (${i + 1}/${files.length}) ...');
-    stdout.flush();
+    await stdout.flush();
 
     if (mime == 'application/pdf') {
       results.add({
@@ -121,25 +121,33 @@ Future<void> main(List<String> args) async {
         continue;
       }
 
-      final parsed = parseReceiptOcrText(
-        filePath: file.path,
-        ocrText: ocr.text,
-        categories: categories,
-        ocrServiceConfidence: ocr.confidence,
-      );
+      Map<String, dynamic> json;
+      try {
+        final parsed = parseReceiptOcrText(
+          filePath: file.path,
+          ocrText: ocr.text,
+          categories: categories,
+          ocrServiceConfidence: ocr.confidence,
+        );
 
-      final json = parsed.toJson(includeOcrText: options.includeOcrText);
+        // Troubled parses always keep their raw OCR text — it's the labeled
+        // data needed to fix parser rules, never worth discarding.
+        final forceOcrText = parsed.needsAmount ||
+            parsed.lineItems.isEmpty ||
+            parsed.lowConfidence;
+        json = parsed.toJson(
+          includeOcrText: options.includeOcrText || forceOcrText,
+        );
 
-      if (options.e2e) {
-        final e2e = await persistParsedReceiptE2e(parsed: parsed, mimeType: mime);
-        if (e2e == null) {
-          json['e2e'] = {
-            'skipped': true,
-            'reason': 'needs_amount',
-          };
-        } else {
+        if (options.e2e) {
+          final e2e =
+              await persistParsedReceiptE2e(parsed: parsed, mimeType: mime);
           json['e2e'] = e2e.toJson();
         }
+      } catch (e) {
+        // Parse/persist blew up after OCR succeeded: keep the OCR text so
+        // the failure is diagnosable from _results.json alone.
+        json = {'file': name, 'error': '$e', 'ocrText': ocr.text};
       }
 
       results.add(json);
@@ -158,12 +166,12 @@ Future<void> main(List<String> args) async {
   stdout.writeln(
     '[receipt_batch] Wrote ${results.length} result(s) to ${outFile.path}',
   );
-  stdout.flush();
+  await stdout.flush();
 }
 
-void _log(String message) {
+Future<void> _log(String message) async {
   stdout.writeln(message);
-  stdout.flush();
+  await stdout.flush();
 }
 
 Future<int> _countReceiptFiles(Directory receiptsDir) async {
@@ -197,7 +205,7 @@ class _CliOptions {
 }
 
 _CliOptions? _parseArgs(List<String> args) {
-  var receiptsDir = 'receipt_images';
+  var receiptsDir = 'receipts';
   var categoriesFile = 'assets/config/categories-v1.json';
   Uri? ocrUrl;
   String? secret;
@@ -253,7 +261,7 @@ Usage: dart run bin/process_receipts.dart [options]
 Batch flow: OCR API → parse (amount, merchant, lineItems) → optional E2E save.
 
 Options:
-  --receipts-dir <path>       Folder of receipt images (default: receipt_images)
+  --receipts-dir <path>       Folder of receipt images (default: receipts)
   --categories-file <path>    Category rules JSON (default: assets/config/categories-v1.json)
   --ocr-url <url>             OCR API endpoint (default: http://127.0.0.1:8080/ocr)
   --ocr-secret <secret>       X-OCR-Secret (default: OCR_SHARED_SECRET env)

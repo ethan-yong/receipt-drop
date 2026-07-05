@@ -37,15 +37,19 @@ void _defaultOcrLog(
   );
 }
 
+/// OCR text plus the engine's scan-quality confidence (null when the source
+/// provides none: local ML Kit, PDF text extraction, or web).
+typedef OcrFileResult = ({String text, double? serviceConfidence});
+
 /// Runs OCR on receipt images (ML Kit) or extracts text from PDF (pdfrx).
-Future<String> runOcrOnReceiptFile({
+Future<OcrFileResult> runOcrOnReceiptFile({
   required String filePath,
   required String mimeType,
 }) async {
   final isPdf =
       mimeType.contains('pdf') || filePath.toLowerCase().endsWith('.pdf');
   if (isPdf) {
-    return _extractPdfText(filePath);
+    return (text: await _extractPdfText(filePath), serviceConfidence: null);
   }
   return _ocrImageFile(filePath, mimeType);
 }
@@ -82,10 +86,10 @@ Future<String> _extractPdfText(String pdfPath) async {
 /// receipts via server-side deskew/contrast preprocessing). Prefers a
 /// non-empty remote result within [_remoteOcrTimeout], else falls back to
 /// the local result.
-Future<String> _ocrImageFile(String imagePath, String mimeType) async {
+Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
   final localFuture = _localOcrImageFile(imagePath);
   if (!_remoteOcrEligible(mimeType)) {
-    return localFuture;
+    return (text: await localFuture, serviceConfidence: null);
   }
 
   final remoteFuture = _remoteOcrImageFile(
@@ -94,12 +98,12 @@ Future<String> _ocrImageFile(String imagePath, String mimeType) async {
   ).timeout(_remoteOcrTimeout, onTimeout: () => null);
 
   final localText = await localFuture;
-  final remoteText = await remoteFuture;
+  final remote = await remoteFuture;
 
-  if (remoteText != null && remoteText.trim().isNotEmpty) {
-    return remoteText;
+  if (remote != null && remote.text.trim().isNotEmpty) {
+    return (text: remote.text, serviceConfidence: remote.confidence);
   }
-  return localText;
+  return (text: localText, serviceConfidence: null);
 }
 
 Future<String> _localOcrImageFile(String imagePath) async {
@@ -131,7 +135,7 @@ bool _remoteOcrEligible(String mimeType) {
 /// Calls the self-hosted OCR service via the `ocr-proxy` Supabase Edge
 /// Function. Returns `null` on any failure so the caller can fall back to
 /// the local ML Kit result — never throws.
-Future<String?> _remoteOcrImageFile({
+Future<({String text, double? confidence})?> _remoteOcrImageFile({
   required String imagePath,
   required String mimeType,
 }) async {
@@ -163,7 +167,13 @@ Future<String?> _remoteOcrImageFile({
 
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) return null;
-    return decoded['text'] as String?;
+    final text = decoded['text'];
+    if (text is! String) return null;
+    final confidence = decoded['confidence'];
+    return (
+      text: text,
+      confidence: confidence is num ? confidence.toDouble() : null,
+    );
   } catch (e, st) {
     ocrLogger(
       'Remote OCR failed: $imagePath',
