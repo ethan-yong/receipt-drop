@@ -18,9 +18,9 @@ import '../../domain/models/transaction_view.dart';
 import '../../widgets/blob_avatar.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/map_filter_chips.dart';
-import '../../widgets/spend_map_bottom_sheet.dart';
 import 'widgets/friend_map_marker.dart';
 import 'widgets/friend_pin_sheet.dart';
+import 'widgets/place_detail_panel.dart';
 import 'widgets/spend_place_marker.dart';
 
 /// Snap-style spend map: own spend bubbles (or heat overlay) plus friends'
@@ -34,12 +34,14 @@ class SpendMapScreen extends StatefulWidget {
   State<SpendMapScreen> createState() => _SpendMapScreenState();
 }
 
-class _SpendMapScreenState extends State<SpendMapScreen> {
+class _SpendMapScreenState extends State<SpendMapScreen>
+    with TickerProviderStateMixin {
   static const _malaysiaCenter = LatLng(3.1390, 101.6869);
   static const _tileUrl =
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
   final MapController _mapController = MapController();
+  final _panelController = DraggableScrollableController();
   String _timeFilter = 'This month';
   String _categoryFilter = 'All categories';
   var _heatmapMode = false;
@@ -48,6 +50,8 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
   List<FriendMapPin> _friendPins = const [];
   Position? _myPosition;
   AvatarConfig? _myAvatarConfig;
+  MapPlaceCluster? _selectedCluster;
+  AnimationController? _cameraAnim;
 
   @override
   void initState() {
@@ -61,6 +65,14 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
     getCurrentPositionOrNull().then((pos) {
       if (mounted && pos != null) setState(() => _myPosition = pos);
     });
+  }
+
+  @override
+  void dispose() {
+    _cameraAnim?.dispose();
+    _cameraAnim = null;
+    _panelController.dispose();
+    super.dispose();
   }
 
   List<TransactionView> _timeFiltered(List<TransactionView> rows) {
@@ -98,7 +110,62 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
     final pos = await getCurrentPositionOrNull();
     if (pos == null || !mounted) return;
     setState(() => _myPosition = pos);
-    _mapController.move(LatLng(pos.latitude, pos.longitude), 14);
+    _animatedMapMove(LatLng(pos.latitude, pos.longitude), 14);
+  }
+
+  /// Smoothly glides the camera to [dest]/[destZoom] (flutter_map's `move`
+  /// is instant; this is the standard tween recipe).
+  void _animatedMapMove(LatLng dest, double destZoom) {
+    _cameraAnim?.dispose();
+    final camera = _mapController.camera;
+    final latTween =
+        Tween(begin: camera.center.latitude, end: dest.latitude);
+    final lngTween =
+        Tween(begin: camera.center.longitude, end: dest.longitude);
+    final zoomTween = Tween(begin: camera.zoom, end: destZoom);
+
+    final controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+    _cameraAnim = controller;
+    final anim = CurvedAnimation(parent: controller, curve: Curves.easeInOut);
+    controller.addListener(() {
+      _mapController.move(
+        LatLng(latTween.evaluate(anim), lngTween.evaluate(anim)),
+        zoomTween.evaluate(anim),
+      );
+    });
+    controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        if (identical(_cameraAnim, controller)) _cameraAnim = null;
+        controller.dispose();
+      }
+    });
+    controller.forward();
+  }
+
+  /// Google-Maps-style pin tap: open the half-screen panel and zoom in with
+  /// the pin resting in the upper half (the panel covers the lower half).
+  void _selectPlace(MapPlaceCluster cluster) {
+    setState(() => _selectedCluster = cluster);
+    const zoom = 16.5;
+    final camera = _mapController.camera;
+    final pin = LatLng(cluster.lat, cluster.lng);
+    // Center the camera a quarter viewport south of the pin so the pin sits
+    // ~25% from the top once the panel is up.
+    final shifted = camera.unprojectAtZoom(
+      camera.projectAtZoom(pin, zoom) +
+          Offset(0, camera.nonRotatedSize.height * 0.25),
+      zoom,
+    );
+    _animatedMapMove(shifted, zoom);
+  }
+
+  void _closePanel() {
+    if (_selectedCluster == null) return;
+    setState(() => _selectedCluster = null);
   }
 
   /// One-time camera fit over everything worth seeing (own places, friend
@@ -139,7 +206,7 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
         alignment: Alignment.topCenter,
         child: SpendPlaceMarker(
           cluster: c,
-          onTap: () => SpendMapBottomSheet.show(context, c),
+          onTap: () => _selectPlace(c),
         ),
       );
     }).toList();
@@ -254,16 +321,37 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
           _autoFitOnce(clusters);
           final myMarker = _myLocationMarker(all);
 
+          // Re-resolve the selection against the live stream so the panel
+          // always shows fresh data — and closes if its place vanished
+          // (filter change, deletion).
+          MapPlaceCluster? selected;
+          if (_selectedCluster != null) {
+            for (final c in clusters) {
+              if (c.placeKey == _selectedCluster!.placeKey) {
+                selected = c;
+                break;
+              }
+            }
+            if (selected == null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _closePanel();
+              });
+            }
+          }
+
           return Stack(
             children: [
               FlutterMap(
                 mapController: _mapController,
-                options: const MapOptions(
+                options: MapOptions(
                   initialCenter: _malaysiaCenter,
                   initialZoom: 11,
-                  interactionOptions: InteractionOptions(
+                  interactionOptions: const InteractionOptions(
                     flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                   ),
+                  // Tapping bare map dismisses the place panel, like
+                  // Google Maps.
+                  onTap: (_, _) => _closePanel(),
                 ),
                 children: [
                   TileLayer(
@@ -272,6 +360,10 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
                     userAgentPackageName: 'com.receiptdrop.receipt_drop',
                     retinaMode: RetinaMode.isHighDensity(context),
                     tileProvider: CancellableNetworkTileProvider(),
+                    // Tile fetch failures are otherwise swallowed silently,
+                    // which makes a dead basemap look like "still loading".
+                    errorTileCallback: (tile, error, stackTrace) =>
+                        debugPrint('Map tile failed: ${tile.coordinates} $error'),
                   ),
                   if (_heatmapMode)
                     CircleLayer(circles: _heatCircles(filtered)),
@@ -348,24 +440,31 @@ class _SpendMapScreenState extends State<SpendMapScreen> {
                   ],
                 ),
               ),
-              Positioned(
-                right: AppSpacing.md,
-                // Clear the notched bottom bar (MainShell uses extendBody).
-                bottom: MediaQuery.viewPaddingOf(context).bottom + 96,
-                child: Material(
-                  color: AppColors.cardSurface,
-                  shape: const CircleBorder(),
-                  elevation: 3,
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.my_location,
-                      color: AppColors.textPrimary,
+              if (selected == null)
+                Positioned(
+                  right: AppSpacing.md,
+                  // Clear the notched bottom bar (MainShell uses extendBody).
+                  bottom: MediaQuery.viewPaddingOf(context).bottom + 96,
+                  child: Material(
+                    color: AppColors.cardSurface,
+                    shape: const CircleBorder(),
+                    elevation: 3,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.my_location,
+                        color: AppColors.textPrimary,
+                      ),
+                      tooltip: 'Recenter on me',
+                      onPressed: _recenterOnMe,
                     ),
-                    tooltip: 'Recenter on me',
-                    onPressed: _recenterOnMe,
                   ),
                 ),
-              ),
+              if (selected != null)
+                PlaceDetailPanel(
+                  cluster: selected,
+                  controller: _panelController,
+                  onClose: _closePanel,
+                ),
             ],
           );
         },
