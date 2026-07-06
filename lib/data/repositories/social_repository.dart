@@ -49,6 +49,31 @@ class FeedPost {
   }
 }
 
+/// A friend's single most recent geolocated receipt place (snap-map pin).
+/// Deliberately amount-free — see get_friend_map_pins in
+/// `supabase/migrations/20260706000000_friend_map_pins.sql`.
+class FriendMapPin {
+  const FriendMapPin({
+    required this.userId,
+    required this.displayName,
+    required this.avatarConfigJson,
+    required this.currentMood,
+    required this.placeName,
+    required this.lat,
+    required this.lng,
+    required this.occurredAt,
+  });
+
+  final String userId;
+  final String? displayName;
+  final Map<String, dynamic>? avatarConfigJson;
+  final String? currentMood;
+  final String? placeName;
+  final double lat;
+  final double lng;
+  final DateTime occurredAt;
+}
+
 enum FriendshipStatus { pending, accepted, declined, blocked }
 
 class FriendshipView {
@@ -210,6 +235,59 @@ class SocialRepository {
       }).toList();
     } on Object {
       return const [];
+    }
+  }
+
+  static Future<List<FriendMapPin>> getFriendMapPins() async {
+    if (_userId == null) return const [];
+    try {
+      final rows =
+          await Supabase.instance.client.rpc('get_friend_map_pins') as List;
+      return rows.map((r) {
+        final row = r as Map<String, dynamic>;
+        return FriendMapPin(
+          userId: row['user_id'] as String,
+          displayName: row['display_name'] as String?,
+          avatarConfigJson: row['avatar_config'] as Map<String, dynamic>?,
+          currentMood: row['current_mood'] as String?,
+          placeName: row['place_name'] as String?,
+          lat: (row['lat'] as num).toDouble(),
+          lng: (row['lng'] as num).toDouble(),
+          occurredAt: DateTime.parse(row['occurred_at'] as String),
+        );
+      }).toList();
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// Whether the caller appears as a pin on friends' maps
+  /// (`profiles.share_map_location`, default true).
+  static Future<bool> getShareMapLocation() async {
+    final userId = _userId;
+    if (userId == null) return true;
+    try {
+      final row = await Supabase.instance.client
+          .from('profiles')
+          .select('share_map_location')
+          .eq('id', userId)
+          .maybeSingle();
+      return (row?['share_map_location'] as bool?) ?? true;
+    } on Object {
+      return true;
+    }
+  }
+
+  static Future<void> setShareMapLocation(bool value) async {
+    final userId = _userId;
+    if (userId == null) return;
+    try {
+      await Supabase.instance.client
+          .from('profiles')
+          .update({'share_map_location': value})
+          .eq('id', userId);
+    } on Object {
+      // Best-effort; the settings toggle re-reads on next open.
     }
   }
 

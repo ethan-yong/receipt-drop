@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:geolocator/geolocator.dart';
 
+import '../../core/utils/current_location.dart';
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/category_matcher_bundled.dart';
 import 'receipt_file_store.dart';
@@ -54,7 +54,7 @@ class ReceiptIngestService {
             categories: categories,
           );
 
-    final location = await _captureLocation();
+    final location = await getCurrentPositionOrNull();
 
     return ReceiptIngestDraft(
       localFilePath: stored.localPath,
@@ -81,29 +81,6 @@ class ReceiptIngestService {
       parseFailureReason: parsed.parseFailureReason,
       lowConfidence: parsed.lowConfidence,
     );
-  }
-
-  static Future<Position?> _captureLocation() async {
-    if (kIsWeb) return null;
-    try {
-      if (!await Geolocator.isLocationServiceEnabled()) return null;
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        return null;
-      }
-      return Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 8),
-        ),
-      );
-    } catch (_) {
-      return null;
-    }
   }
 
   static Future<void> discardDraft(ReceiptIngestDraft draft) async {

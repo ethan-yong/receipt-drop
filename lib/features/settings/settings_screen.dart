@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/repositories/social_repository.dart';
 import '../../widgets/settings_tile.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -17,6 +18,22 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _version = '1.0.0';
+
+  // Optimistic default (matches the server column default) while loading.
+  bool _shareMapLocation = true;
+
+  @override
+  void initState() {
+    super.initState();
+    SocialRepository.getShareMapLocation().then((value) {
+      if (mounted) setState(() => _shareMapLocation = value);
+    });
+  }
+
+  void _setShareMapLocation(bool value) {
+    setState(() => _shareMapLocation = value);
+    SocialRepository.setShareMapLocation(value);
+  }
 
   Future<void> _signOut() async {
     if (!Env.hasSupabaseConfig) return;
@@ -72,6 +89,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy & Legal',
             onTap: () {},
+          ),
+          SwitchListTile(
+            secondary: const Icon(
+              Icons.location_on_outlined,
+              color: AppColors.textPrimary,
+            ),
+            title: Text(
+              "Show me on friends' maps",
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            subtitle: Text(
+              'Your latest receipt place appears as a pin',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            value: _shareMapLocation,
+            activeTrackColor: AppColors.primaryGreen,
+            onChanged: _setShareMapLocation,
           ),
           SettingsTile(
             icon: Icons.cleaning_services_outlined,
