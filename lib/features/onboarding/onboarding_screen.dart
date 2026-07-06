@@ -3,10 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/bootstrap/app_prefs.dart';
 import '../../core/theme/app_theme.dart';
-import '../../widgets/pug_mascot.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
 
-/// Three slides matching design mock, then routes to sign-in.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -18,19 +16,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _pageController = PageController();
   int _index = 0;
 
-  static const _slides = <({String asset, String title, String body})>[
+  static const _slides = <({String title, String body})>[
     (
-      asset: 'assets/branding/pug-onboarding-1.png',
       title: 'Share any RM receipt',
-      body: 'We log it. Use your bank or TNG receipt — tap Share and choose Receipt Drop.',
+      body:
+          'We log it. Use your bank or TNG receipt — tap Share and choose Receipt Drop.',
     ),
     (
-      asset: 'assets/branding/pug-onboarding-2.png',
       title: 'We guess place + category',
       body: 'You can fix anything later. Nothing blocks you from saving right away.',
     ),
     (
-      asset: 'assets/branding/pug-onboarding-3.png',
       title: 'Your data, your map',
       body: 'Private. Secure. Yours. Receipt Drop is not a bank.',
     ),
@@ -66,13 +62,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Skip button
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => _finishAndGoAuth(context),
-                child: const Text('Skip'),
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: TextButton(
+                  onPressed: () => _finishAndGoAuth(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary,
+                  ),
+                  child: const Text('Skip'),
+                ),
               ),
             ),
+
+            // Slide content
             Expanded(
               child: PageView.builder(
                 controller: _pageController,
@@ -80,41 +85,35 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 onPageChanged: (i) => setState(() => _index = i),
                 itemBuilder: (context, i) {
                   final s = _slides[i];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 28),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        TweenAnimationBuilder<double>(
-                          key: ValueKey(i),
-                          tween: Tween(begin: 0.85, end: 1),
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                          builder: (context, scale, child) {
-                            return Transform.scale(scale: scale, child: child);
-                          },
-                          child: PugMascot(assetPath: s.asset, size: 160),
-                        ),
-                        const SizedBox(height: AppSpacing.xl),
-                        Text(
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
                           s.title,
                           style: Theme.of(context).textTheme.headlineMedium,
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: AppSpacing.md),
-                        Text(
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Text(
                           s.body,
                           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                                 color: AppColors.textSecondary,
                               ),
                           textAlign: TextAlign.center,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   );
                 },
               ),
             ),
+
+            // Dot indicators
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(
@@ -133,16 +132,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: ReceiptDropPrimaryButton(
-                label: _index == _slides.length - 1
-                    ? "Let's get started"
-                    : 'Next',
+                label: _index == _slides.length - 1 ? "Let's get started" : 'Next',
                 onPressed: () => _next(context),
               ),
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),

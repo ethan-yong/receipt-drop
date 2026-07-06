@@ -1,12 +1,10 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
-import '../../widgets/pug_mascot.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
 
-/// Email/password + OAuth (Google, Apple).
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -27,6 +25,9 @@ class _AuthScreenState extends State<AuthScreen> {
     _passwordController.dispose();
     super.dispose();
   }
+
+  String get _redirectTo =>
+      kIsWeb ? '${Uri.base.origin}/' : 'receiptdrop://auth-callback/';
 
   Future<void> _submitEmailPassword() async {
     if (!_formKey.currentState!.validate()) return;
@@ -76,7 +77,7 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       await Supabase.instance.client.auth.signInWithOAuth(
         provider,
-        redirectTo: kIsWeb ? '${Uri.base.origin}/' : null,
+        redirectTo: _redirectTo,
       );
     } on AuthException catch (e) {
       if (mounted) {
@@ -91,34 +92,29 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final showApple = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     return Scaffold(
       backgroundColor: AppColors.scaffold,
       body: SafeArea(
         child: AbsorbPointer(
           absorbing: _loading,
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: const EdgeInsets.symmetric(horizontal: 28),
             child: Form(
               key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: AppSpacing.lg),
-                  const Center(
-                    child: PugMascot(
-                      assetPath: 'assets/branding/pug-logo.png',
-                      size: 88,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
+                  const SizedBox(height: 64),
+
                   Text(
                     'Receipt Drop',
                     style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                          color: AppColors.primaryGreen,
+                          color: AppColors.textPrimary,
                         ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: 6),
                   Text(
                     'Not a bank — your receipt-powered spending view.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -126,23 +122,26 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: AppSpacing.xl),
-                  ReceiptDropOAuthButton(
+
+                  const SizedBox(height: 40),
+
+                  // Google Sign-In (primary OAuth CTA)
+                  _OAuthButton(
+                    onPressed: _loading ? null : () => _oauth(OAuthProvider.google),
+                    icon: const _GoogleIcon(),
                     label: 'Continue with Google',
-                    icon: const Icon(Icons.g_mobiledata, size: 28),
-                    onPressed: _loading
-                        ? null
-                        : () => _oauth(OAuthProvider.google),
                   ),
-                  const SizedBox(height: AppSpacing.sm + 4),
-                  ReceiptDropOAuthButton(
-                    label: 'Continue with Apple',
-                    icon: const Icon(Icons.apple, size: 22),
-                    onPressed: _loading
-                        ? null
-                        : () => _oauth(OAuthProvider.apple),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
+
+                  if (showApple) ...[
+                    const SizedBox(height: 10),
+                    _OAuthButton(
+                      onPressed: _loading ? null : () => _oauth(OAuthProvider.apple),
+                      icon: const Icon(Icons.apple, size: 20),
+                      label: 'Continue with Apple',
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
                   Row(
                     children: [
                       const Expanded(child: Divider()),
@@ -156,7 +155,9 @@ class _AuthScreenState extends State<AuthScreen> {
                       const Expanded(child: Divider()),
                     ],
                   ),
-                  const SizedBox(height: AppSpacing.lg),
+                  const SizedBox(height: 24),
+
+                  // Email / password (secondary)
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
@@ -168,7 +169,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: AppSpacing.md),
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
@@ -181,13 +182,12 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Enter password';
-                      if (v.length < 6) {
-                        return 'At least 6 characters';
-                      }
+                      if (v.length < 6) return 'At least 6 characters';
                       return null;
                     },
                   ),
-                  const SizedBox(height: AppSpacing.lg),
+                  const SizedBox(height: 20),
+
                   ReceiptDropPrimaryButton(
                     label: _isSignUp ? 'Create account' : 'Sign in',
                     loading: _loading,
@@ -203,10 +203,78 @@ class _AuthScreenState extends State<AuthScreen> {
                           : 'Need an account? Sign up',
                     ),
                   ),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OAuthButton extends StatelessWidget {
+  const _OAuthButton({
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+  });
+
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          backgroundColor: AppColors.cardSurface,
+          side: const BorderSide(color: AppColors.divider, width: 1.5),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            icon,
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GoogleIcon extends StatelessWidget {
+  const _GoogleIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: const BoxDecoration(
+        color: Color(0xFF4285F4),
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: const Text(
+        'G',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          height: 1,
         ),
       ),
     );
