@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -25,6 +26,19 @@ def _load_root_dotenv() -> None:
         value = value.strip().strip('"').strip("'")
         if key and key not in os.environ:
             os.environ[key] = value
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    # Windows lets a second process bind an already-listening port silently
+    # (SO_REUSEADDR semantics differ from Linux), so a bind-test can't detect
+    # a stale leftover instance — a real connect attempt can. 0.0.0.0/:: mean
+    # "all interfaces", which isn't itself connectable, so probe loopback.
+    probe_host = "127.0.0.1" if host in ("0.0.0.0", "", "::") else host
+    try:
+        with socket.create_connection((probe_host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
 
 
 def _maybe_set_tesseract_cmd() -> None:
@@ -52,10 +66,28 @@ def main() -> None:
         )
         sys.exit(1)
 
-    import uvicorn
-
     host = os.environ.get("OCR_API_HOST", "0.0.0.0")
     port = int(os.environ.get("OCR_API_PORT", "8081"))
+
+    # A leftover instance from an earlier terminal keeps answering requests
+    # with its own (possibly stale) config, and a new instance on top of it
+    # looks like it started fine — the confusing failure mode this guards
+    # against. Killing the old one is the fix, not starting another.
+    if _port_in_use(host, port):
+        print(
+            f"ERROR: something is already listening on port {port}.\n"
+            "That's usually a leftover instance from an earlier terminal —\n"
+            "with reload mode on, its worker child survives even after you\n"
+            "stop what looked like the main process. Stop the whole tree:\n"
+            f"  .\\scripts\\stop_ocr_api.ps1 -Port {port}\n"
+            "or, next time, prefer Ctrl+C in the terminal it's running in\n"
+            "(not closing the window) so reload can shut down cleanly.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    import uvicorn
+
     reload = os.environ.get("OCR_API_RELOAD", "true").lower() in ("1", "true", "yes")
 
     print(f"Starting OCR API on http://{host}:{port} (reload={reload})")
