@@ -169,8 +169,73 @@ CASH : RM 64.80 "
       result.items.map((it) => it.priceMyr).toList(),
       [7.00, 8.70, 11.00, 3.00, 4.20, 9.00, 12.50, 6.00, 3.40],
     );
+    // Mamak layout: qty printed before the name with no "x" ("1 Rsb Biasa
+    // 7.00 -Z"). Lines whose qty digit was lost to scene noise fall through
+    // to the bare pattern with a null quantity.
+    expect(
+      result.items.map((it) => it.quantity).toList(),
+      [1, 3, null, null, 1, null, null, 1, 1],
+    );
+    // Leading/trailing punctuation junk is trimmed from names; alphabetic
+    // junk ("eq", "yo") is indistinguishable from real words and remains.
+    expect(
+      result.items.map((it) => it.name).toList(),
+      [
+        'Rsb Biasa',
+        'Teh O Limau Ais',
+        'eq Maggi G Double',
+        'ae Limau Ais Bungkus',
+        'Milo Ais Bungkus',
+        'ny Maggi Goreng Telur M',
+        'yo Nasi G Ayam Mamak',
+        'Ayam Goreng',
+        'Teh Ais Bungkus',
+      ],
+    );
     expect(result.itemsSubtotalMyr, 64.80);
     expect(result.itemsMatchTotal, isTrue);
+  });
+
+  test('parses quantity-prefixed items without an "x" separator', () {
+    const ocr = '''
+RESTORAN ANWAR MAJU
+1 Rsb Biasa 7.00 -Z
+3 Teh O Limau Ais 8.70 -Z
+1 Nasi Lemak RM 5.00
+JUMLAH 20.70
+''';
+    final result = extractReceiptLineItems(ocr, totalMyr: 20.70);
+    expect(result.items.length, 3);
+    expect(result.items[0].quantity, 1);
+    expect(result.items[0].name, 'Rsb Biasa');
+    expect(result.items[1].quantity, 3);
+    expect(result.items[1].name, 'Teh O Limau Ais');
+    expect(result.items[2].quantity, 1);
+    expect(result.items[2].name, 'Nasi Lemak');
+    expect(result.items[2].priceMyr, 5.00);
+    expect(result.itemsMatchTotal, isTrue);
+  });
+
+  test('does not read the tail of a longer number as a quantity', () {
+    const ocr = '''
+KEDAI RUNCIT
+100 Plus 3.50
+''';
+    final result = extractReceiptLineItems(ocr);
+    expect(result.items.single.quantity, isNull);
+    expect(result.items.single.name, '100 Plus');
+    expect(result.items.single.priceMyr, 3.50);
+  });
+
+  test('mid-line digits before "RM" stay part of the name, not a quantity', () {
+    const ocr = '''
+CAFE
+Kopi 2 RM 6.00
+''';
+    final result = extractReceiptLineItems(ocr);
+    expect(result.items.single.quantity, isNull);
+    expect(result.items.single.name, 'Kopi 2');
+    expect(result.items.single.priceMyr, 6.00);
   });
 
   test('reconcileWithTotal applies match flag and penalty after the fact', () {

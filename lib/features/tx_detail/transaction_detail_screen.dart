@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
+import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../data/repositories/places_repository.dart';
 import '../../domain/logic/category_matcher.dart';
@@ -36,6 +37,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   ImpactLevel? _impactOverride;
   bool _loading = true;
   CategoryConfig? _categoryConfig;
+  List<ReceiptLineItem> _lineItems = const [];
 
   @override
   void dispose() {
@@ -61,6 +63,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       _occurredAt = tx.occurredAt;
       _impactOverride = impactLevelFromStorage(tx.impactUser);
       _categoryConfig = config;
+      _lineItems = tx.lineItems ?? const [];
       _loading = false;
     });
   }
@@ -212,6 +215,46 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 child: AmountField(controller: _amountController),
               ),
             ),
+            if (_lineItems.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              Card(
+                child: Padding(
+                  padding: AppSpacing.cardPadding,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Items',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      for (final item in _lineItems)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.displayLabel,
+                                  style:
+                                      Theme.of(context).textTheme.bodyMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Text(
+                                item.priceDisplay,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             Text('Impact', style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: AppSpacing.sm),

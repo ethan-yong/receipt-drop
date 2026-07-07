@@ -4,6 +4,10 @@
     "error": "ocr_failed_or_empty"
   },
   {
+    "file": "2933cd3c-20bb-4653-9754-8337aab50fb6.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
     "file": "2a098a98-94da-46d6-8b10-e0eaa1182ed7.png",
     "error": "ocr_failed_or_empty"
   },
@@ -37,21 +41,71 @@
   },
   {
     "file": "rock_cafe.png.jpeg",
-    "ocrText": "«\nTEI\n‘ | TAXNO. :346131\nies TABLENO :62\n% DATE :10/Jun/2026 01:17:26\nx r i\nCASH : RM 64.80 v ;\n, CHANGE : RM 0.00 ;\nSTAFF :MASTER a\nTHANK YOU COME AGAIN",
     "amountMyr": 64.8,
     "needsAmount": false,
-    "ocrConfidence": 0.275,
-    "combinedConfidence": 0.1747021341423358,
+    "ocrConfidence": 0.6249999999999999,
+    "combinedConfidence": 0.5199705431134127,
     "amountSource": "rmPrefixed",
-    "merchantRaw": "TEI",
-    "categoryGuess": "Others",
-    "categoryConfidence": 0.1,
+    "merchantRaw": "RESTORAN ANWAR MAU",
+    "categoryGuess": "Food & Drink",
+    "categoryConfidence": 0.85,
     "impactLevel": "high",
-    "lowConfidence": true,
-    "lineItems": [],
-    "lineItemsConfidence": 0.0,
-    "itemsSubtotalMyr": null,
-    "itemsMatchTotal": false,
-    "ocrServiceConfidence": 0.2881794587206933
+    "lowConfidence": false,
+    "lineItems": [
+      {
+        "name": "Rsb Biasa",
+        "priceMyr": 7.0,
+        "quantity": 1,
+        "confidence": 0.8
+      },
+      {
+        "name": "Teh O Limau Ais",
+        "priceMyr": 8.7,
+        "quantity": 3,
+        "confidence": 0.8
+      },
+      {
+        "name": "1d Maggi G Double",
+        "priceMyr": 11.0,
+        "confidence": 0.55
+      },
+      {
+        "name": "Limau Ais Bungkus",
+        "priceMyr": 3.0,
+        "confidence": 0.55
+      },
+      {
+        "name": "Milo Ais Bungkus",
+        "priceMyr": 4.2,
+        "quantity": 1,
+        "confidence": 0.8
+      },
+      {
+        "name": "Maggi Goreng Telur M",
+        "priceMyr": 9.0,
+        "quantity": 1,
+        "confidence": 0.8
+      },
+      {
+        "name": "Nasi GAyam Mamak",
+        "priceMyr": 12.5,
+        "confidence": 0.55
+      },
+      {
+        "name": "I Ayam Goreng",
+        "priceMyr": 6.0,
+        "confidence": 0.55
+      },
+      {
+        "name": "Teh Ais Bungkus",
+        "priceMyr": 3.4,
+        "quantity": 1,
+        "confidence": 0.8
+      }
+    ],
+    "lineItemsConfidence": 0.6888888888888888,
+    "itemsSubtotalMyr": 64.8,
+    "itemsMatchTotal": true,
+    "ocrServiceConfidence": 0.3624263577835318
   }
 ]

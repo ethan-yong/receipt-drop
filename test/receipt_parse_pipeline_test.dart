@@ -190,13 +190,11 @@ TOTAL                      RM 20.40
     expect(badScan.lowConfidence, isTrue);
   });
 
-  test('ocrServiceConfidence 0.95 is squashed before blending', () {
-    // Use a receipt with no extractable items so no subtotal cross-check fires
-    // (that would raise ocrConfidence to 0.85+ and obscure the calibration
-    // signal). With ocrConfidence ≈ 0.675 (TOTAL keyword only):
-    //   uncalibrated blend = 0.6×0.675 + 0.4×0.95 ≈ 0.785
-    //   calibrated blend   = 0.6×0.675 + 0.4×0.832 ≈ 0.738
-    // Assert < 0.76 so code that skips calibration (producing 0.785) trips this.
+  test('ocrServiceConfidence blends in as-is (already service-calibrated)', () {
+    // The OCR service sigmoid-calibrates its mean word confidence before
+    // returning it. Re-squashing it here double-calibrated the value
+    // (0.34 -> 0.036) and capped combined confidence at ~0.29 forever, so the
+    // blend must use the service value untouched.
     const ocrText = '''
 CAFE
 TOTAL RM 20.00
@@ -209,8 +207,34 @@ We appreciate your business.
       categories: categories,
       ocrServiceConfidence: 0.95,
     );
-    expect(result.combinedConfidence, lessThan(0.76));
-    expect(result.combinedConfidence, greaterThan(0.6));
+    final expected = combinedExtractionWeight * result.ocrConfidence +
+        combinedScanWeight * 0.95;
+    expect(result.combinedConfidence, closeTo(expected, 0.001));
+    // The old double calibration produced ~0.74 here; the as-is blend ~0.785.
+    expect(result.combinedConfidence, greaterThan(0.76));
+  });
+
+  test('mediocre-but-readable scan with a clean parse clears the review bar', () {
+    // rock_cafe regression: a handheld photo scores ~0.36 scan confidence but
+    // parses perfectly (items subtotal == RM-prefixed total). The old double
+    // calibration crushed this to ~0.29 combined, review-flagging every such
+    // receipt regardless of parse quality.
+    const ocrText = '''
+RESTORAN ANWAR MAJU
+1 Rsb Biasa 7.00 -Z
+3 Teh O Limau Ais 8.70 -Z
+1 Ayam Goreng 6.00 -Z
+TOTAL : RM 21.70
+''';
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/rock_cafe.jpeg',
+      ocrText: ocrText,
+      categories: categories,
+      ocrServiceConfidence: 0.36,
+    );
+    expect(result.amountMyr, 21.70);
+    expect(result.combinedConfidence, greaterThanOrEqualTo(0.5));
+    expect(result.lowConfidence, isFalse);
   });
 
   test('categoryConfidence is 0.85 when brand keyword is in merchant name', () {

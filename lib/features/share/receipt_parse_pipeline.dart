@@ -8,8 +8,9 @@ import '../../domain/logic/rm_amount_parser.dart';
 import '../../domain/models/receipt_line_item.dart';
 
 /// Weights for blending extraction confidence with scan quality in
-/// [ReceiptParseResult.combinedConfidence]. Tesseract word confidences skew
-/// high even on mediocre scans, so expect to tune these against batch runs.
+/// [ReceiptParseResult.combinedConfidence]. The OCR service already sigmoid-
+/// calibrates its mean word confidence before returning it, so the scan value
+/// is used as-is here; expect to tune these weights against batch runs.
 const combinedExtractionWeight = 0.6;
 const combinedScanWeight = 0.4;
 
@@ -56,8 +57,9 @@ class ReceiptParseResult {
   final double categoryConfidence;
   final String impactLevel;
 
-  /// Scan quality: the OCR engine's mean word confidence. Says nothing about
-  /// whether the right fields were extracted.
+  /// Scan quality: the OCR engine's mean word confidence, already sigmoid-
+  /// calibrated by the service (`_calibrate_confidence` in ocr_engine.py).
+  /// Says nothing about whether the right fields were extracted.
   final double? ocrServiceConfidence;
 
   final List<ReceiptLineItem> lineItems;
@@ -72,26 +74,20 @@ class ReceiptParseResult {
   /// 'no_amount_pattern'). A failure is a failure — not a confidence score.
   final String? parseFailureReason;
 
-  /// Sigmoid calibration applied to [ocrServiceConfidence] before blending.
-  /// Tesseract word confidences skew high (85–95 on mediocre scans) because
-  /// the LM fills in probable chars; this de-inflates them before they enter
-  /// the blend. Mirrors the Python-side `_calibrate_confidence` in ocr_engine.py.
-  static double _calibrateScanConfidence(double raw) {
-    const midpoint = 0.75;
-    const steepness = 8.0;
-    return 1.0 / (1.0 + math.exp(-steepness * (raw - midpoint)));
-  }
-
-  /// Calibrated blend of extraction confidence and scan quality, min-gated so
-  /// a bad scan caps the ceiling regardless of how clean the parse looked.
+  /// Blend of extraction confidence and scan quality, min-gated so a bad scan
+  /// caps the ceiling regardless of how clean the parse looked.
+  ///
+  /// [ocrServiceConfidence] arrives already sigmoid-calibrated by the OCR
+  /// service and must NOT be re-squashed here: applying the same sigmoid twice
+  /// mapped a 0.34 scan to 0.036, capping the combined score at ~0.29 and
+  /// flagging every receipt for review no matter how clean the parse was.
   double get combinedConfidence {
     if (needsAmount) return 0.0;
     final scan = ocrServiceConfidence;
     if (scan == null) return ocrConfidence;
-    final calibrated = _calibrateScanConfidence(scan);
     final blend = combinedExtractionWeight * ocrConfidence +
-        combinedScanWeight * calibrated;
-    return math.min(blend, calibrated + combinedScanCeilingMargin).clamp(0.0, 1.0);
+        combinedScanWeight * scan;
+    return math.min(blend, scan + combinedScanCeilingMargin).clamp(0.0, 1.0);
   }
 
   bool get lowConfidence =>

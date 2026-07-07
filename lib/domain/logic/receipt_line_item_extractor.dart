@@ -1,5 +1,6 @@
 import '../models/receipt_line_item.dart';
-import 'merchant_extractor.dart' show looksLikeBoilerplate, numericOrPunctuationOnly;
+import 'merchant_extractor.dart'
+    show looksLikeBoilerplate, numericOrPunctuationOnly, stripEdgeJunk;
 import 'rm_amount_parser.dart'
     show
         discountOrSummaryHints,
@@ -27,6 +28,7 @@ class ReceiptLineItemsResult {
 const maxExtractedLineItems = 30;
 
 const _qtyPatternConfidence = 0.90;
+const _qtyNoXPatternConfidence = 0.80;
 const _rmPatternConfidence = 0.85;
 const _barePatternConfidence = 0.55;
 
@@ -76,7 +78,23 @@ final _qtyItemRegex = RegExp(
   caseSensitive: false,
 );
 
-// 2nd: plain "name  RM price" (most common). Tried before the bare-price
+// 2nd: quantity-prefixed item WITHOUT "x", the mamak/kopitiam layout, e.g.
+// "1 Rsb Biasa 7.00 -Z" or "3 Teh O Limau Ais 8.70 -Z". Deliberately
+// unanchored: handheld photos often merge scene junk onto the line's start
+// ("~ VY Vy 3 Teh O Limau Ais 8.70"), so the search skips ahead to the first
+// small integer followed by a letter-initial name. The (?:^|\s) guard keeps a
+// longer number's tail from being read as a quantity ("100 Plus 3.50" falls
+// through to the bare pattern). Quantity capped at 2 digits — receipts don't
+// sell 100+ of one item, but item codes can be long.
+final _qtyNoXItemRegex = RegExp(
+  r'(?:^|\s)(\d{1,2})\s+([A-Za-z].*?)\s+(?:RM\s*)?' +
+      _priceToken +
+      _taxCodeSuffix +
+      _trailingNoise,
+  caseSensitive: false,
+);
+
+// 3rd: plain "name  RM price" (most common). Tried before the bare-price
 // pattern below, otherwise that pattern would capture the literal word "RM"
 // into the name (nothing anchors it to stop before "RM").
 final _rmItemRegex = RegExp(
@@ -84,7 +102,7 @@ final _rmItemRegex = RegExp(
   caseSensitive: false,
 );
 
-// 3rd: no "RM" token at all, e.g. "Broccoli   4.20" — lower confidence, only
+// 4th: no "RM" token at all, e.g. "Broccoli   4.20" — lower confidence, only
 // reached when a line has no RM-prefixed price for the patterns above to match.
 final _bareItemRegex = RegExp(
   r'^(.+?)\s+' + _priceToken + _taxCodeSuffix + _trailingNoise,
@@ -98,6 +116,11 @@ double? _parsePriceToken(String raw) {
   final normalized = raw.contains('.') ? raw.replaceAll(',', '') : raw.replaceAll(',', '.');
   return double.tryParse(normalized);
 }
+
+// OCR scene junk leaks onto item lines from cluttered backgrounds
+// ("] Limau Ais", "Nasi Mamak ="); an empty result is fine here —
+// _isValidName rejects it and the line is skipped.
+String _cleanName(String raw) => stripEdgeJunk(raw);
 
 bool _isValidName(String name) {
   final trimmed = name.trim();
@@ -119,7 +142,7 @@ double _lineConfidence(double base, String name, double price) {
     _tryParseItemLine(String line) {
   final qty = _qtyItemRegex.firstMatch(line);
   if (qty != null) {
-    final name = qty.group(2)!.trim();
+    final name = _cleanName(qty.group(2)!);
     final price = _parsePriceToken(qty.group(3)!);
     if (price != null && _isValidName(name)) {
       return (
@@ -131,9 +154,28 @@ double _lineConfidence(double base, String name, double price) {
     }
   }
 
+  final qtyNoX = _qtyNoXItemRegex.firstMatch(line);
+  if (qtyNoX != null) {
+    final name = _cleanName(qtyNoX.group(2)!);
+    final price = _parsePriceToken(qtyNoX.group(3)!);
+    // A "name" of just "RM" means the pattern swallowed the currency token of
+    // a "Kopi 2 RM 6.00" shape — let the RM pattern below claim that line
+    // with the full "Kopi 2" name instead.
+    if (price != null &&
+        _isValidName(name) &&
+        name.toUpperCase() != 'RM') {
+      return (
+        name: name,
+        price: price,
+        quantity: int.tryParse(qtyNoX.group(1)!),
+        confidence: _lineConfidence(_qtyNoXPatternConfidence, name, price),
+      );
+    }
+  }
+
   final rm = _rmItemRegex.firstMatch(line);
   if (rm != null) {
-    final name = rm.group(1)!.trim();
+    final name = _cleanName(rm.group(1)!);
     final price = _parsePriceToken(rm.group(2)!);
     if (price != null && _isValidName(name)) {
       return (
@@ -147,7 +189,7 @@ double _lineConfidence(double base, String name, double price) {
 
   final bare = _bareItemRegex.firstMatch(line);
   if (bare != null) {
-    final name = bare.group(1)!.trim();
+    final name = _cleanName(bare.group(1)!);
     final price = _parsePriceToken(bare.group(2)!);
     if (price != null && _isValidName(name)) {
       return (

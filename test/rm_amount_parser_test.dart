@@ -72,6 +72,30 @@ RM 64.80
     expect(r.amount, 15.50);
   });
 
+  test('exact items consensus lifts a penalized cash-line total', () {
+    // rock_cafe regression: the TOTAL line was OCR-mangled, so the amount can
+    // only come off the CASH line (-0.45 penalty). With many extracted items
+    // summing exactly to the candidate, the consensus boost must carry the
+    // confidence past the review threshold anyway.
+    const ocr = 'CASH : RM 64.80';
+    final many = parseRmAmountFromOcr(
+      ocr,
+      itemsSubtotalMyr: 64.80,
+      lineItemCount: 9,
+    );
+    expect(many.amount, 64.80);
+    expect(many.confidence, closeTo(0.625, 0.001));
+
+    // Two items agreeing is a weaker coincidence — no extra consensus boost.
+    final few = parseRmAmountFromOcr(
+      ocr,
+      itemsSubtotalMyr: 64.80,
+      lineItemCount: 2,
+    );
+    expect(few.amount, 64.80);
+    expect(few.confidence, closeTo(0.525, 0.001));
+  });
+
   test('candidate equal to the largest single item is penalized', () {
     const ocr = '''
 CAFE

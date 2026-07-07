@@ -42,6 +42,14 @@ const _subtotalAgreementSstBoost = 0.35;
 /// allowance but the gap doesn't resemble the 6% SST rate.
 const _subtotalAgreementApproxBoost = 0.30;
 
+/// Additional boost on top of [_subtotalAgreementSstBoost] when the candidate
+/// EXACTLY matches the sum of three or more extracted items. Many independent
+/// item rows agreeing with a candidate is near-proof it is the paid total —
+/// same consensus principle as [_clusterConsensusBoost]. Keeps a mangled
+/// TOTAL line (forcing the amount to come off a penalized CASH/TUNAI line)
+/// from review-flagging an otherwise perfectly reconciled receipt.
+const _subtotalExactConsensusBoost = 0.20;
+
 /// Penalty when a candidate merely equals the single largest item price:
 /// likely one item's row misread as the total.
 const _largestItemMimicryPenalty = 0.15;
@@ -105,11 +113,12 @@ double _crossCheckAdjust(
       itemsSubtotalMyr != null && _agreesWithSubtotal(value, itemsSubtotalMyr);
   var adjusted = score;
   if (matchesSubtotal) {
-    final exactOrSst =
-        (value - itemsSubtotalMyr!).abs() <= itemsSubtotalExactToleranceMyr ||
-            _isSstGap(value, itemsSubtotalMyr);
+    final exact =
+        (value - itemsSubtotalMyr!).abs() <= itemsSubtotalExactToleranceMyr;
+    final exactOrSst = exact || _isSstGap(value, itemsSubtotalMyr);
     adjusted +=
         exactOrSst ? _subtotalAgreementSstBoost : _subtotalAgreementApproxBoost;
+    if (exact && lineItemCount >= 3) adjusted += _subtotalExactConsensusBoost;
   }
   if (!matchesSubtotal &&
       lineItemCount >= 2 &&

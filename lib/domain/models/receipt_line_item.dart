@@ -14,6 +14,15 @@ class ReceiptLineItem {
   final double? confidence; // parser confidence for this row
   final int? lineIndex; // source line in OCR text (debug / UI)
 
+  /// "3× Teh O Limau Ais" when a quantity above one was detected, else just
+  /// the name (a qty of 1 adds no information on screen).
+  String get displayLabel =>
+      quantity != null && quantity! > 1 ? '$quantity× $name' : name;
+
+  /// The row's printed price, e.g. "RM 8.70". On Malaysian receipts this is
+  /// the line total, not a unit price.
+  String get priceDisplay => 'RM ${priceMyr.toStringAsFixed(2)}';
+
   Map<String, dynamic> toJson() => {
         'name': name,
         'priceMyr': priceMyr,

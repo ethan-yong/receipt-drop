@@ -45,7 +45,13 @@ class ReceiptSummaryCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _Body(vm: vm, draft: draft),
+            // Flexible + scroll: the item breakdown can outgrow the sheet's
+            // 92%-height cap on long receipts.
+            Flexible(
+              child: SingleChildScrollView(
+                child: _Body(vm: vm, draft: draft),
+              ),
+            ),
             _Actions(vm: vm),
           ],
         ),
@@ -128,6 +134,29 @@ class _Body extends StatelessWidget {
             color: vm.hasAmount ? AppColors.textPrimary : AppColors.textMuted,
           ),
         ),
+        if (vm.lineItems.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.md),
+          const Divider(height: 1),
+          const SizedBox(height: AppSpacing.sm),
+          for (final item in vm.lineItems)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.displayLabel,
+                      style: theme.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(item.priceDisplay, style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ),
+        ],
         if (vm.isLowConfidence) ...[
           const SizedBox(height: AppSpacing.sm),
           _WarningBanner(needsAmount: draft.needsAmount),

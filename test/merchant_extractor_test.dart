@@ -31,6 +31,20 @@ void main() {
     expect(extractMerchant(ocr, categories), 'TAX INVOICE');
   });
 
+  test('skips OCR scene junk without a real word in the fallback', () {
+    // Handheld photos against busy backgrounds put stray-character lines
+    // above the header; none contains a 3+ letter run, the merchant does.
+    final ocr = '- : a a ~~ . ;\noo a\nUl }\nRESTORAN ANWAR MAJU\nINVOICE';
+    expect(extractMerchant(ocr, categories), 'RESTORAN ANWAR MAJU');
+  });
+
+  test('strips edge junk from the winning merchant line', () {
+    // Scene characters glued onto the header line itself must not survive
+    // into the stored merchant (they leak into every downstream title).
+    final ocr = '\\ RESTORAN ANWAR MAU.\nINVOICE\nRM 64.80';
+    expect(extractMerchant(ocr, categories), 'RESTORAN ANWAR MAU');
+  });
+
   test('returns null for empty OCR text', () {
     expect(extractMerchant('', categories), isNull);
   });

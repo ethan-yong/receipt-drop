@@ -12,7 +12,13 @@ _MAX_DESKEW_ANGLE_DEG = 15.0
 
 # Upscale images narrower than this so Tesseract sees ~300 DPI equivalent.
 # Overridable via MIN_OCR_WIDTH env var.
-_MIN_OCR_WIDTH = int(os.environ.get("MIN_OCR_WIDTH", "1500"))
+#
+# 2500 (not 1500) measured on the 720px handheld rock_cafe fixture: at 1500
+# the header read "RESTORAN AME" and item rows dropped; at 2500 (with the
+# adaptive-binarize retry) all 9 item lines and "RESTORAN ANWAR MAU." came
+# through, calibrated confidence 0.337 -> 0.362. Cost: Tesseract time scales
+# ~with pixel area, so narrow images OCR ~2.8x slower than at 1500.
+_MIN_OCR_WIDTH = int(os.environ.get("MIN_OCR_WIDTH", "2500"))
 
 
 class InvalidImageError(ValueError):

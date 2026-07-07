@@ -1,3 +1,4 @@
+import '../../domain/models/receipt_line_item.dart';
 import 'receipt_ingest_draft.dart';
 
 /// Display-ready representation of a parsed receipt, derived from
@@ -10,7 +11,7 @@ class ReceiptSummaryViewModel {
     required this.categoryLabel,
     required this.hasAmount,
     required this.isLowConfidence,
-    required this.lineItemCount,
+    required this.lineItems,
   });
 
   final String merchantDisplay;
@@ -18,7 +19,12 @@ class ReceiptSummaryViewModel {
   final String categoryLabel;
   final bool hasAmount;
   final bool isLowConfidence;
-  final int lineItemCount;
+
+  /// Parsed item rows for the breakdown list; render via
+  /// [ReceiptLineItem.displayLabel] / [ReceiptLineItem.priceDisplay].
+  final List<ReceiptLineItem> lineItems;
+
+  int get lineItemCount => lineItems.length;
 
   factory ReceiptSummaryViewModel.from(ReceiptIngestDraft draft) {
     return ReceiptSummaryViewModel(
@@ -29,7 +35,7 @@ class ReceiptSummaryViewModel {
       categoryLabel: draft.categoryGuess,
       hasAmount: !draft.needsAmount && draft.amountMyr != null,
       isLowConfidence: draft.needsAmount || draft.lowConfidence,
-      lineItemCount: draft.lineItems.length,
+      lineItems: draft.lineItems,
     );
   }
 
