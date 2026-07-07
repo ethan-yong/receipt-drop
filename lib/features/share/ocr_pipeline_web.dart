@@ -1,8 +1,7 @@
-/// OCR text plus the engine's scan-quality confidence (null when the source
-/// provides none: local ML Kit, PDF text extraction, or web).
+/// OCR text plus the engine's scan-quality confidence (null on web / PDF-only).
 typedef OcrFileResult = ({String text, double? serviceConfidence});
 
-/// Web has no ML Kit — OCR is skipped; user enters amount on save sheet.
+/// Web has no OCR API client — user enters amount on save sheet.
 Future<OcrFileResult> runOcrOnReceiptFile({
   required String filePath,
   required String mimeType,

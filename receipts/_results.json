@@ -1,49 +1,57 @@
 [
   {
-    "file": "52353147-26fe-497f-b779-c8b729a385fd.png",
+    "file": "14852c88-2010-47c8-98d0-496151dab64a.png",
     "error": "ocr_failed_or_empty"
   },
   {
-    "file": "5f89322b-d37e-4155-a71b-c680d2abe1b6.png",
+    "file": "2a098a98-94da-46d6-8b10-e0eaa1182ed7.png",
     "error": "ocr_failed_or_empty"
   },
   {
-    "file": "6ed6ffcf-702f-46aa-b9a0-8d2a65622335.png",
+    "file": "43acec35-3d7b-4488-9139-5739d10eef29.png",
     "error": "ocr_failed_or_empty"
   },
   {
-    "file": "d2329e01-f974-46dc-9722-bc87d1af630d.png",
+    "file": "4d36394a-b162-4a40-b124-141b4bc998e0.png",
     "error": "ocr_failed_or_empty"
   },
   {
-    "file": "e122bcaa-9a36-4917-bc65-a1b2acdae633.png",
+    "file": "6f1b85ab-b844-4969-a4fd-0f8cc87bfc32.png",
     "error": "ocr_failed_or_empty"
   },
   {
-    "file": "e6f3685b-25f9-4be1-9d00-1d081b3aa6d6.png",
+    "file": "741ed815-15ab-4035-b243-4ea0d56c70fd.png",
     "error": "ocr_failed_or_empty"
   },
   {
-    "file": "fc2089f8-6f04-4ba8-afbc-c81875024b98.png",
+    "file": "c0be2462-c437-44ea-a9d3-389b45824dc8.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "c93a9a12-b49a-4ec2-913e-1561f9a798b6.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "cf647331-0c9e-4797-9f3a-9eb88378c87d.png",
     "error": "ocr_failed_or_empty"
   },
   {
     "file": "rock_cafe.png.jpeg",
-    "amountMyr": null,
-    "needsAmount": true,
-    "ocrConfidence": 0.1,
-    "merchantRaw": "RESTORAN ANWAR MAJU",
-    "categoryGuess": "Food & Drink",
-    "impactLevel": "low",
-    "lowConfidence": false,
+    "ocrText": "«\nTEI\n‘ | TAXNO. :346131\nies TABLENO :62\n% DATE :10/Jun/2026 01:17:26\nx r i\nCASH : RM 64.80 v ;\n, CHANGE : RM 0.00 ;\nSTAFF :MASTER a\nTHANK YOU COME AGAIN",
+    "amountMyr": 64.8,
+    "needsAmount": false,
+    "ocrConfidence": 0.275,
+    "combinedConfidence": 0.1747021341423358,
+    "amountSource": "rmPrefixed",
+    "merchantRaw": "TEI",
+    "categoryGuess": "Others",
+    "categoryConfidence": 0.1,
+    "impactLevel": "high",
+    "lowConfidence": true,
     "lineItems": [],
     "lineItemsConfidence": 0.0,
     "itemsSubtotalMyr": null,
     "itemsMatchTotal": false,
-    "ocrServiceConfidence": 0.9412612014346653,
-    "e2e": {
-      "skipped": true,
-      "reason": "needs_amount"
-    }
+    "ocrServiceConfidence": 0.2881794587206933
   }
 ]

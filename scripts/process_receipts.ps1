@@ -14,7 +14,7 @@
 
 param(
     [string]$ReceiptsDir = "",
-    [string]$OcrUrl = "http://127.0.0.1:8080/ocr",
+    [string]$OcrUrl = "http://127.0.0.1:8081/ocr",
     [string]$OcrSecret = "",
     [switch]$IncludeOcrText,
     [switch]$E2e,

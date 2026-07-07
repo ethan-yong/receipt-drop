@@ -1,9 +1,12 @@
+import logging
 import math
 import os
 
 import numpy as np
 import pytesseract
 from pytesseract import Output
+
+logger = logging.getLogger("ocr_api.ocr_engine")
 
 # Windows dev installs typically live outside PATH (e.g. the UB Mannheim
 # build at C:\Program Files\Tesseract-OCR\tesseract.exe).
@@ -37,22 +40,15 @@ def _config() -> str:
     return f"--oem 3 --psm {psm} -l {lang} -c preserve_interword_spaces=1"
 
 
-def run_ocr(image: np.ndarray) -> tuple[str, float]:
-    """Runs OCR on a preprocessed image. Returns (text, mean_confidence).
+# Below this calibrated confidence, a second Tesseract pass is attempted with
+# adaptive binarization applied (see run_ocr) since low confidence is often a
+# sign of uneven lighting a plain pass can't recover from. Handheld receipt
+# photos with cluttered backgrounds (e.g. held in hand, busy scene) commonly
+# score well under this on the first pass.
+_LOW_CONFIDENCE_RETRY_THRESHOLD = 0.4
 
-    Text is rebuilt line-by-line from Tesseract's word-level output — the
-    downstream Dart parsers are all line-oriented, so line structure must
-    survive. Confidence is the calibrated mean word confidence normalized to
-    0..1 (sigmoid-squashed to de-inflate Tesseract's high-skew raw scores).
-    """
-    # Apply adaptive binarization before OCR when requested. Useful on scans
-    # with uneven lighting (phone-flash shadows). Off by default because it can
-    # hurt clean thermal-print receipts.
-    if os.environ.get("PREPROCESS_ADAPTIVE_BINARIZE"):
-        from app.preprocessing import shadow_binarize  # lazy import avoids cycle
 
-        image = shadow_binarize(image)
-
+def _run_tesseract(image: np.ndarray, *, label: str) -> tuple[str, float]:
     data = pytesseract.image_to_data(
         image, output_type=Output.DICT, config=_config()
     )
@@ -74,9 +70,64 @@ def run_ocr(image: np.ndarray) -> tuple[str, float]:
             confidences.append(conf)
 
     if not lines:
+        logger.info("tesseract[%s]: 0 words recognized, confidence=0.0", label)
         return "", 0.0
 
     joined_text = "\n".join(" ".join(words) for words in lines.values())
     raw_mean = sum(confidences) / len(confidences) / 100.0
     mean_confidence = _calibrate_confidence(raw_mean)
+    logger.info(
+        "tesseract[%s]: %d words, %d lines, raw_conf=%.3f calibrated_conf=%.3f",
+        label,
+        len(confidences),
+        len(lines),
+        raw_mean,
+        mean_confidence,
+    )
+    logger.debug("tesseract[%s] text:\n%s", label, joined_text)
     return joined_text, mean_confidence
+
+
+def run_ocr(image: np.ndarray) -> tuple[str, float]:
+    """Runs OCR on a preprocessed image. Returns (text, mean_confidence).
+
+    Text is rebuilt line-by-line from Tesseract's word-level output — the
+    downstream Dart parsers are all line-oriented, so line structure must
+    survive. Confidence is the calibrated mean word confidence normalized to
+    0..1 (sigmoid-squashed to de-inflate Tesseract's high-skew raw scores).
+    """
+    # PREPROCESS_ADAPTIVE_BINARIZE forces binarization on every request
+    # (useful for manual testing). Otherwise, binarize only appears as an
+    # automatic retry below when the plain pass scores low.
+    if os.environ.get("PREPROCESS_ADAPTIVE_BINARIZE"):
+        from app.preprocessing import shadow_binarize  # lazy import avoids cycle
+
+        logger.info("adaptive binarize forced on (PREPROCESS_ADAPTIVE_BINARIZE set)")
+        return _run_tesseract(shadow_binarize(image), label="forced-binarize")
+
+    text, confidence = _run_tesseract(image, label="plain")
+    if confidence < _LOW_CONFIDENCE_RETRY_THRESHOLD:
+        from app.preprocessing import shadow_binarize  # lazy import avoids cycle
+
+        logger.info(
+            "confidence %.3f below retry threshold %.3f, retrying with adaptive binarize",
+            confidence,
+            _LOW_CONFIDENCE_RETRY_THRESHOLD,
+        )
+        retry_text, retry_confidence = _run_tesseract(
+            shadow_binarize(image), label="binarize-retry"
+        )
+        if retry_confidence > confidence:
+            logger.info(
+                "binarize retry improved confidence %.3f -> %.3f, using retry result",
+                confidence,
+                retry_confidence,
+            )
+            return retry_text, retry_confidence
+        logger.info(
+            "binarize retry did not improve confidence (%.3f vs %.3f), keeping plain pass",
+            retry_confidence,
+            confidence,
+        )
+
+    return text, confidence

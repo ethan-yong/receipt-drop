@@ -24,15 +24,17 @@ void main() {
     ocrLogger = fakeLogger;
   });
 
-  test('logs and returns empty string when image OCR fails', () async {
+  test('returns empty when OCR API is not configured', () async {
     final result = await runOcrOnReceiptFile(
       filePath: 'nonexistent-receipt.jpg',
       mimeType: 'image/jpeg',
     );
 
     expect(result.text, isEmpty);
-    expect(captured, isNotEmpty);
-    expect(captured.any((c) => c.error != null), isTrue);
+    expect(
+      captured.any((c) => c.message.contains('OCR unavailable')),
+      isTrue,
+    );
   });
 
   test('logs and returns empty string when PDF extraction fails', () async {

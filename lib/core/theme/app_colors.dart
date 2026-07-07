@@ -14,6 +14,7 @@ abstract final class AppColors {
 
   static const cardSurface = Color(0xFFFFFFFF);
   static const divider = Color(0xFFE5E1D6);
+  static const creamDark = Color(0xFFF3EEDD);
 
   static const badgePendingBg = Color(0xFFFFF3E6);
   static const badgePendingText = Color(0xFFC45A0A);

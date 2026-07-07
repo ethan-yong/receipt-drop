@@ -1,7 +1,10 @@
+import logging
 import os
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger("ocr_api.preprocessing")
 
 # Receipts are rarely rotated more than this in practice; clamping avoids
 # over-rotating near-square/noisy inputs where the minAreaRect angle is unstable.
@@ -49,7 +52,9 @@ def deskew(image: np.ndarray) -> np.ndarray:
     # wider than tall). Rotating by a clamped version of a bogus angle
     # destroys a perfectly good image, so skip instead of clamping.
     if abs(angle) < 0.1 or abs(angle) > _MAX_DESKEW_ANGLE_DEG:
+        logger.info("deskew: skipped (detected angle=%.2f deg)", angle)
         return image
+    logger.info("deskew: rotating by %.2f deg", angle)
     h, w = image.shape[:2]
     center = (w / 2, h / 2)
     matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
@@ -72,8 +77,10 @@ def upscale_for_ocr(image: np.ndarray, min_width: int = _MIN_OCR_WIDTH) -> np.nd
     """
     h, w = image.shape[:2]
     if w >= min_width:
+        logger.info("upscale: skipped (width=%d already >= min_width=%d)", w, min_width)
         return image
     scale = min_width / w
+    logger.info("upscale: %dx%d -> %dx%d (scale=%.2f)", w, h, min_width, int(h * scale), scale)
     return cv2.resize(image, (min_width, int(h * scale)), interpolation=cv2.INTER_CUBIC)
 
 
@@ -133,6 +140,7 @@ def perspective_correct(image: np.ndarray) -> np.ndarray:
         edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
     if not contours:
+        logger.info("perspective: skipped (no contours found)")
         return image
     for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
         peri = cv2.arcLength(contour, True)
@@ -146,11 +154,13 @@ def perspective_correct(image: np.ndarray) -> np.ndarray:
         h = int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl)))
         if w < 10 or h < 10:
             continue
+        logger.info("perspective: correcting to %dx%d quad", w, h)
         dst = np.array(
             [[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32
         )
         M = cv2.getPerspectiveTransform(rect, dst)
         return cv2.warpPerspective(image, M, (w, h))
+    logger.info("perspective: skipped (no clean 4-point contour among top candidates)")
     return image
 
 
@@ -169,6 +179,7 @@ def preprocess(image_bytes: bytes) -> np.ndarray:
       MIN_OCR_WIDTH=N            — override minimum width before upscaling
     """
     image = decode_image(image_bytes)
+    logger.info("preprocess: decoded %dx%d image (%d bytes)", image.shape[1], image.shape[0], len(image_bytes))
     if os.environ.get("PREPROCESS_PERSPECTIVE"):
         image = perspective_correct(image)
     rotated = deskew(image)

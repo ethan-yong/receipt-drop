@@ -42,14 +42,37 @@ final _extraSummaryLineHints = RegExp(
 // Malaysian SST/GST tax codes printed after the price, e.g. "2.50 SR",
 // "7.00 -Z" (Z = zero-rated on mamak/kopitiam receipts). Non-capturing so the
 // price group numbers below stay stable; alternation is longest-first so
-// e.g. ZRL wins over ZR/Z instead of leaving unmatched trailing chars.
-const _taxCodeSuffix = r'(?:\s*-?\s*(?:ZRL|SR|ZR|OS|RS|GS|AJS|Z|S|E)\b\.?)?';
+// e.g. ZRL wins over ZR/Z instead of leaving unmatched trailing chars. The
+// trailing [0-9A-Z]{1,2} fallback catches OCR misreads of a real code (e.g.
+// "-Z" read as "-2" or "-7") so a garbled suffix doesn't break the line's
+// end-of-string anchor and silently drop the whole item. "~" is accepted
+// alongside "-" as the connector since OCR sometimes renders the printed
+// hyphen as a tilde.
+const _taxCodeSuffix =
+    r'(?:\s*[-~]?\s*(?:ZRL|SR|ZR|OS|RS|GS|AJS|Z|S|E|[0-9A-Z]{1,2})\b\.?)?';
+
+// Price token: normally "1,234.56" (comma thousands separator, dot decimal),
+// but some OCR passes misread the printed decimal point as a comma on some
+// rows and not others (e.g. "3,00" instead of "3.00"). The second
+// alternative catches that bare comma-decimal form; _parsePriceToken decides
+// which normalization to apply based on whether a "." is present.
+const _priceToken = r'([\d,]+\.\d{2}|\d+,\d{2})';
+
+// What's allowed after the price (and its optional tax-code suffix) before
+// end of line. Photos with cluttered backgrounds often merge a stray
+// character or two from the scene onto the same OCR text line (e.g.
+// "7.00 -Z ~.", "8.70 -2 A") — requiring the line to end cleanly there would
+// drop the whole item. Anything non-digit is accepted as trailing noise;
+// digits are excluded so a second real number on the line (a genuine
+// unrelated value, not scene noise) still breaks the match instead of
+// silently truncating the price.
+const _trailingNoise = r'[^\d]*$';
 
 // 1st: quantity-prefixed item, e.g. "2 x Kopi O   RM 6.00". Tried before the
 // plain RM pattern below, otherwise that pattern's lazy `.+?` would swallow
 // "2 x Kopi O" as the whole item name instead of splitting out the quantity.
 final _qtyItemRegex = RegExp(
-  r'^(\d+)\s*x\s*(.+?)\s+RM\s*([\d,]+\.\d{2})' + _taxCodeSuffix + r'\s*$',
+  r'^(\d+)\s*x\s*(.+?)\s+RM\s*' + _priceToken + _taxCodeSuffix + _trailingNoise,
   caseSensitive: false,
 );
 
@@ -57,16 +80,24 @@ final _qtyItemRegex = RegExp(
 // pattern below, otherwise that pattern would capture the literal word "RM"
 // into the name (nothing anchors it to stop before "RM").
 final _rmItemRegex = RegExp(
-  r'^(.+?)\s+RM\s*([\d,]+\.\d{2})' + _taxCodeSuffix + r'\s*$',
+  r'^(.+?)\s+RM\s*' + _priceToken + _taxCodeSuffix + _trailingNoise,
   caseSensitive: false,
 );
 
 // 3rd: no "RM" token at all, e.g. "Broccoli   4.20" — lower confidence, only
 // reached when a line has no RM-prefixed price for the patterns above to match.
 final _bareItemRegex = RegExp(
-  r'^(.+?)\s+([\d,]+\.\d{2})' + _taxCodeSuffix + r'\s*$',
+  r'^(.+?)\s+' + _priceToken + _taxCodeSuffix + _trailingNoise,
   caseSensitive: false,
 );
+
+// Normalizes a matched price token to a parseable double: strips commas when
+// a "." decimal point is present (thousands separator), or replaces a lone
+// comma with a "." when it's the decimal separator itself (no "." present).
+double? _parsePriceToken(String raw) {
+  final normalized = raw.contains('.') ? raw.replaceAll(',', '') : raw.replaceAll(',', '.');
+  return double.tryParse(normalized);
+}
 
 bool _isValidName(String name) {
   final trimmed = name.trim();
@@ -89,7 +120,7 @@ double _lineConfidence(double base, String name, double price) {
   final qty = _qtyItemRegex.firstMatch(line);
   if (qty != null) {
     final name = qty.group(2)!.trim();
-    final price = double.tryParse(qty.group(3)!.replaceAll(',', ''));
+    final price = _parsePriceToken(qty.group(3)!);
     if (price != null && _isValidName(name)) {
       return (
         name: name,
@@ -103,7 +134,7 @@ double _lineConfidence(double base, String name, double price) {
   final rm = _rmItemRegex.firstMatch(line);
   if (rm != null) {
     final name = rm.group(1)!.trim();
-    final price = double.tryParse(rm.group(2)!.replaceAll(',', ''));
+    final price = _parsePriceToken(rm.group(2)!);
     if (price != null && _isValidName(name)) {
       return (
         name: name,
@@ -117,7 +148,7 @@ double _lineConfidence(double base, String name, double price) {
   final bare = _bareItemRegex.firstMatch(line);
   if (bare != null) {
     final name = bare.group(1)!.trim();
-    final price = double.tryParse(bare.group(2)!.replaceAll(',', ''));
+    final price = _parsePriceToken(bare.group(2)!);
     if (price != null && _isValidName(name)) {
       return (
         name: name,

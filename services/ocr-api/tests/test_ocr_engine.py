@@ -93,3 +93,71 @@ def test_calibrate_confidence_squashes_high_values() -> None:
     # happened) but not excessively squashed (still above 0.80).
     calibrated = ocr_engine._calibrate_confidence(0.95)
     assert 0.80 < calibrated < 0.95
+
+
+def test_run_ocr_retries_with_binarize_on_low_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    low_conf_data = _fake_data([("blah", 20, (1, 1, 1))])
+    high_conf_data = _fake_data([("ITEM", 90, (1, 1, 1)), ("7.00", 90, (1, 1, 2))])
+
+    calls = []
+
+    def fake_image_to_data(image, **_kwargs):
+        calls.append(image)
+        # First call sees the plain image, second sees the binarized one.
+        return low_conf_data if len(calls) == 1 else high_conf_data
+
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
+    monkeypatch.setattr(
+        "app.preprocessing.shadow_binarize", lambda image: image + 1
+    )
+    monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
+
+    text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
+
+    assert len(calls) == 2
+    assert text == "ITEM\n7.00"
+    assert confidence == pytest.approx(ocr_engine._calibrate_confidence(0.90))
+
+
+def test_run_ocr_skips_retry_when_confidence_already_high(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    high_conf_data = _fake_data([("ITEM", 95, (1, 1, 1))])
+    calls = []
+
+    def fake_image_to_data(image, **_kwargs):
+        calls.append(image)
+        return high_conf_data
+
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
+    monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
+
+    ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
+
+    assert len(calls) == 1
+
+
+def test_run_ocr_keeps_first_pass_when_retry_is_not_better(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    low_conf_data = _fake_data([("blah", 20, (1, 1, 1))])
+    still_low_conf_data = _fake_data([("blah", 15, (1, 1, 1))])
+    calls = []
+
+    def fake_image_to_data(image, **_kwargs):
+        calls.append(image)
+        return low_conf_data if len(calls) == 1 else still_low_conf_data
+
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
+    monkeypatch.setattr(
+        "app.preprocessing.shadow_binarize", lambda image: image + 1
+    )
+    monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
+
+    text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
+
+    assert len(calls) == 2
+    assert text == "blah"
+    assert confidence == pytest.approx(ocr_engine._calibrate_confidence(0.20))

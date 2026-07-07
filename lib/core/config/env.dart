@@ -67,6 +67,39 @@ class Env {
 
   static bool get hasLeaderboardApiConfig => leaderboardApiUrl.isNotEmpty;
 
+  /// Direct OCR API (`services/ocr-api`). Debug / dart-define only — never
+  /// bundle [ocrSharedSecret] in release builds.
+  static String get ocrApiUrl {
+    const fromDefine = String.fromEnvironment('OCR_API_URL');
+    if (fromDefine.isNotEmpty) return fromDefine;
+    if (kDebugMode) {
+      try {
+        final v = dotenv.maybeGet('OCR_API_URL');
+        if (v != null && v.isNotEmpty) return v.trim();
+      } on Object {
+        // dotenv not loaded yet.
+      }
+    }
+    return '';
+  }
+
+  static String get ocrSharedSecret {
+    const fromDefine = String.fromEnvironment('OCR_SHARED_SECRET');
+    if (fromDefine.isNotEmpty) return fromDefine;
+    if (kDebugMode) {
+      try {
+        final v = dotenv.maybeGet('OCR_SHARED_SECRET');
+        if (v != null && v.isNotEmpty) return v.trim();
+      } on Object {
+        // dotenv not loaded yet.
+      }
+    }
+    return '';
+  }
+
+  static bool get hasOcrApiConfig =>
+      ocrApiUrl.isNotEmpty && ocrSharedSecret.isNotEmpty;
+
   /// Skip onboarding + auth redirects while building features (debug only by default).
   ///
   /// Enabled when `SKIP_AUTH=true` in `.env` or `--dart-define=SKIP_AUTH=true`,

@@ -66,6 +66,6 @@ Future<OcrApiResult?> runOcrApi({
 }
 
 /// Default local OCR API URL when running `services/ocr-api` via uvicorn.
-Uri defaultOcrApiUrl({String host = '127.0.0.1', int port = 8080}) {
+Uri defaultOcrApiUrl({String host = '127.0.0.1', int port = 8081}) {
   return Uri.parse('http://$host:$port/ocr');
 }

@@ -112,6 +112,67 @@ Nasi Kandar                11.00 -Z
     expect(result.itemsSubtotalMyr, 18.00);
   });
 
+  test('parses a bare comma-decimal price with no tax suffix', () {
+    const ocr = '''
+KEDAI RUNCIT
+Roti Canai                 3,00
+''';
+    final result = extractReceiptLineItems(ocr);
+    expect(result.items.single.name, 'Roti Canai');
+    expect(result.items.single.priceMyr, 3.00);
+  });
+
+  test('recovers all items from a noisy handheld-photo scan (real regression fixture)', () {
+    // Actual Tesseract output for a real mamak receipt photographed in-hand
+    // against a busy background (chairs/floor/people) — most lines pick up
+    // stray characters from the scene, some prices come back comma-decimal
+    // ("3,00" instead of "3.00"), and the -Z SST suffix sometimes misreads as
+    // "-2"/"-7"/"~Z". This fixture pins the recovery of all 9 items despite
+    // that noise.
+    const ocr = '''
+- : a a ~~ . ;
+oo a
+�t i
+Ul }
+lA
+aimee
+RESTORAN AME
+REG.NO,t.cssoe
+NO.1-A NADAYU28,JLN PJS 11/7
+BANDAR SUNWAY 47500 SELANGOR.
+TEL:
+INVOICE
+j ### MOBILE PAY x#4 :
+nn a ne
+; TAXNO. 3346131
+4 TABLENO :62
+eo. 4 TRAN NO :390705
+& \\ DATE :10/Jun/2028 01:17:26
+t \\ 1 Rsb Biasa 7.00 -Z ~.
+~ VY Vy 3 Teh O Limau Ais 8.70 -2 A
+eq Maggi G Double 11.00 -2 .
+ae Limau Ais Bungkus 3,00 -2
+� 1 Milo Ais Bungkus 4.20 ~Z \\
+�ny Maggi Goreng Telur M 9,00 -2
+yo Nasi G Ayam Mamak 12,50 -7 "n
+1 Ayam Goreng 6.00 -Z �.
+1 Teh Ais Bungkus 3.40 -2
+"FE TOTAL : RM 64.80
+CASH : RM 64.80 "
+/ CHANGE : RM 0,00
+{2 STAFF :MASTER
+( THANK YOU COME AGAIN
+''';
+    final result = extractReceiptLineItems(ocr, totalMyr: 64.80);
+    expect(result.items.length, 9);
+    expect(
+      result.items.map((it) => it.priceMyr).toList(),
+      [7.00, 8.70, 11.00, 3.00, 4.20, 9.00, 12.50, 6.00, 3.40],
+    );
+    expect(result.itemsSubtotalMyr, 64.80);
+    expect(result.itemsMatchTotal, isTrue);
+  });
+
   test('reconcileWithTotal applies match flag and penalty after the fact', () {
     const ocr = '''
 CAFE
