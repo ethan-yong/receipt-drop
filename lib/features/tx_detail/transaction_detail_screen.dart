@@ -10,6 +10,7 @@ import '../../data/repositories/places_repository.dart';
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/logic/impact_level.dart';
+import '../../features/places/place_picker_screen.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/place_block.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
@@ -33,6 +34,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   String? _placeGooglePlaceId;
   double? _placeLat;
   double? _placeLng;
+  double? _shareLocationLat;
+  double? _shareLocationLng;
   DateTime? _occurredAt;
   ImpactLevel? _impactOverride;
   bool _loading = true;
@@ -60,6 +63,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       _placeGooglePlaceId = tx.placeGooglePlaceId;
       _placeLat = tx.placeLat;
       _placeLng = tx.placeLng;
+      _shareLocationLat = tx.shareLocationLat;
+      _shareLocationLng = tx.shareLocationLng;
       _occurredAt = tx.occurredAt;
       _impactOverride = impactLevelFromStorage(tx.impactUser);
       _categoryConfig = config;
@@ -128,15 +133,30 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<void> _pickPlace() async {
-    final result = await context.pushNamed<PlaceResult>('places-search');
-    if (result != null && mounted) {
-      setState(() {
-        _placeName = result.name;
-        _placeGooglePlaceId = result.id;
-        _placeLat = result.lat;
-        _placeLng = result.lng;
-      });
+    final lat = _shareLocationLat;
+    final lng = _shareLocationLng;
+    PlaceResult? result;
+    if (lat != null && lng != null) {
+      result = await PlacePickerScreen.push(
+        context,
+        lat: lat,
+        lng: lng,
+        candidates: const [],
+        merchantName: _placeName == 'No place' ? null : _placeName,
+        category: _category,
+      );
+    } else {
+      result = await context.pushNamed<PlaceResult>('places-search');
     }
+    if (result == null || !mounted) return;
+    await AppServices.transactions
+        .updateTransactionPlace(widget.transactionId, result);
+    setState(() {
+      _placeName = result!.name;
+      _placeGooglePlaceId = result.id;
+      _placeLat = result.lat;
+      _placeLng = result.lng;
+    });
   }
 
   Future<void> _pickDate() async {

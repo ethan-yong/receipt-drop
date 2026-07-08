@@ -171,6 +171,25 @@ _Add new pending tasks below as separate `##` sections._
 
 ---
 
+<!--
+DONE (2026-07-08): Post-OCR vendor location picker (Grab-style nearby suggestions).
+Implemented as planned — `supabase/functions/places-proxy/index.ts` extended with
+a `nearby_candidates` mode (concurrent searchText + searchNearby, same
+`scoreCandidate()` scoring as enrichment, returns top-5 ranked candidates with
+`{id, name, address, lat, lng, distanceMeters, confidence}`). New
+`lib/features/places/place_picker_screen.dart` full-screen picker opened via
+`PlacePickerScreen.push()` (rootNavigator, works from inside AdaptiveSheet modals).
+Pencil icon added to `share_save_sheet.dart` merchant row (shown when
+`shareLocationLat != null`); `_pickPlace()` in `transaction_detail_screen.dart`
+opens picker when location is available, falls back to 'places-search' text search.
+`TransactionRepository.updateTransactionPlace()` writes `placeStatus='user_locked'`
+and re-queues sync; `ingestReceipt()` also handles pre-save user lock. New fields:
+`PlaceCandidate` in `places_repository.dart`, `shareLocationLat/Lng` on
+`TransactionView`, `pickedPlace*` fields on `ReceiptIngestDraft` /
+`IngestReceiptRequest`. ADR in `docs/decisions.md`, API docs in `docs/api.md`,
+feature graph in `memory/feature_graph.md`.
+-->
+
 ## Post-OCR vendor location picker (Grab-style nearby suggestions)
 
 ### Problem

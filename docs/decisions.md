@@ -4,6 +4,20 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Post-OCR vendor location picker (2026-07-08)
+
+**Decision**: Added a full-screen Grab-style place picker (`PlacePickerScreen`) accessible via a pencil icon next to the merchant name on the save sheet (pre-save) and the Change place button on transaction detail (post-save). The picker shows ≤5 nearby place candidates ranked by the same text+distance scoring enrichment uses; tapping a row animates the map camera and drops a red pin; Confirm writes `place_status='user_locked'`. Three architecture choices were made:
+
+1. **Full-screen route over DraggableScrollableSheet**: flutter_map pan gestures conflict with sheet drag — a sheet containing a map requires extensive `RawGestureDetector` plumbing to prevent accidental dismissal. A `MaterialPageRoute(fullscreenDialog: true)` pushed via `Navigator.of(context, rootNavigator: true)` avoids the conflict entirely and can be called from inside a modal sheet.
+
+2. **Extend `places-proxy` over a new Edge Function**: both text-search and nearby-candidates share the same auth/CORS/env-var boilerplate (~30 lines). Adding a `mode` discriminator keeps deployment surface minimal and co-locates all Google Places calls in one function. The actual scoring imports from `_shared/place_matching.ts` as before — no logic duplication.
+
+3. **On-demand fetch (Option A) over persisting candidates (Option B)**: no schema change required; the picker is opened infrequently and network latency is acceptable for a user-initiated interaction. Option B (persist `place_candidates jsonb` on the transaction from enrichment) is deferred — it would add value for offline or repeat use but adds a migration, sync logic, and freshness concerns.
+
+**Related change**: `TransactionRepository.updateTransactionPlace()` is a new dedicated method that sets `placeStatus='user_locked'` and re-queues sync — intentionally separate from `updateTransaction()`, which omits place-status and sync to avoid inadvertently overriding enrichment on every category/amount edit.
+
+---
+
 ## Merchant candidates ranked by visual prominence (bounding-box height) (2026-07-08)
 
 **Decision**: the self-hosted OCR API's `run_ocr()` (single flat `(text, confidence)` return) became a thin backward-compatible wrapper over a new `run_ocr_detailed()`, which returns per-line results carrying `height_ratio` (median word bounding-box height on that line, divided by the image's total height — from `pytesseract.image_to_data`'s existing box data, never previously surfaced past `ocr_engine.py`). This threads through `OcrResponse.lines` → `OcrApiResult.lines` → `OcrFileResult.lines` → `parseReceiptOcrText(ocrLines: ...)` into `extractMerchantCandidates()`, which gained a `'largeText'` candidate tier: a line with no keyword match but a height clearing 1.4x the receipt's median line height is treated as a likely header/logo line.

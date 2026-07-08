@@ -29,9 +29,17 @@ Invoked by `lib/features/share/ocr_pipeline_io.dart` in production, so the OCR s
 - In debug/dev, Flutter can instead call the OCR API **directly** (skipping this proxy) via `Env.ocrApiUrl` + `Env.ocrSharedSecret` (dart-define/`.env` only — never bundled in release).
 
 ### `places-proxy`
-Invoked by `lib/data/repositories/places_repository.dart` for the manual "change place" search flow.
+Invoked by `lib/data/repositories/places_repository.dart` for both the manual text-search flow and the nearby-candidate picker.
 
-- Input: `{ query, lat?, lng? }`. Calls Google Places `searchText` (optional 250m `locationBias`), returns the raw response pass-through. Does not write to the DB — the client updates the transaction after the user picks a candidate (setting `place_status='user_locked'`).
+**Mode: text search (default)** — `{ query, lat?, lng? }`. Calls Google Places `searchText` (optional 250m `locationBias`), returns the raw response pass-through. Does not write to the DB.
+
+**Mode: nearby candidates** — `{ mode: 'nearby_candidates', lat, lng, candidates?, query?, category?, limit? }`. Fires concurrent `searchText` (first query from `buildTextSearchQueries(candidates, query, 2)`) + `searchNearby` (300m radius, `CATEGORY_TO_PLACE_TYPES[category]` types or `DEFAULT_NEARBY_TYPES`). Merges by place id, scores each via `scoreCandidate()` (same weights as `enrich-transaction`), returns top `limit` (default 5, max 10) ranked by confidence:
+```json
+{ "candidates": [{ "id", "name", "address", "lat", "lng", "distanceMeters", "confidence" }] }
+```
+`lat` and `lng` are required; `candidates` / `query` / `category` are optional. Used by `PlacePickerScreen` when the user taps the pencil icon next to the merchant name.
+
+In both modes: client updates the transaction after the user confirms, calling `TransactionRepository.updateTransactionPlace()` which writes `place_status='user_locked'` and re-queues sync.
 
 ### `_shared/place_matching.ts`
 Exports used by `enrich-transaction`: `SEARCH_RADIUS_METERS=300`, `isUsableMerchantText()` (rejects <4 alphanumeric chars), `diceCoefficient()`, `haversineMeters()`, `distanceScore()`, `CATEGORY_TO_PLACE_TYPES`, `DEFAULT_NEARBY_TYPES`.

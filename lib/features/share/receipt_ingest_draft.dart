@@ -28,6 +28,11 @@ class ReceiptIngestDraft {
     this.lowConfidence = false,
     this.merchantCandidates = const [],
     this.ocrHeaderText,
+    this.pickedPlaceName,
+    this.pickedPlaceGooglePlaceId,
+    this.pickedPlaceLat,
+    this.pickedPlaceLng,
+    this.pickedPlaceLocked = false,
   });
 
   final String localFilePath;
@@ -65,12 +70,24 @@ class ReceiptIngestDraft {
   /// Extra OCR context (top-of-receipt lines), carried through to enrichment.
   final String? ocrHeaderText;
 
+  /// Place chosen by the user in the pre-save picker.
+  final String? pickedPlaceName;
+  final String? pickedPlaceGooglePlaceId;
+  final double? pickedPlaceLat;
+  final double? pickedPlaceLng;
+  final bool pickedPlaceLocked;
+
   ReceiptIngestDraft copyWith({
     double? amountMyr,
     bool? needsAmount,
     String? merchantRaw,
     String? categoryGuess,
     String? categoryUser,
+    String? pickedPlaceName,
+    String? pickedPlaceGooglePlaceId,
+    double? pickedPlaceLat,
+    double? pickedPlaceLng,
+    bool? pickedPlaceLocked,
   }) {
     return ReceiptIngestDraft(
       localFilePath: localFilePath,
@@ -94,6 +111,12 @@ class ReceiptIngestDraft {
       lowConfidence: lowConfidence,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      pickedPlaceName: pickedPlaceName ?? this.pickedPlaceName,
+      pickedPlaceGooglePlaceId:
+          pickedPlaceGooglePlaceId ?? this.pickedPlaceGooglePlaceId,
+      pickedPlaceLat: pickedPlaceLat ?? this.pickedPlaceLat,
+      pickedPlaceLng: pickedPlaceLng ?? this.pickedPlaceLng,
+      pickedPlaceLocked: pickedPlaceLocked ?? this.pickedPlaceLocked,
     );
   }
 
@@ -124,6 +147,11 @@ class ReceiptIngestDraft {
       parseFailureReason: parseFailureReason,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      pickedPlaceName: pickedPlaceName,
+      pickedPlaceGooglePlaceId: pickedPlaceGooglePlaceId,
+      pickedPlaceLat: pickedPlaceLat,
+      pickedPlaceLng: pickedPlaceLng,
+      pickedPlaceLocked: pickedPlaceLocked,
     );
   }
 
@@ -154,6 +182,11 @@ class ReceiptIngestDraft {
       needsReview: true,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      pickedPlaceName: pickedPlaceName,
+      pickedPlaceGooglePlaceId: pickedPlaceGooglePlaceId,
+      pickedPlaceLat: pickedPlaceLat,
+      pickedPlaceLng: pickedPlaceLng,
+      pickedPlaceLocked: pickedPlaceLocked,
     );
   }
 }

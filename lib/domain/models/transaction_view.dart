@@ -26,6 +26,8 @@ class TransactionView {
     this.lineItems,
     this.rawOcrText,
     this.ocrConfidence,
+    this.shareLocationLat,
+    this.shareLocationLng,
   });
 
   final String id;
@@ -53,6 +55,9 @@ class TransactionView {
 
   /// Amount-extraction confidence (0..1) as stored on the outbox row.
   final double? ocrConfidence;
+
+  final double? shareLocationLat;
+  final double? shareLocationLng;
 
   /// Waiting for one-tap human confirmation on the review screen.
   bool get needsReview => pipelineStatus == 'needs_review';
@@ -117,6 +122,8 @@ class TransactionView {
     String? impactUser,
     DateTime? ritualledAt,
     List<ReceiptLineItem>? lineItems,
+    double? shareLocationLat,
+    double? shareLocationLng,
   }) {
     return TransactionView(
       id: id,
@@ -136,6 +143,8 @@ class TransactionView {
       impactUser: impactUser,
       ritualledAt: ritualledAt,
       lineItems: lineItems,
+      shareLocationLat: shareLocationLat,
+      shareLocationLng: shareLocationLng,
     );
   }
 
@@ -174,6 +183,8 @@ class TransactionView {
       lineItems: lineItems ?? this.lineItems,
       rawOcrText: rawOcrText,
       ocrConfidence: ocrConfidence,
+      shareLocationLat: shareLocationLat,
+      shareLocationLng: shareLocationLng,
     );
   }
 }

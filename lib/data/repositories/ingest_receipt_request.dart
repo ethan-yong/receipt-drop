@@ -29,6 +29,11 @@ class IngestReceiptRequest {
     this.needsReview = false,
     this.merchantCandidates = const [],
     this.ocrHeaderText,
+    this.pickedPlaceName,
+    this.pickedPlaceGooglePlaceId,
+    this.pickedPlaceLat,
+    this.pickedPlaceLng,
+    this.pickedPlaceLocked = false,
   });
 
   final String localFilePath;
@@ -64,4 +69,14 @@ class IngestReceiptRequest {
 
   /// Extra OCR context (top-of-receipt lines) synced for enrichment.
   final String? ocrHeaderText;
+
+  /// Place selected by the user in the pre-save picker.
+  final String? pickedPlaceName;
+  final String? pickedPlaceGooglePlaceId;
+  final double? pickedPlaceLat;
+  final double? pickedPlaceLng;
+
+  /// When true, the above place fields are written immediately and
+  /// [placeStatus] is set to 'user_locked' so enrichment skips Places.
+  final bool pickedPlaceLocked;
 }

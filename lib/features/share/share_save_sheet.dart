@@ -4,9 +4,11 @@ import '../../core/platform/adaptive_sheet.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../core/platform/platform_utils.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/repositories/places_repository.dart';
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/rm_amount_parser.dart';
+import '../../features/places/place_picker_screen.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
 import '../../widgets/receipt_strip.dart';
@@ -74,6 +76,7 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
   late final TextEditingController _amountController;
   ImpactLevel? _impactOverride;
   String? _categoryOverride;
+  PlaceResult? _pickedPlace;
   var _saving = false;
 
   // Draft carries the combined-confidence verdict from the parse pipeline;
@@ -121,6 +124,21 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
   ImpactLevel get _effectiveImpact =>
       _impactOverride ?? deriveImpactLevel(_parseAmount());
 
+  Future<void> _openPicker() async {
+    final lat = widget.draft.shareLocationLat;
+    final lng = widget.draft.shareLocationLng;
+    if (lat == null || lng == null) return;
+    final result = await PlacePickerScreen.push(
+      context,
+      lat: lat,
+      lng: lng,
+      candidates: widget.draft.merchantCandidates,
+      merchantName: widget.draft.merchantRaw,
+      category: widget.draft.categoryGuess,
+    );
+    if (result != null && mounted) setState(() => _pickedPlace = result);
+  }
+
   Future<void> _save() async {
     final amount = _parseAmount();
     if (amount == null || amount <= 0) {
@@ -128,9 +146,14 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
       return;
     }
     setState(() => _saving = true);
-    final draft = _categoryOverride != null
-        ? widget.draft.copyWith(categoryUser: _categoryOverride)
-        : widget.draft;
+    final draft = widget.draft.copyWith(
+      categoryUser: _categoryOverride,
+      pickedPlaceName: _pickedPlace?.name,
+      pickedPlaceGooglePlaceId: _pickedPlace?.id,
+      pickedPlaceLat: _pickedPlace?.lat,
+      pickedPlaceLng: _pickedPlace?.lng,
+      pickedPlaceLocked: _pickedPlace != null,
+    );
     try {
       await widget.onSave(amount, draft, _effectiveImpact);
       if (mounted) {
@@ -194,11 +217,45 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
         ),
         if (widget.draft.merchantRaw != null) ...[
           const SizedBox(height: AppSpacing.sm),
-          Text(
-            widget.draft.merchantRaw!,
-            style: Theme.of(context).textTheme.bodySmall,
-            textAlign: TextAlign.center,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  widget.draft.merchantRaw!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (widget.draft.shareLocationLat != null) ...[
+                const SizedBox(width: 2),
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    iconSize: 16,
+                    icon: const Icon(Icons.edit_location_outlined),
+                    tooltip: 'Choose location',
+                    onPressed: _openPicker,
+                  ),
+                ),
+              ],
+            ],
           ),
+          if (_pickedPlace != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              _pickedPlace!.name,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ],
         if (_lowConfidence) ...[
           const SizedBox(height: AppSpacing.md),

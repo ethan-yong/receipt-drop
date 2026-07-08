@@ -10,6 +10,7 @@ import '../../domain/models/transaction_view.dart';
 import '../local/app_database.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
+import 'places_repository.dart';
 import 'sync_worker.dart';
 
 const bool _kDebugMode = !bool.fromEnvironment('dart.vm.product');
@@ -111,6 +112,23 @@ class TransactionRepository {
                     ),
             ),
             ocrHeaderText: Value(request.ocrHeaderText),
+            placeName: Value(
+              request.pickedPlaceLocked ? request.pickedPlaceName : null,
+            ),
+            placeGooglePlaceId: Value(
+              request.pickedPlaceLocked
+                  ? request.pickedPlaceGooglePlaceId
+                  : null,
+            ),
+            placeLat: Value(
+              request.pickedPlaceLocked ? request.pickedPlaceLat : null,
+            ),
+            placeLng: Value(
+              request.pickedPlaceLocked ? request.pickedPlaceLng : null,
+            ),
+            placeStatus: Value(
+              request.pickedPlaceLocked ? 'user_locked' : 'none',
+            ),
           ),
         );
 
@@ -152,10 +170,19 @@ class TransactionRepository {
       merchantRaw: request.merchantRaw,
       categoryGuess: request.categoryGuess,
       categoryUser: null,
-      placeName: null,
-      placeGooglePlaceId: null,
-      placeLat: request.shareLocationLat,
-      placeLng: request.shareLocationLng,
+      placeName: request.pickedPlaceLocked ? request.pickedPlaceName : null,
+      placeGooglePlaceId:
+          request.pickedPlaceLocked
+              ? request.pickedPlaceGooglePlaceId
+              : null,
+      placeLat:
+          request.pickedPlaceLocked
+              ? request.pickedPlaceLat
+              : request.shareLocationLat,
+      placeLng:
+          request.pickedPlaceLocked
+              ? request.pickedPlaceLng
+              : request.shareLocationLng,
       syncStatus: 'pending',
       pipelineStatus: pipelineStatus,
       localThumbnailPath: request.localFilePath,
@@ -165,6 +192,8 @@ class TransactionRepository {
       lineItems: request.lineItems,
       rawOcrText: request.rawOcrText,
       ocrConfidence: request.ocrConfidence,
+      shareLocationLat: request.shareLocationLat,
+      shareLocationLng: request.shareLocationLng,
     );
   }
 
@@ -219,6 +248,22 @@ class TransactionRepository {
         impactUser: Value(view.impactUser),
       ),
     );
+  }
+
+  Future<void> updateTransactionPlace(String id, PlaceResult place) async {
+    await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(id)))
+        .write(
+      OutboxTransactionsCompanion(
+        placeName: Value(place.name),
+        placeGooglePlaceId: Value(place.id),
+        placeLat: Value(place.lat),
+        placeLng: Value(place.lng),
+        placeStatus: const Value('user_locked'),
+        syncStatus: const Value('pending'),
+        retryCount: const Value(0),
+      ),
+    );
+    unawaited(SyncWorker.run(_db, id));
   }
 
   Future<void> retryStuckSync() async {
@@ -360,6 +405,8 @@ class TransactionRepository {
       lineItems: lineItems,
       rawOcrText: row.rawOcrText,
       ocrConfidence: row.ocrConfidence,
+      shareLocationLat: row.shareLocationLat,
+      shareLocationLng: row.shareLocationLng,
     );
   }
 }

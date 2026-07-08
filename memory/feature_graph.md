@@ -64,6 +64,28 @@ No writes — purely a read/aggregation layer. Safe to extend without touching c
 
 ---
 
+## Feature: Vendor location picker (post-OCR place correction)
+
+Depends on:
+- Receipt capture & OCR ingest (provides `shareLocationLat/Lng` and `merchantCandidates` on `ReceiptIngestDraft` / `TransactionView`)
+- `places-proxy` Edge Function — extended with `mode: 'nearby_candidates'` (concurrent searchText + searchNearby, same `scoreCandidate()` scoring as enrichment)
+- `flutter_map` + CARTO tiles (reuses same tile URL / `CancellableNetworkTileProvider` as spend map)
+- `TransactionRepository.updateTransactionPlace()` — new method that sets `placeStatus='user_locked'` and re-queues sync (distinct from the general `updateTransaction()`)
+
+Files:
+- `lib/features/places/place_picker_screen.dart` (new) — full-screen picker, `PlacePickerScreen.push()` static helper
+- `lib/data/repositories/places_repository.dart` — `PlaceCandidate`, `PlacesRepository.fetchNearbyCandidates()`
+- `lib/features/share/share_save_sheet.dart` — pencil icon next to merchant name, pre-save picker wiring
+- `lib/features/tx_detail/transaction_detail_screen.dart` — `_pickPlace()` uses picker when `shareLocationLat/Lng` available
+- `lib/data/repositories/transaction_repository_native.dart` — `updateTransactionPlace()` + `ingestReceipt()` place write
+- `lib/domain/models/transaction_view.dart` — `shareLocationLat/Lng` fields exposed for tx-detail
+- `lib/core/routing/app_router.dart` — `/place-picker` go_router route (fallback for deep-link; primary entry via `PlacePickerScreen.push()`)
+- `supabase/functions/places-proxy/index.ts` — `nearby_candidates` mode added
+
+**Fan-out**: `ReceiptIngestDraft`, `IngestReceiptRequest`, and `TransactionView` all gained optional fields — all existing callers use defaults (null/false) and are unaffected. `PlacePickerScreen.push()` uses `rootNavigator` so it works from both a normal screen and from inside a `showModalBottomSheet`.
+
+---
+
 ## Feature: Spend map (own + friends)
 
 Depends on:

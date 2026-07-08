@@ -7,6 +7,7 @@ import '../../domain/logic/avatar_mood.dart';
 import '../../domain/models/transaction_view.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
+import 'places_repository.dart';
 
 /// In-memory transactions for Flutter Web (Drift/SQLite uses dart:ffi on native only).
 class TransactionRepository {
@@ -139,6 +140,19 @@ class TransactionRepository {
     final i = _rows.indexWhere((r) => r.id == view.id);
     if (i >= 0) {
       _rows[i] = view;
+      _emit();
+    }
+  }
+
+  Future<void> updateTransactionPlace(String id, PlaceResult place) async {
+    final i = _rows.indexWhere((r) => r.id == id);
+    if (i >= 0) {
+      _rows[i] = _rows[i].copyWith(
+        placeName: place.name,
+        placeGooglePlaceId: place.id,
+        placeLat: place.lat,
+        placeLng: place.lng,
+      );
       _emit();
     }
   }

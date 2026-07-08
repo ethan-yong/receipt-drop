@@ -15,7 +15,9 @@ import '../../features/home/home_screen.dart';
 import '../../features/leaderboard/leaderboard_screen.dart';
 import '../../features/map/spend_map_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
+import '../../features/places/place_picker_screen.dart';
 import '../../features/places/places_search_screen.dart';
+import '../../domain/logic/merchant_extractor.dart';
 import '../../features/review/receipt_review_screen.dart';
 import '../../features/ritual/ritual_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -184,6 +186,22 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/places-search',
         name: 'places-search',
         builder: (context, state) => const PlacesSearchScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/place-picker',
+        name: 'place-picker',
+        builder: (context, state) {
+          final args = state.extra as Map<String, dynamic>? ?? {};
+          return PlacePickerScreen(
+            lat: args['lat'] as double,
+            lng: args['lng'] as double,
+            candidates:
+                args['candidates'] as List<MerchantCandidate>? ?? const [],
+            merchantName: args['merchantName'] as String?,
+            category: args['category'] as String?,
+          );
+        },
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

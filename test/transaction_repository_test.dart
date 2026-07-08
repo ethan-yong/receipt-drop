@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/data/local/app_database.dart';
 import 'package:receipt_drop/data/repositories/ingest_receipt_request.dart';
+import 'package:receipt_drop/data/repositories/places_repository.dart';
 import 'package:receipt_drop/data/repositories/transaction_repository_native.dart';
 import 'package:receipt_drop/domain/models/receipt_line_item.dart';
 
@@ -220,6 +221,83 @@ void main() {
 
     final rows = await repo.watchAll().first;
     expect(rows.single.lineItems, isEmpty);
+
+    await db.close();
+  });
+
+  test('ingestReceipt with pickedPlaceLocked writes user_locked status and place fields',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/picked.png',
+        mimeType: 'image/png',
+        amountMyr: 22.0,
+        needsAmount: false,
+        merchantRaw: 'Cafe Somewhere',
+        categoryGuess: 'Food & Drink',
+        pickedPlaceName: 'My Chosen Cafe',
+        pickedPlaceGooglePlaceId: 'ChIJ_test_picked',
+        pickedPlaceLat: 3.5,
+        pickedPlaceLng: 101.5,
+        pickedPlaceLocked: true,
+      ),
+    );
+
+    expect(saved.placeGooglePlaceId, 'ChIJ_test_picked');
+    expect(saved.placeName, 'My Chosen Cafe');
+    expect(saved.placeLat, closeTo(3.5, 0.0001));
+    expect(saved.placeLng, closeTo(101.5, 0.0001));
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+    expect(row.placeStatus, 'user_locked');
+    expect(row.placeGooglePlaceId, 'ChIJ_test_picked');
+    expect(row.placeName, 'My Chosen Cafe');
+
+    await db.close();
+  });
+
+  test('updateTransactionPlace writes user_locked status and all place fields',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/to_update.png',
+        mimeType: 'image/png',
+        amountMyr: 15.0,
+        needsAmount: false,
+        merchantRaw: 'Unknown Shop',
+        categoryGuess: 'Others',
+      ),
+    );
+
+    const place = PlaceResult(
+      id: 'ChIJabc_real',
+      name: 'Real Cafe Name',
+      address: '99 Jalan Real, KL',
+      lat: 3.1234,
+      lng: 101.6789,
+    );
+
+    await repo.updateTransactionPlace(saved.id, place);
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+
+    expect(row.placeGooglePlaceId, 'ChIJabc_real');
+    expect(row.placeName, 'Real Cafe Name');
+    expect(row.placeLat, closeTo(3.1234, 0.0001));
+    expect(row.placeLng, closeTo(101.6789, 0.0001));
+    expect(row.placeStatus, 'user_locked');
+    expect(row.syncStatus, 'pending');
+    expect(row.retryCount, 0);
 
     await db.close();
   });

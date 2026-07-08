@@ -32,6 +32,13 @@ If you're picking this up cold: check `git status`/`git diff` again before assum
 
 ## Important recent changes an agent should know before modifying code
 
+- **`TransactionView` now exposes `shareLocationLat/Lng`** (optional, null on old rows). `_mapRow()` in `transaction_repository_native.dart` populates them; the web stub does not. The tx-detail screen uses them to decide whether to open `PlacePickerScreen` or fall back to text search.
+- **`TransactionRepository.updateTransactionPlace(String id, PlaceResult)` is the correct write path for user-corrected place.** It sets `placeStatus='user_locked'`, `syncStatus='pending'`, and triggers `SyncWorker.run()`. The existing `updateTransaction(TransactionView)` intentionally does NOT set placeStatus or trigger sync — don't add place-status logic there.
+- **`PlacePickerScreen.push(context, ...)` uses `Navigator.of(context, rootNavigator: true)`.** This is intentional — it must work from inside a modal bottom sheet (AdaptiveSheet). Do NOT change it to `context.pushNamed(...)` or the route will fail when called from the save sheet.
+- **`places-proxy` now has a `nearby_candidates` mode** (see `docs/api.md`). The text-search mode is unchanged; the new mode is a separate code path that branches on `bodyJson["mode"] === "nearby_candidates"`.
+
+
+
 - **OCR is no longer on-device.** If you see references to ML Kit in old docs/specs or stale `build/` artifacts, ignore them — the current pipeline is 100% the self-hosted `services/ocr-api` (Tesseract), called via the `ocr-proxy` Edge Function in production.
 - **Two confidence fields on `transactions` are easy to conflate**: `ocr_confidence` (amount-extraction confidence) vs. `ocr_service_confidence` (OCR scan-quality confidence). A real bug shipped from conflating these (see `docs/decisions.md` review-queue entry) — don't re-apply a sigmoid to `ocr_service_confidence`, it arrives already calibrated.
 - **`profiles` RLS was deliberately widened** (`profiles_select_accepted_friend`) to let the external leaderboard-api service and Flutter's RPC fallback both read friend profiles under plain RLS. If you're reasoning about "can user A read user B's row," check this policy, not just the "own row only" default you'd expect from the social-features migration's stated philosophy.
