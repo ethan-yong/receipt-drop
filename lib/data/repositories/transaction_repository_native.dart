@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
@@ -100,6 +101,16 @@ class TransactionRepository {
             impactUser: Value(request.impactUser),
             syncStatus: const Value('pending'),
             pipelineStatus: Value(pipelineStatus),
+            merchantCandidatesJson: Value(
+              request.merchantCandidates.isEmpty
+                  ? null
+                  : jsonEncode(
+                      request.merchantCandidates
+                          .map((c) => c.toJson())
+                          .toList(),
+                    ),
+            ),
+            ocrHeaderText: Value(request.ocrHeaderText),
           ),
         );
 

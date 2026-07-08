@@ -1,0 +1,24 @@
+services:
+  ocr-api:
+    build: ./services/ocr-api
+    container_name: receipt-drop-ocr-api-dev
+    ports:
+      - "8081:8080"
+    env_file:
+      - .env
+    environment:
+      OCR_LOG_LEVEL: ${OCR_LOG_LEVEL:-INFO}
+    volumes:
+      - ./services/ocr-api/app:/app/app
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8080"
+      - --reload
+      - --reload-dir
+      - /app/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

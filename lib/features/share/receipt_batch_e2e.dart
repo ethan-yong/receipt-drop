@@ -57,6 +57,8 @@ ReceiptIngestDraft draftFromParseResult({
     lineItemsConfidence: parsed.lineItemsConfidence,
     parseFailureReason: parsed.parseFailureReason,
     lowConfidence: parsed.lowConfidence,
+    merchantCandidates: parsed.merchantCandidates,
+    ocrHeaderText: parsed.ocrHeaderText,
   );
 }
 
@@ -95,6 +97,8 @@ Future<ReceiptBatchE2eResult> persistParsedReceiptE2e({
         lineItemsConfidence: request.lineItemsConfidence,
         parseFailureReason: request.parseFailureReason,
         needsReview: request.needsReview,
+        merchantCandidates: request.merchantCandidates,
+        ocrHeaderText: request.ocrHeaderText,
       ),
     );
 

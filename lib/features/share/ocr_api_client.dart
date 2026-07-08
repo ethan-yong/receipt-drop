@@ -3,12 +3,20 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import '../../domain/models/ocr_line.dart';
+
 /// OCR text + mean word confidence from the self-hosted Tesseract OCR API.
 class OcrApiResult {
-  const OcrApiResult({required this.text, required this.confidence});
+  const OcrApiResult({required this.text, required this.confidence, this.lines});
 
   final String text;
   final double confidence;
+
+  /// Per-line text + visual-prominence data, for merchant candidate ranking.
+  /// `null` when the server response predates this field (older deployed
+  /// instance) or omitted it for any other reason — callers must treat
+  /// absence as "no large-text signal available", not an error.
+  final List<OcrLine>? lines;
 }
 
 const ocrApiAllowedMimeTypes = {'image/jpeg', 'image/png', 'image/webp'};
@@ -55,7 +63,18 @@ Future<OcrApiResult?> runOcrApi({
     final confidence = decoded['confidence'];
     if (text is! String || confidence is! num) return null;
 
-    return OcrApiResult(text: text, confidence: confidence.toDouble());
+    final linesJson = decoded['lines'];
+    final lines = linesJson is List
+        ? [for (final item in linesJson) OcrLine.tryFromJson(item)]
+            .whereType<OcrLine>()
+            .toList()
+        : null;
+
+    return OcrApiResult(
+      text: text,
+      confidence: confidence.toDouble(),
+      lines: lines,
+    );
   } catch (_) {
     return null;
   } finally {

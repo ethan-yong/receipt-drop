@@ -5,6 +5,7 @@ import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/logic/receipt_line_item_extractor.dart';
 import '../../domain/logic/rm_amount_parser.dart';
+import '../../domain/models/ocr_line.dart';
 import '../../domain/models/receipt_line_item.dart';
 
 /// Weights for blending extraction confidence with scan quality in
@@ -38,6 +39,8 @@ class ReceiptParseResult {
     this.itemsMatchTotal = false,
     this.amountSource = 'none',
     this.parseFailureReason,
+    this.merchantCandidates = const [],
+    this.ocrHeaderText,
   });
 
   final String filePath;
@@ -73,6 +76,14 @@ class ReceiptParseResult {
   /// Machine-readable reason when parsing failed outright (e.g.
   /// 'no_amount_pattern'). A failure is a failure — not a confidence score.
   final String? parseFailureReason;
+
+  /// Ranked merchant-name guesses (see [MerchantCandidate]); [merchantRaw] is
+  /// always the top entry's text, kept for backward compatibility.
+  final List<MerchantCandidate> merchantCandidates;
+
+  /// Extra OCR context (top-of-receipt lines) synced alongside
+  /// [merchantCandidates] so Places enrichment can try more than one query.
+  final String? ocrHeaderText;
 
   /// Blend of extraction confidence and scan quality, min-gated so a bad scan
   /// caps the ceiling regardless of how clean the parse looked.
@@ -116,6 +127,9 @@ class ReceiptParseResult {
       'itemsMatchTotal': itemsMatchTotal,
       if (ocrServiceConfidence != null)
         'ocrServiceConfidence': ocrServiceConfidence,
+      'merchantCandidates':
+          merchantCandidates.map((c) => c.toJson()).toList(),
+      if (ocrHeaderText != null) 'ocrHeaderText': ocrHeaderText,
     };
   }
 
@@ -132,6 +146,7 @@ ReceiptParseResult parseReceiptOcrText({
   required String ocrText,
   required CategoryConfig categories,
   double? ocrServiceConfidence,
+  List<OcrLine>? ocrLines,
 }) {
   // Items are extracted before the amount so their subtotal can vote on
   // which amount candidate is the real paid total (semantic cross-check),
@@ -152,7 +167,11 @@ ReceiptParseResult parseReceiptOcrText({
   final amount = parseResult.amount;
   final lineItemsResult = reconcileWithTotal(extracted, amount);
 
-  final merchantRaw = extractMerchant(ocrText, categories);
+  final merchantCandidates =
+      extractMerchantCandidates(ocrText, categories, ocrLines: ocrLines);
+  final merchantRaw =
+      merchantCandidates.isEmpty ? null : merchantCandidates.first.text;
+  final headerText = extractOcrHeaderText(ocrText);
   final (:category, :confidence) =
       categories.guessWithConfidence(merchantRaw ?? '', ocrText);
   final categoryGuess = category;
@@ -175,6 +194,8 @@ ReceiptParseResult parseReceiptOcrText({
     itemsMatchTotal: lineItemsResult.itemsMatchTotal,
     amountSource: parseResult.source.name,
     parseFailureReason: parseResult.failureReason,
+    merchantCandidates: merchantCandidates,
+    ocrHeaderText: headerText.isEmpty ? null : headerText,
   );
 }
 

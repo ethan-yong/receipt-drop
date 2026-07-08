@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -5,6 +6,27 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/env.dart';
 import '../local/app_database.dart';
+
+/// Maps a partial remote `transactions` row (as returned by a `select(...)`
+/// call) into an [OutboxTransactionsCompanion] patch — the fields
+/// `enrich-transaction` writes server-side, applied back to the local
+/// outbox. Pure/testable: doesn't touch Supabase or the database itself.
+OutboxTransactionsCompanion buildEnrichmentCompanion(
+  Map<String, dynamic> remoteRow,
+) {
+  double? asDouble(Object? v) => v == null ? null : (v as num).toDouble();
+  return OutboxTransactionsCompanion(
+    placeName: Value(remoteRow['place_name'] as String?),
+    placeGooglePlaceId: Value(remoteRow['place_google_place_id'] as String?),
+    placeLat: Value(asDouble(remoteRow['place_lat'])),
+    placeLng: Value(asDouble(remoteRow['place_lng'])),
+    placeConfidence: Value(asDouble(remoteRow['place_confidence'])),
+    placeStatus: Value(remoteRow['place_status'] as String? ?? 'none'),
+    merchantNormalized: Value(remoteRow['merchant_normalized'] as String?),
+    pipelineStatus:
+        Value(remoteRow['pipeline_status'] as String? ?? 'provisional'),
+  );
+}
 
 /// Uploads local outbox rows to Supabase Storage + Postgres, then triggers enrichment.
 class SyncWorker {
@@ -65,6 +87,10 @@ class SyncWorker {
         'needs_amount': row.needsAmount,
         'merchant_raw': row.merchantRaw,
         'category_guess': row.categoryGuess,
+        // Was missing entirely — enrich-transaction's category-biased
+        // Nearby Search (`category_confidence >= 0.5`) always saw a stale
+        // null/0 without this, silently falling back to generic place types.
+        'category_confidence': row.categoryConfidence,
         'category_user': row.categoryUser,
         'impact_user': row.impactUser,
         'place_status': row.placeStatus,
@@ -82,6 +108,10 @@ class SyncWorker {
         'line_items_confidence': row.lineItemsConfidence,
         'parse_failure_reason': row.parseFailureReason,
         'pipeline_status': row.pipelineStatus,
+        'merchant_candidates': row.merchantCandidatesJson == null
+            ? null
+            : jsonDecode(row.merchantCandidatesJson!),
+        'ocr_header_text': row.ocrHeaderText,
       });
 
       await Supabase.instance.client.from('receipt_artifacts').upsert({
@@ -124,6 +154,31 @@ class SyncWorker {
           'enrich-transaction',
           body: {'transaction_id': row.id},
         );
+
+        // enrich-transaction updates Postgres directly; nothing in the
+        // invoke call above writes those fields back to the local outbox.
+        // Re-fetch and apply them so the UI shows the enriched place name
+        // instead of raw OCR text without waiting for a full re-sync.
+        // Best-effort: enrichment already succeeded server-side regardless
+        // of whether this read-back works.
+        try {
+          final refreshed = await Supabase.instance.client
+              .from('transactions')
+              .select(
+                'place_name, place_google_place_id, place_lat, place_lng, '
+                'place_confidence, place_status, merchant_normalized, '
+                'pipeline_status',
+              )
+              .eq('id', row.id)
+              .maybeSingle();
+          if (refreshed != null) {
+            await (db.update(db.outboxTransactions)
+                  ..where((t) => t.id.equals(transactionId)))
+                .write(buildEnrichmentCompanion(refreshed));
+          }
+        } catch (_) {
+          // Next sync (or a manual retry) will pick this up.
+        }
       }
 
       await (db.update(db.outboxTransactions)

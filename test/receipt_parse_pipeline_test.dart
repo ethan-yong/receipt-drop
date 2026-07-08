@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/domain/logic/category_matcher.dart';
 import 'package:receipt_drop/domain/logic/category_matcher_bundled.dart';
+import 'package:receipt_drop/domain/models/ocr_line.dart';
 import 'package:receipt_drop/features/share/receipt_parse_pipeline.dart';
 
 void main() {
@@ -253,12 +254,15 @@ TOTAL                      RM 18.00
   });
 
   test(
-      'categoryConfidence is 0.55 and correct category when brand only in OCR body',
-      () {
-    // Place the recognisable brand on line 9 so the merchant extractor
-    // (which only scans the first 8 non-empty lines for brand matching)
-    // falls back to "LOREM IPSUM SDN BHD", while guessWithConfidence's
-    // 15-line OCR body scan catches "Petron" on line 9.
+      'a brand keyword within the wider 15-line scan is now picked as the '
+      'merchant itself, earning full (0.85) category confidence', () {
+    // Merchant extraction's scan depth (merchantScanLines) and
+    // guessWithConfidence's OCR-body scan depth (scanLines) are both 15, so
+    // any category keyword within that window is caught by BOTH — meaning
+    // it always becomes the top merchant candidate too, which is strictly
+    // better than the old 8-line window (where a brand this deep was missed
+    // by merchant extraction and only earned the weaker 0.55 OCR-body-only
+    // tier; see test/category_matcher_test.dart for that tier in isolation).
     const ocrText = '''
 LOREM IPSUM SDN BHD
 Company Reg: 123456
@@ -275,9 +279,9 @@ Petron self-service kiosk
       ocrText: ocrText,
       categories: categories,
     );
+    expect(result.merchantRaw, contains('Petron'));
     expect(result.categoryGuess, 'Transport');
-    expect(result.categoryConfidence, greaterThanOrEqualTo(0.50));
-    expect(result.categoryConfidence, lessThan(0.80));
+    expect(result.categoryConfidence, 0.85);
   });
 
   test('mamak receipt with tax-code suffixes and no RM prefix parses', () {
@@ -304,5 +308,72 @@ JUMLAH                     18.00
     // Fallback-sourced amounts always route to double-checking.
     expect(result.lowConfidence, isTrue);
     expect(result.parseFailureReason, isNull);
+  });
+
+  test('parseReceiptOcrText populates ranked merchantCandidates and ocrHeaderText', () {
+    const ocrText = '''
+RESTORAN ANWAR MAJU
+Tel: 03-12345678
+TOTAL RM 21.70
+''';
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/candidates.png',
+      ocrText: ocrText,
+      categories: categories,
+    );
+
+    expect(result.merchantCandidates, isNotEmpty);
+    expect(result.merchantCandidates.first.text, result.merchantRaw);
+    expect(result.ocrHeaderText, isNotNull);
+    expect(result.ocrHeaderText, contains('RESTORAN ANWAR MAJU'));
+
+    final json = result.toJson();
+    expect(json['merchantCandidates'], isA<List>());
+    expect((json['merchantCandidates'] as List).first, isA<Map>());
+    expect(json['ocrHeaderText'], result.ocrHeaderText);
+  });
+
+  test('ocrHeaderText is null for empty OCR text', () {
+    final result = parseReceiptOcrText(
+      filePath: '/tmp/empty.png',
+      ocrText: '',
+      categories: categories,
+    );
+    expect(result.merchantCandidates, isEmpty);
+    expect(result.ocrHeaderText, isNull);
+    expect(result.toJson().containsKey('ocrHeaderText'), isFalse);
+  });
+
+  test('ocrLines threads through to merchantCandidates/merchantRaw '
+      '(large-text signal end-to-end)', () {
+    const ocrText = 'Welcome valued customer to our humble shop today\n'
+        'QUIRKENDALE\n'
+        'Item A RM 5.00\n'
+        'TOTAL RM 5.00';
+    final ocrLines = [
+      const OcrLine(
+        text: 'Welcome valued customer to our humble shop today',
+        heightRatio: 0.03,
+      ),
+      const OcrLine(text: 'QUIRKENDALE', heightRatio: 0.12),
+      const OcrLine(text: 'Item A RM 5.00', heightRatio: 0.025),
+      const OcrLine(text: 'TOTAL RM 5.00', heightRatio: 0.025),
+    ];
+
+    final withoutHeights = parseReceiptOcrText(
+      filePath: '/tmp/large_text.png',
+      ocrText: ocrText,
+      categories: categories,
+    );
+    expect(withoutHeights.merchantRaw, isNot('QUIRKENDALE'));
+
+    final withHeights = parseReceiptOcrText(
+      filePath: '/tmp/large_text.png',
+      ocrText: ocrText,
+      categories: categories,
+      ocrLines: ocrLines,
+    );
+    expect(withHeights.merchantRaw, 'QUIRKENDALE');
+    expect(withHeights.merchantCandidates.first.source, 'largeText');
   });
 }

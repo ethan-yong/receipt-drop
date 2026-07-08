@@ -5,15 +5,21 @@ from app import ocr_engine
 
 
 def _fake_data(
-    words: list[tuple[str, int, tuple[int, int, int]]],
+    words: list[tuple[str, int, tuple[int, int, int]]]
+    | list[tuple[str, int, tuple[int, int, int], int]],
 ) -> dict[str, list]:
-    """Builds an image_to_data DICT from (text, conf, (block, par, line)) rows."""
+    """Builds an image_to_data DICT from (text, conf, (block, par, line)[, height]).
+
+    Height defaults to 20 when omitted — existing 3-tuple call sites don't
+    care about height_ratio and shouldn't need updating for it.
+    """
     return {
         "text": [w[0] for w in words],
         "conf": [w[1] for w in words],
         "block_num": [w[2][0] for w in words],
         "par_num": [w[2][1] for w in words],
         "line_num": [w[2][2] for w in words],
+        "height": [w[3] if len(w) > 3 else 20 for w in words],
     }
 
 
@@ -109,9 +115,7 @@ def test_run_ocr_retries_with_binarize_on_low_confidence(
         return low_conf_data if len(calls) == 1 else high_conf_data
 
     monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
-    monkeypatch.setattr(
-        "app.preprocessing.shadow_binarize", lambda image: image + 1
-    )
+    monkeypatch.setattr("app.preprocessing.shadow_binarize", lambda image: image + 1)
     monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
 
     text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
@@ -151,9 +155,7 @@ def test_run_ocr_keeps_first_pass_when_retry_is_not_better(
         return low_conf_data if len(calls) == 1 else still_low_conf_data
 
     monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
-    monkeypatch.setattr(
-        "app.preprocessing.shadow_binarize", lambda image: image + 1
-    )
+    monkeypatch.setattr("app.preprocessing.shadow_binarize", lambda image: image + 1)
     monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
 
     text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
@@ -161,3 +163,44 @@ def test_run_ocr_keeps_first_pass_when_retry_is_not_better(
     assert len(calls) == 2
     assert text == "blah"
     assert confidence == pytest.approx(ocr_engine._calibrate_confidence(0.20))
+
+
+def test_run_ocr_detailed_computes_height_ratio(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A "header" line with tall glyphs (~41px median) and a "body" line with
+    # normal-sized glyphs (~19px median), on a 200px-tall image — the header
+    # line's height_ratio must come out noticeably larger, which is exactly
+    # the signal the Dart merchant extractor uses to prefer a large-font
+    # header/logo line over the uniform itemized body.
+    data = _fake_data(
+        [
+            ("HEADER", 90, (1, 1, 1), 40),
+            ("TEXT", 90, (1, 1, 1), 42),
+            ("item", 90, (1, 1, 2), 20),
+            ("price", 90, (1, 1, 2), 18),
+        ]
+    )
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
+
+    lines, _ = ocr_engine.run_ocr_detailed(np.zeros((200, 100), dtype=np.uint8))
+
+    assert len(lines) == 2
+    header, body = lines
+    assert header.text == "HEADER TEXT"
+    assert header.height_ratio == pytest.approx(41 / 200)  # median of [40, 42]
+    assert body.text == "item price"
+    assert body.height_ratio == pytest.approx(19 / 200)  # median of [20, 18]
+    assert header.height_ratio > body.height_ratio
+
+
+def test_run_ocr_detailed_empty_returns_no_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = _fake_data([("", -1, (1, 1, 1)), ("   ", -1, (1, 1, 1))])
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
+
+    lines, confidence = ocr_engine.run_ocr_detailed(np.zeros((10, 10), dtype=np.uint8))
+
+    assert lines == []
+    assert confidence == 0.0

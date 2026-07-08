@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 
 import cv2
 import numpy as np
@@ -57,10 +58,20 @@ def deskew(image: np.ndarray) -> np.ndarray:
     # real skew (e.g. it reports 90 for a straight scan whose text block is
     # wider than tall). Rotating by a clamped version of a bogus angle
     # destroys a perfectly good image, so skip instead of clamping.
-    if abs(angle) < 0.1 or abs(angle) > _MAX_DESKEW_ANGLE_DEG:
-        logger.info("deskew: skipped (detected angle=%.2f deg)", angle)
+    if abs(angle) < 0.1:
+        logger.info(
+            "deskew: already straight (angle=%.2f deg) — no rotation needed", angle
+        )
         return image
-    logger.info("deskew: rotating by %.2f deg", angle)
+    if abs(angle) > _MAX_DESKEW_ANGLE_DEG:
+        logger.info(
+            "deskew: angle=%.2f deg exceeds the %.0f deg plausible tilt range "
+            "(likely detector noise, not a real skew) — leaving image as-is",
+            angle,
+            _MAX_DESKEW_ANGLE_DEG,
+        )
+        return image
+    logger.info("deskew: image is tilted %.2f deg — rotating to straighten it", angle)
     h, w = image.shape[:2]
     center = (w / 2, h / 2)
     matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
@@ -83,11 +94,25 @@ def upscale_for_ocr(image: np.ndarray, min_width: int = _MIN_OCR_WIDTH) -> np.nd
     """
     h, w = image.shape[:2]
     if w >= min_width:
-        logger.info("upscale: skipped (width=%d already >= min_width=%d)", w, min_width)
+        logger.info(
+            "upscale: image is already %dx%d (>= %dpx minimum) — no resize needed",
+            w,
+            h,
+            min_width,
+        )
         return image
     scale = min_width / w
-    logger.info("upscale: %dx%d -> %dx%d (scale=%.2f)", w, h, min_width, int(h * scale), scale)
-    return cv2.resize(image, (min_width, int(h * scale)), interpolation=cv2.INTER_CUBIC)
+    new_h = int(h * scale)
+    logger.info(
+        "upscale: %dx%d is narrower than the %dpx minimum — scaling up %.2fx to %dx%d",
+        w,
+        h,
+        min_width,
+        scale,
+        min_width,
+        new_h,
+    )
+    return cv2.resize(image, (min_width, new_h), interpolation=cv2.INTER_CUBIC)
 
 
 def enhance_contrast(image: np.ndarray) -> np.ndarray:
@@ -184,14 +209,27 @@ def preprocess(image_bytes: bytes) -> np.ndarray:
       PREPROCESS_ADAPTIVE_BINARIZE=1 — shadow binarization (applied in run_ocr)
       MIN_OCR_WIDTH=N            — override minimum width before upscaling
     """
+    start = time.perf_counter()
     image = decode_image(image_bytes)
-    logger.info("preprocess: decoded %dx%d image (%d bytes)", image.shape[1], image.shape[0], len(image_bytes))
+    logger.info(
+        "preprocess: decoded a %dx%d image from %.1f KB of input",
+        image.shape[1],
+        image.shape[0],
+        len(image_bytes) / 1024,
+    )
     if os.environ.get("PREPROCESS_PERSPECTIVE"):
         image = perspective_correct(image)
     rotated = deskew(image)
     upscaled = upscale_for_ocr(rotated)
-    return (
+    result = (
         cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY)
         if upscaled.ndim == 3
         else upscaled
     )
+    logger.info(
+        "preprocess: finished in %.2fs — ready for OCR at %dx%d",
+        time.perf_counter() - start,
+        result.shape[1],
+        result.shape[0],
+    )
+    return result

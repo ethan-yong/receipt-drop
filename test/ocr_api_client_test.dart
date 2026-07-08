@@ -56,6 +56,49 @@ void main() {
     expect(result, isNotNull);
     expect(result!.text, 'TOTAL RM 7.70');
     expect(result.confidence, closeTo(0.99, 0.001));
+    // Older/simpler server responses omit `lines` entirely — must not crash
+    // or synthesize a value, just report "no large-text signal available".
+    expect(result.lines, isNull);
+  });
+
+  test('runOcrApi parses lines with height_ratio when present', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+
+    server.listen((request) async {
+      request.response
+        ..statusCode = 200
+        ..write(jsonEncode({
+          'text': 'BIG BRAND\nTOTAL RM 7.70',
+          'confidence': 0.8,
+          'lines': [
+            {'text': 'BIG BRAND', 'height_ratio': 0.12},
+            {'text': 'TOTAL RM 7.70', 'height_ratio': 0.03},
+          ],
+        }))
+        ..close();
+    });
+
+    final port = server.port;
+    final dir = await Directory.systemTemp.createTemp('ocr_client_test');
+    addTearDown(() => dir.delete(recursive: true));
+    final image = File('${dir.path}/sample.png');
+    await image.writeAsBytes([1, 2, 3]);
+
+    final result = await runOcrApi(
+      filePath: image.path,
+      mimeType: 'image/png',
+      ocrUrl: Uri.parse('http://127.0.0.1:$port/ocr'),
+      secret: 'test-secret',
+      client: http.Client(),
+    );
+
+    expect(result, isNotNull);
+    expect(result!.lines, hasLength(2));
+    expect(result.lines![0].text, 'BIG BRAND');
+    expect(result.lines![0].heightRatio, closeTo(0.12, 0.001));
+    expect(result.lines![1].text, 'TOTAL RM 7.70');
+    expect(result.lines![1].heightRatio, closeTo(0.03, 0.001));
   });
 
   test('runOcrApi returns null on unauthorized', () async {

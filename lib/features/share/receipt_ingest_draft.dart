@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../data/repositories/ingest_receipt_request.dart';
+import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/models/receipt_line_item.dart';
 
 /// Parsed receipt ready for the save sheet (before user confirms amount).
@@ -25,6 +26,8 @@ class ReceiptIngestDraft {
     this.lineItemsConfidence,
     this.parseFailureReason,
     this.lowConfidence = false,
+    this.merchantCandidates = const [],
+    this.ocrHeaderText,
   });
 
   final String localFilePath;
@@ -56,6 +59,12 @@ class ReceiptIngestDraft {
   /// [ocrConfidence] alone.
   final bool lowConfidence;
 
+  /// Ranked merchant-name guesses, carried through to enrichment.
+  final List<MerchantCandidate> merchantCandidates;
+
+  /// Extra OCR context (top-of-receipt lines), carried through to enrichment.
+  final String? ocrHeaderText;
+
   ReceiptIngestDraft copyWith({
     double? amountMyr,
     bool? needsAmount,
@@ -83,6 +92,8 @@ class ReceiptIngestDraft {
       lineItemsConfidence: lineItemsConfidence,
       parseFailureReason: parseFailureReason,
       lowConfidence: lowConfidence,
+      merchantCandidates: merchantCandidates,
+      ocrHeaderText: ocrHeaderText,
     );
   }
 
@@ -111,6 +122,8 @@ class ReceiptIngestDraft {
       ocrServiceConfidence: ocrServiceConfidence,
       lineItemsConfidence: lineItemsConfidence,
       parseFailureReason: parseFailureReason,
+      merchantCandidates: merchantCandidates,
+      ocrHeaderText: ocrHeaderText,
     );
   }
 
@@ -139,6 +152,8 @@ class ReceiptIngestDraft {
       lineItemsConfidence: lineItemsConfidence,
       parseFailureReason: parseFailureReason,
       needsReview: true,
+      merchantCandidates: merchantCandidates,
+      ocrHeaderText: ocrHeaderText,
     );
   }
 }

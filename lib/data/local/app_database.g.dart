@@ -367,6 +367,28 @@ class $OutboxTransactionsTable extends OutboxTransactions
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _merchantCandidatesJsonMeta =
+      const VerificationMeta('merchantCandidatesJson');
+  @override
+  late final GeneratedColumn<String> merchantCandidatesJson =
+      GeneratedColumn<String>(
+        'merchant_candidates_json',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _ocrHeaderTextMeta = const VerificationMeta(
+    'ocrHeaderText',
+  );
+  @override
+  late final GeneratedColumn<String> ocrHeaderText = GeneratedColumn<String>(
+    'ocr_header_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -401,6 +423,8 @@ class $OutboxTransactionsTable extends OutboxTransactions
     lastError,
     retryCount,
     ritualledAt,
+    merchantCandidatesJson,
+    ocrHeaderText,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -667,6 +691,24 @@ class $OutboxTransactionsTable extends OutboxTransactions
         ),
       );
     }
+    if (data.containsKey('merchant_candidates_json')) {
+      context.handle(
+        _merchantCandidatesJsonMeta,
+        merchantCandidatesJson.isAcceptableOrUnknown(
+          data['merchant_candidates_json']!,
+          _merchantCandidatesJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('ocr_header_text')) {
+      context.handle(
+        _ocrHeaderTextMeta,
+        ocrHeaderText.isAcceptableOrUnknown(
+          data['ocr_header_text']!,
+          _ocrHeaderTextMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -804,6 +846,14 @@ class $OutboxTransactionsTable extends OutboxTransactions
         DriftSqlType.dateTime,
         data['${effectivePrefix}ritualled_at'],
       ),
+      merchantCandidatesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}merchant_candidates_json'],
+      ),
+      ocrHeaderText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ocr_header_text'],
+      ),
     );
   }
 
@@ -863,6 +913,15 @@ class OutboxTransaction extends DataClass
 
   /// Set after the receipt has been shown in the ritual animation.
   final DateTime? ritualledAt;
+
+  /// Ranked merchant-name candidates (JSON-encoded `MerchantCandidate` list),
+  /// synced to `transactions.merchant_candidates` (jsonb) so enrichment can
+  /// try more than one Places text-search query.
+  final String? merchantCandidatesJson;
+
+  /// Top-of-receipt OCR lines, always populated (unlike [rawOcrText], which
+  /// is review-only) — extra context for merchant/place enrichment.
+  final String? ocrHeaderText;
   const OutboxTransaction({
     required this.id,
     required this.userId,
@@ -896,6 +955,8 @@ class OutboxTransaction extends DataClass
     this.lastError,
     required this.retryCount,
     this.ritualledAt,
+    this.merchantCandidatesJson,
+    this.ocrHeaderText,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -980,6 +1041,14 @@ class OutboxTransaction extends DataClass
     if (!nullToAbsent || ritualledAt != null) {
       map['ritualled_at'] = Variable<DateTime>(ritualledAt);
     }
+    if (!nullToAbsent || merchantCandidatesJson != null) {
+      map['merchant_candidates_json'] = Variable<String>(
+        merchantCandidatesJson,
+      );
+    }
+    if (!nullToAbsent || ocrHeaderText != null) {
+      map['ocr_header_text'] = Variable<String>(ocrHeaderText);
+    }
     return map;
   }
 
@@ -1063,6 +1132,12 @@ class OutboxTransaction extends DataClass
       ritualledAt: ritualledAt == null && nullToAbsent
           ? const Value.absent()
           : Value(ritualledAt),
+      merchantCandidatesJson: merchantCandidatesJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(merchantCandidatesJson),
+      ocrHeaderText: ocrHeaderText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ocrHeaderText),
     );
   }
 
@@ -1118,6 +1193,10 @@ class OutboxTransaction extends DataClass
       lastError: serializer.fromJson<String?>(json['lastError']),
       retryCount: serializer.fromJson<int>(json['retryCount']),
       ritualledAt: serializer.fromJson<DateTime?>(json['ritualledAt']),
+      merchantCandidatesJson: serializer.fromJson<String?>(
+        json['merchantCandidatesJson'],
+      ),
+      ocrHeaderText: serializer.fromJson<String?>(json['ocrHeaderText']),
     );
   }
   @override
@@ -1158,6 +1237,10 @@ class OutboxTransaction extends DataClass
       'lastError': serializer.toJson<String?>(lastError),
       'retryCount': serializer.toJson<int>(retryCount),
       'ritualledAt': serializer.toJson<DateTime?>(ritualledAt),
+      'merchantCandidatesJson': serializer.toJson<String?>(
+        merchantCandidatesJson,
+      ),
+      'ocrHeaderText': serializer.toJson<String?>(ocrHeaderText),
     };
   }
 
@@ -1194,6 +1277,8 @@ class OutboxTransaction extends DataClass
     Value<String?> lastError = const Value.absent(),
     int? retryCount,
     Value<DateTime?> ritualledAt = const Value.absent(),
+    Value<String?> merchantCandidatesJson = const Value.absent(),
+    Value<String?> ocrHeaderText = const Value.absent(),
   }) => OutboxTransaction(
     id: id ?? this.id,
     userId: userId ?? this.userId,
@@ -1251,6 +1336,12 @@ class OutboxTransaction extends DataClass
     lastError: lastError.present ? lastError.value : this.lastError,
     retryCount: retryCount ?? this.retryCount,
     ritualledAt: ritualledAt.present ? ritualledAt.value : this.ritualledAt,
+    merchantCandidatesJson: merchantCandidatesJson.present
+        ? merchantCandidatesJson.value
+        : this.merchantCandidatesJson,
+    ocrHeaderText: ocrHeaderText.present
+        ? ocrHeaderText.value
+        : this.ocrHeaderText,
   );
   OutboxTransaction copyWithCompanion(OutboxTransactionsCompanion data) {
     return OutboxTransaction(
@@ -1334,6 +1425,12 @@ class OutboxTransaction extends DataClass
       ritualledAt: data.ritualledAt.present
           ? data.ritualledAt.value
           : this.ritualledAt,
+      merchantCandidatesJson: data.merchantCandidatesJson.present
+          ? data.merchantCandidatesJson.value
+          : this.merchantCandidatesJson,
+      ocrHeaderText: data.ocrHeaderText.present
+          ? data.ocrHeaderText.value
+          : this.ocrHeaderText,
     );
   }
 
@@ -1371,7 +1468,9 @@ class OutboxTransaction extends DataClass
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
           ..write('retryCount: $retryCount, ')
-          ..write('ritualledAt: $ritualledAt')
+          ..write('ritualledAt: $ritualledAt, ')
+          ..write('merchantCandidatesJson: $merchantCandidatesJson, ')
+          ..write('ocrHeaderText: $ocrHeaderText')
           ..write(')'))
         .toString();
   }
@@ -1410,6 +1509,8 @@ class OutboxTransaction extends DataClass
     lastError,
     retryCount,
     ritualledAt,
+    merchantCandidatesJson,
+    ocrHeaderText,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1446,7 +1547,9 @@ class OutboxTransaction extends DataClass
           other.syncStatus == this.syncStatus &&
           other.lastError == this.lastError &&
           other.retryCount == this.retryCount &&
-          other.ritualledAt == this.ritualledAt);
+          other.ritualledAt == this.ritualledAt &&
+          other.merchantCandidatesJson == this.merchantCandidatesJson &&
+          other.ocrHeaderText == this.ocrHeaderText);
 }
 
 class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
@@ -1482,6 +1585,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
   final Value<String?> lastError;
   final Value<int> retryCount;
   final Value<DateTime?> ritualledAt;
+  final Value<String?> merchantCandidatesJson;
+  final Value<String?> ocrHeaderText;
   final Value<int> rowid;
   const OutboxTransactionsCompanion({
     this.id = const Value.absent(),
@@ -1516,6 +1621,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.lastError = const Value.absent(),
     this.retryCount = const Value.absent(),
     this.ritualledAt = const Value.absent(),
+    this.merchantCandidatesJson = const Value.absent(),
+    this.ocrHeaderText = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   OutboxTransactionsCompanion.insert({
@@ -1551,6 +1658,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.lastError = const Value.absent(),
     this.retryCount = const Value.absent(),
     this.ritualledAt = const Value.absent(),
+    this.merchantCandidatesJson = const Value.absent(),
+    this.ocrHeaderText = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        userId = Value(userId);
@@ -1587,6 +1696,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Expression<String>? lastError,
     Expression<int>? retryCount,
     Expression<DateTime>? ritualledAt,
+    Expression<String>? merchantCandidatesJson,
+    Expression<String>? ocrHeaderText,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1627,6 +1738,9 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       if (lastError != null) 'last_error': lastError,
       if (retryCount != null) 'retry_count': retryCount,
       if (ritualledAt != null) 'ritualled_at': ritualledAt,
+      if (merchantCandidatesJson != null)
+        'merchant_candidates_json': merchantCandidatesJson,
+      if (ocrHeaderText != null) 'ocr_header_text': ocrHeaderText,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1664,6 +1778,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Value<String?>? lastError,
     Value<int>? retryCount,
     Value<DateTime?>? ritualledAt,
+    Value<String?>? merchantCandidatesJson,
+    Value<String?>? ocrHeaderText,
     Value<int>? rowid,
   }) {
     return OutboxTransactionsCompanion(
@@ -1700,6 +1816,9 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       lastError: lastError ?? this.lastError,
       retryCount: retryCount ?? this.retryCount,
       ritualledAt: ritualledAt ?? this.ritualledAt,
+      merchantCandidatesJson:
+          merchantCandidatesJson ?? this.merchantCandidatesJson,
+      ocrHeaderText: ocrHeaderText ?? this.ocrHeaderText,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1809,6 +1928,14 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     if (ritualledAt.present) {
       map['ritualled_at'] = Variable<DateTime>(ritualledAt.value);
     }
+    if (merchantCandidatesJson.present) {
+      map['merchant_candidates_json'] = Variable<String>(
+        merchantCandidatesJson.value,
+      );
+    }
+    if (ocrHeaderText.present) {
+      map['ocr_header_text'] = Variable<String>(ocrHeaderText.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1850,6 +1977,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           ..write('lastError: $lastError, ')
           ..write('retryCount: $retryCount, ')
           ..write('ritualledAt: $ritualledAt, ')
+          ..write('merchantCandidatesJson: $merchantCandidatesJson, ')
+          ..write('ocrHeaderText: $ocrHeaderText, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3289,6 +3418,8 @@ typedef $$OutboxTransactionsTableCreateCompanionBuilder =
       Value<String?> lastError,
       Value<int> retryCount,
       Value<DateTime?> ritualledAt,
+      Value<String?> merchantCandidatesJson,
+      Value<String?> ocrHeaderText,
       Value<int> rowid,
     });
 typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
@@ -3325,6 +3456,8 @@ typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
       Value<String?> lastError,
       Value<int> retryCount,
       Value<DateTime?> ritualledAt,
+      Value<String?> merchantCandidatesJson,
+      Value<String?> ocrHeaderText,
       Value<int> rowid,
     });
 
@@ -3557,6 +3690,16 @@ class $$OutboxTransactionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get merchantCandidatesJson => $composableBuilder(
+    column: $table.merchantCandidatesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ocrHeaderText => $composableBuilder(
+    column: $table.ocrHeaderText,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> outboxArtifactsRefs(
     Expression<bool> Function($$OutboxArtifactsTableFilterComposer f) f,
   ) {
@@ -3776,6 +3919,16 @@ class $$OutboxTransactionsTableOrderingComposer
     column: $table.ritualledAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get merchantCandidatesJson => $composableBuilder(
+    column: $table.merchantCandidatesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ocrHeaderText => $composableBuilder(
+    column: $table.ocrHeaderText,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$OutboxTransactionsTableAnnotationComposer
@@ -3931,6 +4084,16 @@ class $$OutboxTransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get merchantCandidatesJson => $composableBuilder(
+    column: $table.merchantCandidatesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ocrHeaderText => $composableBuilder(
+    column: $table.ocrHeaderText,
+    builder: (column) => column,
+  );
+
   Expression<T> outboxArtifactsRefs<T extends Object>(
     Expression<T> Function($$OutboxArtifactsTableAnnotationComposer a) f,
   ) {
@@ -4050,6 +4213,8 @@ class $$OutboxTransactionsTableTableManager
                 Value<String?> lastError = const Value.absent(),
                 Value<int> retryCount = const Value.absent(),
                 Value<DateTime?> ritualledAt = const Value.absent(),
+                Value<String?> merchantCandidatesJson = const Value.absent(),
+                Value<String?> ocrHeaderText = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion(
                 id: id,
@@ -4084,6 +4249,8 @@ class $$OutboxTransactionsTableTableManager
                 lastError: lastError,
                 retryCount: retryCount,
                 ritualledAt: ritualledAt,
+                merchantCandidatesJson: merchantCandidatesJson,
+                ocrHeaderText: ocrHeaderText,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4120,6 +4287,8 @@ class $$OutboxTransactionsTableTableManager
                 Value<String?> lastError = const Value.absent(),
                 Value<int> retryCount = const Value.absent(),
                 Value<DateTime?> ritualledAt = const Value.absent(),
+                Value<String?> merchantCandidatesJson = const Value.absent(),
+                Value<String?> ocrHeaderText = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion.insert(
                 id: id,
@@ -4154,6 +4323,8 @@ class $$OutboxTransactionsTableTableManager
                 lastError: lastError,
                 retryCount: retryCount,
                 ritualledAt: ritualledAt,
+                merchantCandidatesJson: merchantCandidatesJson,
+                ocrHeaderText: ocrHeaderText,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -7,6 +7,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/env.dart';
+import '../../domain/models/ocr_line.dart';
 import 'ocr_api_client.dart';
 
 const _ocrProxyTimeout = Duration(seconds: 30);
@@ -38,8 +39,13 @@ void _defaultOcrLog(
 }
 
 /// OCR text plus the engine's scan-quality confidence (null for PDF text
-/// extraction when no OCR service ran).
-typedef OcrFileResult = ({String text, double? serviceConfidence});
+/// extraction when no OCR service ran) and, when available, per-line
+/// visual-prominence data for merchant candidate ranking.
+typedef OcrFileResult = ({
+  String text,
+  double? serviceConfidence,
+  List<OcrLine>? lines,
+});
 
 /// Runs OCR on receipt images via the self-hosted OCR API, or extracts text
 /// from PDF (pdfrx). No on-device ML Kit fallback.
@@ -50,7 +56,11 @@ Future<OcrFileResult> runOcrOnReceiptFile({
   final isPdf =
       mimeType.contains('pdf') || filePath.toLowerCase().endsWith('.pdf');
   if (isPdf) {
-    return (text: await _extractPdfText(filePath), serviceConfidence: null);
+    return (
+      text: await _extractPdfText(filePath),
+      serviceConfidence: null,
+      lines: null,
+    );
   }
   return _ocrImageFile(filePath, mimeType);
 }
@@ -85,7 +95,7 @@ Future<String> _extractPdfText(String pdfPath) async {
 Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
   if (!_ocrImageMimeTypes.contains(mimeType.toLowerCase())) {
     ocrLogger('Unsupported MIME for OCR: $mimeType', level: 800);
-    return (text: '', serviceConfidence: null);
+    return (text: '', serviceConfidence: null, lines: null);
   }
 
   if (Env.hasOcrApiConfig) {
@@ -96,13 +106,17 @@ Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
       secret: Env.ocrSharedSecret,
     );
     if (direct != null && direct.text.trim().isNotEmpty) {
-      return (text: direct.text, serviceConfidence: direct.confidence);
+      return (
+        text: direct.text,
+        serviceConfidence: direct.confidence,
+        lines: direct.lines,
+      );
     }
     ocrLogger(
       'Direct OCR API returned no text: $imagePath',
       level: 800,
     );
-    return (text: '', serviceConfidence: null);
+    return (text: '', serviceConfidence: null, lines: null);
   }
 
   if (Env.hasSupabaseConfig) {
@@ -111,13 +125,17 @@ Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
       mimeType: mimeType,
     );
     if (proxied != null && proxied.text.trim().isNotEmpty) {
-      return (text: proxied.text, serviceConfidence: proxied.confidence);
+      return (
+        text: proxied.text,
+        serviceConfidence: proxied.confidence,
+        lines: proxied.lines,
+      );
     }
     ocrLogger(
       'OCR proxy returned no text: $imagePath',
       level: 800,
     );
-    return (text: '', serviceConfidence: null);
+    return (text: '', serviceConfidence: null, lines: null);
   }
 
   ocrLogger(
@@ -125,12 +143,13 @@ Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
     'or configure Supabase and sign in for ocr-proxy',
     level: 1000,
   );
-  return (text: '', serviceConfidence: null);
+  return (text: '', serviceConfidence: null, lines: null);
 }
 
 /// Calls the self-hosted OCR service via the `ocr-proxy` Supabase Edge
 /// Function. Returns `null` on any failure — never throws.
-Future<({String text, double? confidence})?> _ocrViaSupabaseProxy({
+Future<({String text, double? confidence, List<OcrLine>? lines})?>
+    _ocrViaSupabaseProxy({
   required String imagePath,
   required String mimeType,
 }) async {
@@ -170,9 +189,16 @@ Future<({String text, double? confidence})?> _ocrViaSupabaseProxy({
     final text = decoded['text'];
     if (text is! String) return null;
     final confidence = decoded['confidence'];
+    final linesJson = decoded['lines'];
+    final lines = linesJson is List
+        ? [for (final item in linesJson) OcrLine.tryFromJson(item)]
+            .whereType<OcrLine>()
+            .toList()
+        : null;
     return (
       text: text,
       confidence: confidence is num ? confidence.toDouble() : null,
+      lines: lines,
     );
   } catch (e, st) {
     ocrLogger(

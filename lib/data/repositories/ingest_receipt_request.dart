@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/models/receipt_line_item.dart';
 
 /// Parameters for saving a confirmed receipt to the local outbox.
@@ -26,6 +27,8 @@ class IngestReceiptRequest {
     this.lineItemsConfidence,
     this.parseFailureReason,
     this.needsReview = false,
+    this.merchantCandidates = const [],
+    this.ocrHeaderText,
   });
 
   final String localFilePath;
@@ -54,4 +57,11 @@ class IngestReceiptRequest {
   /// Routes the transaction into the human review queue
   /// (pipeline_status = 'needs_review') instead of the normal flow.
   final bool needsReview;
+
+  /// Ranked merchant-name guesses, synced alongside [merchantRaw] so
+  /// enrichment can try more than one Places text-search query.
+  final List<MerchantCandidate> merchantCandidates;
+
+  /// Extra OCR context (top-of-receipt lines) synced for enrichment.
+  final String? ocrHeaderText;
 }

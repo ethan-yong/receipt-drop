@@ -87,6 +87,15 @@ class OutboxTransactions extends Table {
   /// Set after the receipt has been shown in the ritual animation.
   DateTimeColumn get ritualledAt => dateTime().nullable()();
 
+  /// Ranked merchant-name candidates (JSON-encoded `MerchantCandidate` list),
+  /// synced to `transactions.merchant_candidates` (jsonb) so enrichment can
+  /// try more than one Places text-search query.
+  TextColumn get merchantCandidatesJson => text().nullable()();
+
+  /// Top-of-receipt OCR lines, always populated (unlike [rawOcrText], which
+  /// is review-only) — extra context for merchant/place enrichment.
+  TextColumn get ocrHeaderText => text().nullable()();
+
   @override
   Set<Column<Object>>? get primaryKey => {id};
 }

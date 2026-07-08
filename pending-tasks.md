@@ -168,3 +168,18 @@ Fixtures: add `test/fixtures/ocr/` with sample receipt text snippets (no binary 
 ---
 
 _Add new pending tasks below as separate `##` sections._
+
+<!--
+DONE (2026-07-08): Merchant candidate ranking: real font-size / bounding-box
+signal. Implemented as planned — `services/ocr-api/app/ocr_engine.py` now
+exposes `run_ocr_detailed()` returning per-line `height_ratio` (median word
+bbox height / image height), threaded through `OcrResponse.lines` ->
+`OcrApiResult.lines` -> `OcrFileResult.lines` -> `parseReceiptOcrText(ocrLines:
+...)` -> `extractMerchantCandidates(ocrLines: ...)`, which adds a `'largeText'`
+source tier (confidence 0.80, must clear 1.4x the receipt's median line
+height) between the keyword tiers and the position fallback. Fully additive —
+`null`/absent `ocrLines` behaves identically to before. See
+`docs/decisions.md` for the ADR entry and `memory/feature_graph.md` for the
+updated dependency list.
+-->
+

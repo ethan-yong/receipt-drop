@@ -54,8 +54,11 @@ def test_ocr_success_returns_text_and_confidence(
 ) -> None:
     # The real Tesseract binary isn't invoked in unit tests — this exercises
     # the route/preprocessing wiring, not the recognition engine itself.
+    from app.ocr_engine import OcrLineResult
+
     monkeypatch.setattr(
-        "app.main.run_ocr", lambda image: ("TOTAL RM 7.70", 0.93)
+        "app.main.run_ocr_detailed",
+        lambda image: ([OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93),
     )
 
     resp = client.post(
@@ -68,3 +71,4 @@ def test_ocr_success_returns_text_and_confidence(
     body = resp.json()
     assert body["text"] == "TOTAL RM 7.70"
     assert body["confidence"] == pytest.approx(0.93)
+    assert body["lines"] == [{"text": "TOTAL RM 7.70", "height_ratio": 0.05}]

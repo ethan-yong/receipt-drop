@@ -80,6 +80,8 @@ class ReceiptIngestService {
       lineItemsConfidence: parsed.lineItemsConfidence,
       parseFailureReason: parsed.parseFailureReason,
       lowConfidence: parsed.lowConfidence,
+      merchantCandidates: parsed.merchantCandidates,
+      ocrHeaderText: parsed.ocrHeaderText,
     );
   }
 

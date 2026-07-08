@@ -1,12 +1,30 @@
 import logging
 import math
 import os
+import statistics
+import time
+from dataclasses import dataclass
 
 import numpy as np
 import pytesseract
 from pytesseract import Output
 
 logger = logging.getLogger("ocr_api.ocr_engine")
+
+
+@dataclass(frozen=True)
+class OcrLineResult:
+    """One recognized line, with its visual prominence relative to the rest
+    of this same image — used by the Dart merchant extractor to prefer a
+    large-font header/logo line over the (usually uniform, small-font)
+    itemized body, even when it doesn't match any known keyword."""
+
+    text: str
+    # Median word bounding-box height in this line, divided by the image's
+    # total height. Relative-to-this-receipt, not an absolute pixel
+    # threshold, so it's comparable regardless of a given scan's resolution.
+    height_ratio: float
+
 
 # Windows dev installs typically live outside PATH (e.g. the UB Mannheim
 # build at C:\Program Files\Tesseract-OCR\tesseract.exe).
@@ -48,21 +66,28 @@ def _config() -> str:
 _LOW_CONFIDENCE_RETRY_THRESHOLD = 0.4
 
 
-def _run_tesseract(image: np.ndarray, *, label: str) -> tuple[str, float]:
+def _run_tesseract(
+    image: np.ndarray, *, label: str
+) -> tuple[list[OcrLineResult], float]:
+    start = time.perf_counter()
     data = pytesseract.image_to_data(
         image, output_type=Output.DICT, config=_config()
     )
+    elapsed = time.perf_counter() - start
 
     # Group words into lines keyed by Tesseract's block/paragraph/line ids.
     # image_to_data returns rows in reading order, so insertion order of the
-    # dict preserves line order.
+    # dict preserves line order. Word bbox heights are tracked alongside so
+    # each line's visual prominence (relative to the image) can be derived.
     lines: dict[tuple[int, int, int], list[str]] = {}
+    heights: dict[tuple[int, int, int], list[int]] = {}
     confidences: list[float] = []
     for i, word in enumerate(data["text"]):
         if not word.strip():
             continue
         key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
         lines.setdefault(key, []).append(word)
+        heights.setdefault(key, []).append(int(data["height"][i]))
         # conf is 0-100 per word; -1 marks structural (non-word) rows, and 0
         # is Tesseract's "no confidence" marker — both are excluded from the mean.
         conf = float(data["conf"][i])
@@ -70,31 +95,51 @@ def _run_tesseract(image: np.ndarray, *, label: str) -> tuple[str, float]:
             confidences.append(conf)
 
     if not lines:
-        logger.info("tesseract[%s]: 0 words recognized, confidence=0.0", label)
-        return "", 0.0
+        logger.info(
+            "tesseract[%s]: 0 words recognized in %.2fs (blank/unreadable pass)",
+            label,
+            elapsed,
+        )
+        return [], 0.0
 
-    joined_text = "\n".join(" ".join(words) for words in lines.values())
+    image_height = image.shape[0]
+    line_results = [
+        OcrLineResult(
+            text=" ".join(words),
+            height_ratio=(
+                statistics.median(heights[key]) / image_height if image_height else 0.0
+            ),
+        )
+        for key, words in lines.items()
+    ]
     raw_mean = sum(confidences) / len(confidences) / 100.0
     mean_confidence = _calibrate_confidence(raw_mean)
     logger.info(
-        "tesseract[%s]: %d words, %d lines, raw_conf=%.3f calibrated_conf=%.3f",
+        "tesseract[%s]: finished in %.2fs — %d words across %d lines, "
+        "confidence %.0f%% raw / %.0f%% calibrated",
         label,
+        elapsed,
         len(confidences),
         len(lines),
-        raw_mean,
-        mean_confidence,
+        raw_mean * 100,
+        mean_confidence * 100,
     )
-    logger.debug("tesseract[%s] text:\n%s", label, joined_text)
-    return joined_text, mean_confidence
+    logger.debug(
+        "tesseract[%s] text:\n%s",
+        label,
+        "\n".join(line.text for line in line_results),
+    )
+    return line_results, mean_confidence
 
 
-def run_ocr(image: np.ndarray) -> tuple[str, float]:
-    """Runs OCR on a preprocessed image. Returns (text, mean_confidence).
+def run_ocr_detailed(image: np.ndarray) -> tuple[list[OcrLineResult], float]:
+    """Runs OCR on a preprocessed image. Returns (lines, mean_confidence).
 
-    Text is rebuilt line-by-line from Tesseract's word-level output — the
-    downstream Dart parsers are all line-oriented, so line structure must
-    survive. Confidence is the calibrated mean word confidence normalized to
-    0..1 (sigmoid-squashed to de-inflate Tesseract's high-skew raw scores).
+    Each line carries its own [OcrLineResult.height_ratio] — the Dart
+    merchant extractor uses this to prefer a visually large header/logo line
+    over the small, uniform itemized body, even without a keyword match.
+    Confidence is the calibrated mean word confidence normalized to 0..1
+    (sigmoid-squashed to de-inflate Tesseract's high-skew raw scores).
     """
     # PREPROCESS_ADAPTIVE_BINARIZE forces binarization on every request
     # (useful for manual testing). Otherwise, binarize only appears as an
@@ -105,29 +150,38 @@ def run_ocr(image: np.ndarray) -> tuple[str, float]:
         logger.info("adaptive binarize forced on (PREPROCESS_ADAPTIVE_BINARIZE set)")
         return _run_tesseract(shadow_binarize(image), label="forced-binarize")
 
-    text, confidence = _run_tesseract(image, label="plain")
+    lines, confidence = _run_tesseract(image, label="plain")
     if confidence < _LOW_CONFIDENCE_RETRY_THRESHOLD:
         from app.preprocessing import shadow_binarize  # lazy import avoids cycle
 
         logger.info(
-            "confidence %.3f below retry threshold %.3f, retrying with adaptive binarize",
-            confidence,
-            _LOW_CONFIDENCE_RETRY_THRESHOLD,
+            "plain pass confidence %.0f%% is below the %.0f%% retry threshold "
+            "(often uneven lighting/shadows) — retrying with adaptive binarization",
+            confidence * 100,
+            _LOW_CONFIDENCE_RETRY_THRESHOLD * 100,
         )
-        retry_text, retry_confidence = _run_tesseract(
+        retry_lines, retry_confidence = _run_tesseract(
             shadow_binarize(image), label="binarize-retry"
         )
         if retry_confidence > confidence:
             logger.info(
-                "binarize retry improved confidence %.3f -> %.3f, using retry result",
-                confidence,
-                retry_confidence,
+                "binarize retry helped: %.0f%% -> %.0f%% — using retry result",
+                confidence * 100,
+                retry_confidence * 100,
             )
-            return retry_text, retry_confidence
+            return retry_lines, retry_confidence
         logger.info(
-            "binarize retry did not improve confidence (%.3f vs %.3f), keeping plain pass",
-            retry_confidence,
-            confidence,
+            "binarize retry didn't help (%.0f%% vs %.0f%% plain) — keeping plain pass",
+            retry_confidence * 100,
+            confidence * 100,
         )
 
-    return text, confidence
+    return lines, confidence
+
+
+def run_ocr(image: np.ndarray) -> tuple[str, float]:
+    """Back-compat wrapper over [run_ocr_detailed]: joins lines the same way
+    the old single-pass implementation did. Prefer [run_ocr_detailed] for
+    anything that can use per-line height data."""
+    lines, confidence = run_ocr_detailed(image)
+    return "\n".join(line.text for line in lines), confidence
