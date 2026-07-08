@@ -169,6 +169,131 @@ Fixtures: add `test/fixtures/ocr/` with sample receipt text snippets (no binary 
 
 _Add new pending tasks below as separate `##` sections._
 
+---
+
+## Post-OCR vendor location picker (Grab-style nearby suggestions)
+
+### Problem
+
+After OCR, the app shows a parsed **merchant name** (e.g. on [`ShareSaveSheet`](../lib/features/share/share_save_sheet.dart) and [`ReceiptCard`](../lib/widgets/receipt_card.dart)) and later auto-assigns a **place** via [`enrich-transaction`](../supabase/functions/enrich-transaction/index.ts) (Google Places text + nearby search within **300 m**, see `SEARCH_RADIUS_METERS` in [`place_matching.ts`](../supabase/functions/_shared/place_matching.ts)).
+
+When the guessed place is wrong, the only correction path today is the generic **text search** flow ([`PlacesSearchScreen`](../lib/features/places/places_search_screen.dart) → [`PlacesRepository.search`](../lib/data/repositories/places_repository.dart) → `places-proxy`). That is slow, requires typing, and does not surface the nearby candidates enrichment already considered.
+
+There is no quick “pick from nearby matches” UI comparable to Grab’s pickup-point selector (map + scrollable location list + live pin/camera sync).
+
+### Goal
+
+Let the user **correct the vendor location after OCR** with a Grab-like experience:
+
+1. Show a **pencil icon** next to the vendor / place name (post-OCR save sheet, receipt card, and/or transaction detail — exact surfaces TBD).
+2. On tap, open a **bottom sheet / full-screen picker** that shows the **top 5 most related vendors** within the existing **300 m** search radius (ranked by the same text/distance scoring enrichment uses, or a client-side equivalent).
+3. **Map + list stay in sync** (reference: Grab pickup UI — map on top, selectable location rows at bottom):
+   - Tapping a row **immediately** pans the map camera to that candidate and drops a **red pin** at its coordinates.
+   - The selected row is highlighted (Grab uses a tinted background on the active row).
+4. User taps **Confirm** to apply the choice, or **Cancel** to discard.
+
+### UX reference
+
+Grab pickup selector (attached screenshot): map with multiple green pins in a cluster, a “Nearest” callout, and a bottom panel listing specific lobby/shoplot names with distance. Receipt Drop should mirror the **interaction model**, not the Grab branding:
+
+| Grab pattern | Receipt Drop adaptation |
+|--------------|-------------------------|
+| Bottom list of specific sub-locations | Top **5** nearby place candidates (building/POI names from Places) |
+| Row tap selects + highlights | Same; selected row highlighted |
+| Map camera follows selection | `flutter_map` camera animates to `(lat, lng)` |
+| Pin at selected point | **Red** pin marker (distinct from spend-map friend pins) |
+| Primary CTA “Choose This Pickup” | **Confirm** (applies place) + **Cancel** |
+
+Optional v2: distance label per row (e.g. `0.02 km`) and a “Nearest” badge on the closest high-confidence match.
+
+### Data / API design
+
+Enrichment already searches ~300 m, but **does not persist the full candidate list** on the transaction today — only the winning `place_*` fields. The picker needs a candidate source. Pick one (or combine):
+
+**Option A — On-demand nearby fetch (recommended for v1)**
+
+- New Edge Function endpoint (or extend `places-proxy`) accepting `{ lat, lng, query?, merchant_candidates? }`.
+- Reuse [`place_matching.ts`](../supabase/functions/_shared/place_matching.ts) scoring (`diceCoefficient`, `distanceScore`, `haversineMeters`) server-side.
+- Return top **5** `{ place_id, name, lat, lng, distance_m, confidence }`.
+- Called when the picker opens, using **share capture location** + OCR merchant text / ranked [`MerchantCandidate`](../lib/domain/logic/merchant_extractor.dart) list.
+
+**Option B — Persist enrichment candidates**
+
+- Extend `transactions` (and local outbox) with `place_candidates jsonb` written by `enrich-transaction`.
+- Picker reads cached candidates when user edits later; fallback to Option A if empty/stale.
+
+On confirm, write the same fields as manual place change today:
+
+- `place_name`, `place_google_place_id`, `place_lat`, `place_lng`
+- `place_status = 'user_locked'` (see [`docs/api.md`](../docs/api.md) — skips automatic re-enrichment)
+- Optionally bump `place_confidence` to 1.0 or a fixed “user picked” value
+
+### UI components (proposed)
+
+| Piece | Location / notes |
+|-------|------------------|
+| Pencil affordance | `Icon(Icons.edit_outlined)` beside merchant/place label on save sheet + detail surfaces |
+| `PlacePickerSheet` (new) | Modal route or `DraggableScrollableSheet`: top ~55% map, bottom list |
+| Map layer | Reuse [`flutter_map`](../lib/features/map/spend_map_screen.dart) stack; dedicated red pin widget |
+| List row | Place name, distance, optional address snippet; selected state styling |
+| Actions | Sticky footer: **Confirm** (primary) + **Cancel** (text/secondary) |
+
+State: hold `selectedCandidate` locally; only persist on Confirm.
+
+### Pipeline integration
+
+```mermaid
+flowchart TD
+  OCR[OCR + parse merchant] --> SaveUI[Save sheet / receipt card]
+  SaveUI -->|pencil tap| Picker[PlacePickerSheet]
+  Picker -->|lat/lng + merchant queries| NearbyAPI[places-proxy or new nearby endpoint]
+  NearbyAPI --> Top5[Top 5 ranked candidates]
+  Top5 --> Picker
+  Picker -->|Confirm| Update[Update transaction place_* + user_locked]
+  Picker -->|Cancel| SaveUI
+```
+
+Surfaces to wire (minimum):
+
+- [`ShareSaveSheet`](../lib/features/share/share_save_sheet.dart) — merchant line gets pencil; draft carries optional `placeName` / coords before first save
+- [`TransactionDetailScreen`](../lib/features/tx_detail/transaction_detail_screen.dart) — replace or supplement “Change place” text search with nearby picker when capture location exists
+- [`PlaceBlock`](../lib/widgets/place_block.dart) — upgrade static map placeholder to live preview during edit
+
+### Testing
+
+| Test | Cases |
+|------|--------|
+| `place_matching.ts` / new endpoint unit tests | Ranking returns ≤5; respects 300 m radius; orders by combined score |
+| Widget test `PlacePickerSheet` | Row tap updates selected index + pin position; Confirm emits `PlaceResult`; Cancel pops without write |
+| Integration | Save sheet → pick alternate nearby place → transaction persists `user_locked` → re-sync does not overwrite |
+
+Fixtures: reuse [`receipts/rock_cafe.png.jpeg`](../receipts/rock_cafe.png.jpeg) OCR merchant + a mocked Places nearby response.
+
+### Acceptance criteria
+
+- [ ] Pencil icon visible next to vendor/place name on at least the post-OCR save sheet.
+- [ ] Picker shows **≤ 5** nearby place suggestions ranked by relevance (not an empty text-search field).
+- [ ] Selecting a list row **immediately** moves the map camera and shows a **red pin** at that location.
+- [ ] **Confirm** updates `place_*` and sets `place_status = 'user_locked'`; **Cancel** leaves data unchanged.
+- [ ] Works when share-location lat/lng is available; graceful fallback (hide picker or show text search) when location is missing.
+
+### Out of scope (for this task)
+
+- Sub-POI granularity inside a mall (Grab’s “Tower 3A/3B Lobby” level) unless Places returns those as distinct candidates
+- Editing merchant **name** text (place correction only)
+- Re-running OCR
+- Showing enrichment’s internal alias fast-path in the UI
+
+### Related files (current)
+
+- OCR → save: [`share_save_sheet.dart`](../lib/features/share/share_save_sheet.dart), [`receipt_ingest_draft.dart`](../lib/features/share/receipt_ingest_draft.dart)
+- Manual place change: [`places_search_screen.dart`](../lib/features/places/places_search_screen.dart), [`places_repository.dart`](../lib/data/repositories/places_repository.dart)
+- Enrichment / 300 m search: [`enrich-transaction/index.ts`](../supabase/functions/enrich-transaction/index.ts), [`place_matching.ts`](../supabase/functions/_shared/place_matching.ts)
+- Map stack: [`spend_map_screen.dart`](../lib/features/map/spend_map_screen.dart)
+- Place display: [`place_block.dart`](../lib/widgets/place_block.dart), [`transaction_view.dart`](../lib/domain/models/transaction_view.dart)
+
+---
+
 <!--
 DONE (2026-07-08): Merchant candidate ranking: real font-size / bounding-box
 signal. Implemented as planned — `services/ocr-api/app/ocr_engine.py` now
