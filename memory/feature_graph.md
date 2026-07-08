@@ -21,7 +21,8 @@ Files:
 - `lib/features/share/ocr_pipeline.dart` (+`_io`/`_web`), `ocr_api_client.dart`, `receipt_parse_file.dart`, `receipt_parse_pipeline.dart`
 - `lib/domain/models/ocr_line.dart` (`OcrLine` — per-line text + `heightRatio`, threaded from `services/ocr-api`'s `run_ocr_detailed()` through `OcrApiResult`/`OcrFileResult` into the parse pipeline, used only by the `'largeText'` candidate tier)
 - `lib/domain/logic/rm_amount_parser.dart`, `merchant_extractor.dart` (`MerchantCandidate`, `extractMerchantCandidates`, `extractOcrHeaderText` — candidate tiers: `header` > `keyword` > `largeText` > `position` > `fallback`), `category_matcher.dart` (+`_bundled`/`_io`), `receipt_line_item_extractor.dart`
-- `lib/features/share/receipt_ingest_draft.dart`, `receipt_summary_card.dart`, `receipt_summary_view_model.dart`, `share_save_sheet.dart`
+- `lib/features/share/receipt_ingest_draft.dart`, `receipt_confirm_sheet.dart` (editable confirmation: item exclude + vendor rename, returns edited draft), `receipt_summary_view_model.dart`, `share_save_sheet.dart`
+- `lib/core/theme/receipt_sheet_theme.dart` + `lib/widgets/receipt_sheet_widgets.dart` — Baloo 2 / cream-gold design tokens and sheet primitives shared with the place picker (design: `docs/design/design_handoff_receipt_flows/`)
 - `lib/data/repositories/transaction_repository.dart` (+`_native`/`_web`), `ingest_receipt_request.dart`
 - `lib/data/repositories/sync_worker.dart` (+`_flutter`/`_stub` — `_flutter.dart` also exposes `buildEnrichmentCompanion()`, the local write-back mapper)
 - `lib/data/local/tables.dart`, `app_database.dart`
@@ -73,7 +74,8 @@ Depends on:
 - `TransactionRepository.updateTransactionPlace()` — new method that sets `placeStatus='user_locked'` and re-queues sync (distinct from the general `updateTransaction()`)
 
 Files:
-- `lib/features/places/place_picker_screen.dart` (new) — full-screen picker, `PlacePickerScreen.push()` static helper
+- `lib/features/places/place_picker_screen.dart` — full-screen picker, `PlacePickerScreen.push()` static helper; restyled 2026-07-09 per `docs/design/design_handoff_receipt_flows/` (full-bleed map, 300 m ring, in-sheet search mode via `PlacesRepository.search`)
+- `lib/core/theme/receipt_sheet_theme.dart`, `lib/widgets/receipt_sheet_widgets.dart` — shared design tokens/primitives (also used by `receipt_confirm_sheet.dart`)
 - `lib/data/repositories/places_repository.dart` — `PlaceCandidate`, `PlacesRepository.fetchNearbyCandidates()`
 - `lib/features/share/share_save_sheet.dart` — pencil icon next to merchant name, pre-save picker wiring
 - `lib/features/tx_detail/transaction_detail_screen.dart` — `_pickPlace()` uses picker when `shareLocationLat/Lng` available

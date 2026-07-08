@@ -11,9 +11,9 @@ import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/models/transaction_view.dart';
 import 'receipt_capture_menu.dart';
+import 'receipt_confirm_sheet.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_ingest_service.dart';
-import 'receipt_summary_card.dart';
 import 'share_save_sheet.dart';
 
 /// Picks a receipt, runs ingest, and shows the save sheet.
@@ -129,16 +129,18 @@ class ReceiptCaptureFlow {
     final categories = await loadBundledCategoryConfig();
     if (!context.mounted) return;
 
-    final proceed = await ReceiptSummaryCard.show(context, draft: draft);
+    // The confirm sheet may hand back an edited draft (renamed vendor,
+    // excluded line items with an adjusted total); null means cancelled.
+    final confirmedDraft = await ReceiptConfirmSheet.show(context, draft: draft);
     if (!context.mounted) return;
-    if (!proceed) {
+    if (confirmedDraft == null) {
       await ReceiptIngestService.discardDraft(draft);
       return;
     }
 
     final saved = await ShareSaveSheet.show(
       context,
-      draft: draft,
+      draft: confirmedDraft,
       categories: categories,
       onSave: (amount, draft, impact) async {
         if (amount == null) return;

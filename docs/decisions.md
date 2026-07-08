@@ -4,6 +4,23 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Receipt-flow design handoff: confirmation sheet + location picker restyle (2026-07-09)
+
+**Decision**: implemented the two high-fidelity screens from the design handoff bundle (checked in at `docs/design/design_handoff_receipt_flows/` — moved there from the untracked `# Budget App Room Backgrounds/` folder it arrived in):
+
+1. **`ReceiptConfirmSheet`** (`lib/features/share/receipt_confirm_sheet.dart`) replaces the read-only `ReceiptSummaryCard` as the post-OCR confirmation step. New behaviors: per-item include/exclude checkboxes with a live-recalculating total, a 4-second Undo banner after an exclusion, and inline vendor rename via the pencil button. `show()` returns an edited `ReceiptIngestDraft?` (null = cancelled) instead of the old bool; the edited draft flows into the unchanged `ShareSaveSheet`. `ReceiptIngestDraft.copyWith` gained `lineItems` for this.
+2. **`PlacePickerScreen`** restyled in place: full-bleed map with a 300 m radius ring (mirrors `SEARCH_RADIUS_METERS` in `place_matching.ts`), gold/neutral candidate pins, a floating back button + search pill, a styled pull-up sheet with a 550 ms slide-up entrance, and an **in-sheet search mode** wired to `PlacesRepository.search` (a picked search result is promoted into the candidate list and selected). The empty-state "Search by name instead" now opens that in-sheet search instead of popping null. Fetch/testability hooks (`candidatesFetcher`, `tileProvider`, new `searchFetcher`) and the `push()` contract are unchanged.
+
+Both screens use their own design language — Baloo 2 (google_fonts) plus a cream/gold token set in `lib/core/theme/receipt_sheet_theme.dart`, shared primitives in `lib/widgets/receipt_sheet_widgets.dart` — per the handoff's "high-fidelity, colors/type/spacing are final" instruction, deliberately distinct from the app-wide Plus Jakarta Sans theme. `AdaptiveSheet.showForm` gained optional `backgroundColor`/`topRadius`/`showDragHandle` (all backward compatible) to host the 28 px cream sheet.
+
+**Reason**: the confirmation step previously offered no way to fix a wrong item list or vendor name without going through the full edit flow, and the picker was plain Material. The handoff mandated pixel-close recreation as Flutter widgets (explicitly not a WebView embed).
+
+**Alternatives considered**: (a) mapping the handoff palette onto the existing `AppColors` theme — rejected, the README marks the tokens as final; (b) total = sum of checked items (the design demo's literal formula) — rejected in favor of *parsed OCR total minus excluded items' prices*, identical when items sum to the total but preserves tax/service charge when they don't; (c) drawing the 500 m ring from the handoff's demo copy — rejected, the ring shows the 300 m radius the backend actually searches.
+
+**Tradeoffs**: two type systems now coexist (Baloo 2 receipt-flow sheets vs Plus Jakarta everywhere else) — if this design language later rolls out app-wide, `receipt_sheet_theme.dart` is the seed. `debugReceiptSheetSystemFont` mirrors the `buildReceiptDropTestTheme` convention to keep Google Fonts fetches out of widget tests — set it in any new test touching these screens. Item exclusions are applied destructively at commit (excluded rows are dropped from the draft, not stored as excluded). The map attribution widget is now visually covered by the full-bleed sheet.
+
+---
+
 ## Post-OCR vendor location picker (2026-07-08)
 
 **Decision**: Added a full-screen Grab-style place picker (`PlacePickerScreen`) accessible via a pencil icon next to the merchant name on the save sheet (pre-save) and the Change place button on transaction detail (post-save). The picker shows ≤5 nearby place candidates ranked by the same text+distance scoring enrichment uses; tapping a row animates the map camera and drops a red pin; Confirm writes `place_status='user_locked'`. Three architecture choices were made:

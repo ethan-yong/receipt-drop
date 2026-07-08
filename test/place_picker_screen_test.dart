@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/core/theme/app_theme.dart';
+import 'package:receipt_drop/core/theme/receipt_sheet_theme.dart';
 import 'package:receipt_drop/data/repositories/places_repository.dart';
 import 'package:receipt_drop/domain/logic/merchant_extractor.dart';
 import 'package:receipt_drop/features/places/place_picker_screen.dart';
+import 'package:receipt_drop/widgets/receipt_sheet_widgets.dart';
 
 // Verified minimal 1×1 transparent PNG — avoids any network requests in tests.
 final _kTransparentPng = Uint8List.fromList([
@@ -61,25 +63,40 @@ NearbyFetcher _makeStub(List<PlaceCandidate> results) => ({
     }) async =>
         results;
 
-Widget _buildPicker(NearbyFetcher fetcher) => MaterialApp(
+Widget _buildPicker(
+  NearbyFetcher fetcher, {
+  PlaceSearchFetcher? searchFetcher,
+}) =>
+    MaterialApp(
       theme: buildReceiptDropTestTheme(),
       home: PlacePickerScreen(
         lat: 3.1234,
         lng: 101.6789,
         candidates: const [],
         candidatesFetcher: fetcher,
+        searchFetcher: searchFetcher,
         tileProvider: _NoNetworkTileProvider(),
       ),
     );
 
-/// Pump the widget and wait for the async fetch to complete.
-/// Returns immediately after the list (or empty state) is visible.
+/// Pump the widget, wait for the async fetch, and run the 550 ms sheet
+/// entrance animation to completion so taps land on settled positions.
 Future<void> _pumpUntilLoaded(WidgetTester tester) async {
   await tester.pump(); // flush the async fetch + setState
   await tester.pump(); // process the post-frame camera-move callback
+  await tester.pump(const Duration(milliseconds: 600)); // sheet slide-up
 }
 
+ReceiptSheetCta _cta(WidgetTester tester) =>
+    tester.widget<ReceiptSheetCta>(find.byType(ReceiptSheetCta));
+
 void main() {
+  setUpAll(() {
+    // No Google Fonts fetches in tests (same reason buildReceiptDropTestTheme
+    // exists).
+    debugReceiptSheetSystemFont = true;
+  });
+
   testWidgets('shows loading indicator then candidate list', (tester) async {
     await tester.pumpWidget(_buildPicker(_makeStub(_candidates)));
 
@@ -91,17 +108,15 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('Mamak Corner'), findsOneWidget);
     expect(find.text('Restoran Nasi Lemak'), findsOneWidget);
+    expect(find.text('2 spots found nearby'), findsOneWidget);
   });
 
-  testWidgets('Confirm button is enabled after first candidate auto-selection',
+  testWidgets('Confirm is enabled after first candidate auto-selection',
       (tester) async {
     await tester.pumpWidget(_buildPicker(_makeStub(_candidates)));
     await _pumpUntilLoaded(tester);
 
-    final btn = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Confirm'),
-    );
-    expect(btn.onPressed, isNotNull);
+    expect(_cta(tester).onPressed, isNotNull);
   });
 
   testWidgets('tapping a row keeps Confirm enabled', (tester) async {
@@ -113,10 +128,7 @@ void main() {
     // Advance past the 550 ms camera animation so it doesn't bleed into later pumps.
     await tester.pump(const Duration(milliseconds: 600));
 
-    final btn = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Confirm'),
-    );
-    expect(btn.onPressed, isNotNull);
+    expect(_cta(tester).onPressed, isNotNull);
   });
 
   testWidgets('Confirm pops with the auto-selected PlaceResult', (tester) async {
@@ -148,9 +160,10 @@ void main() {
 
     await tester.tap(find.text('Open'));
     await tester.pump(); // navigate to picker
-    await _pumpUntilLoaded(tester); // fetch + settle
+    await tester.pump(const Duration(milliseconds: 400)); // route transition
+    await _pumpUntilLoaded(tester); // fetch + sheet entrance
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+    await tester.tap(find.text('Confirm location'));
     await tester.pump(); // initiates pop
     await tester.pump(const Duration(milliseconds: 400)); // route transition
 
@@ -189,13 +202,14 @@ void main() {
 
     await tester.tap(find.text('Open'));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     await _pumpUntilLoaded(tester);
 
     await tester.tap(find.text('Restoran Nasi Lemak'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
 
-    await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+    await tester.tap(find.text('Confirm location'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -203,18 +217,30 @@ void main() {
     expect(returned?.name, 'Restoran Nasi Lemak');
   });
 
-  testWidgets('shows empty state when no candidates returned', (tester) async {
+  testWidgets('empty state opens in-sheet search mode', (tester) async {
     await tester.pumpWidget(_buildPicker(_makeStub(const [])));
     await _pumpUntilLoaded(tester);
 
     expect(find.text('No nearby places found'), findsOneWidget);
-    expect(find.text('Search by name instead'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Confirm'), findsNothing);
+    expect(find.byType(ReceiptSheetCta), findsNothing);
+
+    await tester.tap(find.text('Search by name instead'));
+    await tester.pump();
+
+    expect(find.text('Search for a restaurant or address'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
   });
 
-  testWidgets('Search by name instead pops null', (tester) async {
+  testWidgets('search promotes a picked result and Confirm returns it',
+      (tester) async {
     PlaceResult? returned;
-    bool popped = false;
+    const searchHit = PlaceResult(
+      id: 's1',
+      name: 'Mamak Corner – USJ 1',
+      address: 'Persiaran Subang Permai, USJ',
+      lat: 3.11,
+      lng: 101.61,
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -228,12 +254,12 @@ void main() {
                     lat: 3.1234,
                     lng: 101.6789,
                     candidates: const [],
-                    candidatesFetcher: _makeStub(const []),
+                    candidatesFetcher: _makeStub(_candidates),
+                    searchFetcher: (query, {lat, lng}) async => [searchHit],
                     tileProvider: _NoNetworkTileProvider(),
                   ),
                 ),
               );
-              popped = true;
             },
             child: const Text('Open'),
           ),
@@ -243,13 +269,31 @@ void main() {
 
     await tester.tap(find.text('Open'));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
     await _pumpUntilLoaded(tester);
 
-    await tester.tap(find.text('Search by name instead'));
+    // Tapping the map's search pill opens search mode.
+    await tester.tap(find.text('Which restaurant was this?'));
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), 'mamak usj');
+    await tester.pump(const Duration(milliseconds: 400)); // debounce
+    await tester.pump(); // fetch resolves
+
+    expect(find.text('Mamak Corner – USJ 1'), findsOneWidget);
+
+    await tester.tap(find.text('Mamak Corner – USJ 1'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600)); // camera animation
+
+    // Back in browse mode with the search hit promoted and selected.
+    expect(find.text('3 spots found nearby'), findsOneWidget);
+
+    await tester.tap(find.text('Confirm location'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(popped, isTrue);
-    expect(returned, isNull);
+    expect(returned?.id, 's1');
+    expect(returned?.name, 'Mamak Corner – USJ 1');
   });
 }

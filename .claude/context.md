@@ -15,10 +15,11 @@ Recent commits (newest first) show active work tightening the receipt-parsing/re
 - Mobile OAuth callback + sign-in polish (`8b65379`).
 - Map rebuilt on `flutter_map`/CARTO after Google Maps SDK never had a billing key (`ac17253`, `428ea10`).
 
-**Uncommitted working-tree changes at last check**:
-- `lib/data/repositories/demo_transactions.dart` — demo seed data's `sync` field changed from `pending`/`stuck` to `synced` (cosmetic demo-data tweak, not a behavior change).
-- `supabase/functions/enrich-transaction/index.ts` — reworked to run `searchText` + `searchNearby` concurrently and score/merge candidates via `_shared/place_matching.ts` (dice coefficient + distance decay), replacing the old "take the first text-search result" logic.
-- `supabase/functions/_shared/place_matching.ts` — new file, untracked, backing the above.
+**Uncommitted working-tree changes at last check (2026-07-09)** — receipt-flow design handoff implementation:
+- New `lib/features/share/receipt_confirm_sheet.dart` replaces the deleted `receipt_summary_card.dart` (editable post-OCR confirmation: item exclude with live total + undo, inline vendor rename; `show()` returns an edited `ReceiptIngestDraft?` instead of a bool).
+- `lib/features/places/place_picker_screen.dart` restyled per the handoff (full-bleed map, 300 m ring, in-sheet search mode); `push()` contract unchanged.
+- New `lib/core/theme/receipt_sheet_theme.dart` + `lib/widgets/receipt_sheet_widgets.dart` (Baloo 2 / cream-gold tokens, sheet primitives); `AdaptiveSheet.showForm` gained optional styling params.
+- Design bundle checked in at `docs/design/design_handoff_receipt_flows/`. ADR in `docs/decisions.md` (2026-07-09 entry).
 
 If you're picking this up cold: check `git status`/`git diff` again before assuming this description is still current.
 
