@@ -129,7 +129,9 @@ def perspective_correct(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(
+        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
     if not contours:
         return image
     for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
@@ -172,5 +174,7 @@ def preprocess(image_bytes: bytes) -> np.ndarray:
     rotated = deskew(image)
     upscaled = upscale_for_ocr(rotated)
     return (
-        cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY) if upscaled.ndim == 3 else upscaled
+        cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY)
+        if upscaled.ndim == 3
+        else upscaled
     )

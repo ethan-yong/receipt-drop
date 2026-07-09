@@ -53,7 +53,9 @@ def run_ocr(image: np.ndarray) -> tuple[str, float]:
 
         image = shadow_binarize(image)
 
-    data = pytesseract.image_to_data(image, output_type=Output.DICT, config=_config())
+    data = pytesseract.image_to_data(
+        image, output_type=Output.DICT, config=_config()
+    )
 
     # Group words into lines keyed by Tesseract's block/paragraph/line ids.
     # image_to_data returns rows in reading order, so insertion order of the
