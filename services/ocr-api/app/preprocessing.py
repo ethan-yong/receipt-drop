@@ -167,9 +167,7 @@ def perspective_correct(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
-    contours, _ = cv2.findContours(
-        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         logger.info("perspective: skipped (no contours found)")
         return image
@@ -222,9 +220,7 @@ def preprocess(image_bytes: bytes) -> np.ndarray:
     rotated = deskew(image)
     upscaled = upscale_for_ocr(rotated)
     result = (
-        cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY)
-        if upscaled.ndim == 3
-        else upscaled
+        cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY) if upscaled.ndim == 3 else upscaled
     )
     logger.info(
         "preprocess: finished in %.2fs — ready for OCR at %dx%d",

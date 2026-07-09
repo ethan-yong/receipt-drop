@@ -70,9 +70,7 @@ def _run_tesseract(
     image: np.ndarray, *, label: str
 ) -> tuple[list[OcrLineResult], float]:
     start = time.perf_counter()
-    data = pytesseract.image_to_data(
-        image, output_type=Output.DICT, config=_config()
-    )
+    data = pytesseract.image_to_data(image, output_type=Output.DICT, config=_config())
     elapsed = time.perf_counter() - start
 
     # Group words into lines keyed by Tesseract's block/paragraph/line ids.
