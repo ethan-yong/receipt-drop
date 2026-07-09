@@ -71,7 +71,9 @@ async def test_score_upsert_reads_postgres():
 
     with (
         patch("app.main.verify_bearer") as mock_verify,
-        patch("app.main.fetch_caller_profile_scores", new_callable=AsyncMock) as mock_scores,
+        patch(
+            "app.main.fetch_caller_profile_scores", new_callable=AsyncMock
+        ) as mock_scores,
         patch("app.main.upsert_user_score", new_callable=AsyncMock) as mock_upsert,
     ):
         mock_verify.return_value = type("U", (), {"user_id": me_id})()
@@ -96,7 +98,9 @@ async def test_rebuild_on_empty_zset():
 
     with (
         patch("app.main.zset_cardinality", new_callable=AsyncMock, return_value=0),
-        patch("app.main.rebuild_from_postgres", new_callable=AsyncMock, return_value=2) as mock_rebuild,
+        patch(
+            "app.main.rebuild_from_postgres", new_callable=AsyncMock, return_value=2
+        ) as mock_rebuild,
         patch("app.main.close_redis", new_callable=AsyncMock),
         patch("app.main.close_pool", new_callable=AsyncMock),
     ):

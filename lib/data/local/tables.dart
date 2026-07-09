@@ -59,6 +59,20 @@ class OutboxTransactions extends Table {
 
   RealColumn get ocrConfidence => real().nullable()();
 
+  /// Raw OCR text, kept only when the parse failed or was low-confidence —
+  /// the evidence needed to fix parser rules later.
+  TextColumn get rawOcrText => text().nullable()();
+
+  /// OCR engine's scan-quality confidence (mean word confidence, 0..1).
+  /// Distinct from [ocrConfidence], which scores the amount *extraction*.
+  RealColumn get ocrServiceConfidence => real().nullable()();
+
+  /// Aggregate confidence over extracted line items.
+  RealColumn get lineItemsConfidence => real().nullable()();
+
+  /// Machine-readable reason when amount parsing failed outright.
+  TextColumn get parseFailureReason => text().nullable()();
+
   TextColumn get pipelineStatus =>
       text().withDefault(const Constant('provisional'))();
 
@@ -72,6 +86,15 @@ class OutboxTransactions extends Table {
 
   /// Set after the receipt has been shown in the ritual animation.
   DateTimeColumn get ritualledAt => dateTime().nullable()();
+
+  /// Ranked merchant-name candidates (JSON-encoded `MerchantCandidate` list),
+  /// synced to `transactions.merchant_candidates` (jsonb) so enrichment can
+  /// try more than one Places text-search query.
+  TextColumn get merchantCandidatesJson => text().nullable()();
+
+  /// Top-of-receipt OCR lines, always populated (unlike [rawOcrText], which
+  /// is review-only) — extra context for merchant/place enrichment.
+  TextColumn get ocrHeaderText => text().nullable()();
 
   @override
   Set<Column<Object>>? get primaryKey => {id};
@@ -100,6 +123,37 @@ class OutboxArtifacts extends Table {
 
   DateTimeColumn get createdAt =>
       dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column<Object>>? get primaryKey => {id};
+}
+
+@DataClassName('OutboxLineItem')
+class OutboxLineItems extends Table {
+  @override
+  String get tableName => 'outbox_line_items';
+
+  TextColumn get id => text()();
+
+  TextColumn get userId => text()();
+
+  TextColumn get transactionId => text().references(
+        OutboxTransactions,
+        #id,
+        onDelete: KeyAction.cascade,
+      )();
+
+  TextColumn get name => text()();
+
+  RealColumn get priceMyr => real()();
+
+  IntColumn get quantity => integer().nullable()();
+
+  RealColumn get confidence => real().nullable()();
+
+  /// 0-based position in the parsed item list; SQLite doesn't guarantee row
+  /// order, so this preserves the original OCR order on read.
+  IntColumn get sortOrder => integer()();
 
   @override
   Set<Column<Object>>? get primaryKey => {id};

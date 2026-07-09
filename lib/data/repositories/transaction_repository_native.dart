@@ -1,15 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
-import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../domain/logic/avatar_mood.dart';
+import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/transaction_view.dart';
 import '../local/app_database.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
+import 'places_repository.dart';
 import 'sync_worker.dart';
+
+const bool _kDebugMode = !bool.fromEnvironment('dart.vm.product');
 
 class TransactionRepository {
   TransactionRepository(this._db);
@@ -32,7 +36,8 @@ class TransactionRepository {
     final views = <TransactionView>[];
     for (final row in rows) {
       final path = await _artifactPathFor(row.id);
-      views.add(_mapRow(row, path));
+      final items = await _lineItemsFor(row.id);
+      views.add(_mapRow(row, path, items));
     }
     return views;
   }
@@ -43,7 +48,8 @@ class TransactionRepository {
         .getSingleOrNull();
     if (row == null) return null;
     final path = await _artifactPathFor(id);
-    return _mapRow(row, path);
+    final items = await _lineItemsFor(id);
+    return _mapRow(row, path, items);
   }
 
   Stream<List<TransactionView>> watchUnritualled() {
@@ -70,6 +76,8 @@ class TransactionRepository {
     final artifactId = _uuid.v4();
     final now = DateTime.now();
     final amountSource = request.needsAmount ? null : 'ocr';
+    final pipelineStatus =
+        request.needsReview ? 'needs_review' : 'provisional';
 
     await _db.into(_db.outboxTransactions).insert(
           OutboxTransactionsCompanion.insert(
@@ -81,13 +89,46 @@ class TransactionRepository {
             needsAmount: Value(request.needsAmount),
             merchantRaw: Value(request.merchantRaw),
             categoryGuess: Value(request.categoryGuess),
+            categoryConfidence: Value(request.categoryConfidence),
+            categoryUser: Value(request.categoryUser),
             shareLocationLat: Value(request.shareLocationLat),
             shareLocationLng: Value(request.shareLocationLng),
             shareLocationCapturedAt: Value(request.shareLocationCapturedAt),
             ocrConfidence: Value(request.ocrConfidence),
+            rawOcrText: Value(request.rawOcrText),
+            ocrServiceConfidence: Value(request.ocrServiceConfidence),
+            lineItemsConfidence: Value(request.lineItemsConfidence),
+            parseFailureReason: Value(request.parseFailureReason),
             impactUser: Value(request.impactUser),
             syncStatus: const Value('pending'),
-            pipelineStatus: const Value('provisional'),
+            pipelineStatus: Value(pipelineStatus),
+            merchantCandidatesJson: Value(
+              request.merchantCandidates.isEmpty
+                  ? null
+                  : jsonEncode(
+                      request.merchantCandidates
+                          .map((c) => c.toJson())
+                          .toList(),
+                    ),
+            ),
+            ocrHeaderText: Value(request.ocrHeaderText),
+            placeName: Value(
+              request.pickedPlaceLocked ? request.pickedPlaceName : null,
+            ),
+            placeGooglePlaceId: Value(
+              request.pickedPlaceLocked
+                  ? request.pickedPlaceGooglePlaceId
+                  : null,
+            ),
+            placeLat: Value(
+              request.pickedPlaceLocked ? request.pickedPlaceLat : null,
+            ),
+            placeLng: Value(
+              request.pickedPlaceLocked ? request.pickedPlaceLng : null,
+            ),
+            placeStatus: Value(
+              request.pickedPlaceLocked ? 'user_locked' : 'none',
+            ),
           ),
         );
 
@@ -101,6 +142,24 @@ class TransactionRepository {
           ),
         );
 
+    if (request.lineItems.isNotEmpty) {
+      await _db.batch((batch) {
+        batch.insertAll(_db.outboxLineItems, [
+          for (var i = 0; i < request.lineItems.length; i++)
+            OutboxLineItemsCompanion.insert(
+              id: _uuid.v4(),
+              userId: request.userId,
+              transactionId: id,
+              name: request.lineItems[i].name,
+              priceMyr: request.lineItems[i].priceMyr,
+              quantity: Value(request.lineItems[i].quantity),
+              confidence: Value(request.lineItems[i].confidence),
+              sortOrder: i,
+            ),
+        ]);
+      });
+    }
+
     unawaited(SyncWorker.run(_db, id));
 
     return TransactionView(
@@ -111,17 +170,66 @@ class TransactionRepository {
       merchantRaw: request.merchantRaw,
       categoryGuess: request.categoryGuess,
       categoryUser: null,
-      placeName: null,
-      placeGooglePlaceId: null,
-      placeLat: request.shareLocationLat,
-      placeLng: request.shareLocationLng,
+      placeName: request.pickedPlaceLocked ? request.pickedPlaceName : null,
+      placeGooglePlaceId:
+          request.pickedPlaceLocked
+              ? request.pickedPlaceGooglePlaceId
+              : null,
+      placeLat:
+          request.pickedPlaceLocked
+              ? request.pickedPlaceLat
+              : request.shareLocationLat,
+      placeLng:
+          request.pickedPlaceLocked
+              ? request.pickedPlaceLng
+              : request.shareLocationLng,
       syncStatus: 'pending',
-      pipelineStatus: 'provisional',
+      pipelineStatus: pipelineStatus,
       localThumbnailPath: request.localFilePath,
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
       ritualledAt: null,
+      lineItems: request.lineItems,
+      rawOcrText: request.rawOcrText,
+      ocrConfidence: request.ocrConfidence,
+      shareLocationLat: request.shareLocationLat,
+      shareLocationLng: request.shareLocationLng,
     );
+  }
+
+  /// Receipts parked in the review queue, newest first.
+  Stream<List<TransactionView>> watchNeedsReview() {
+    return (_db.select(_db.outboxTransactions)
+          ..where((t) => t.pipelineStatus.equals('needs_review'))
+          ..orderBy([
+            (t) => OrderingTerm.desc(t.occurredAt),
+          ]))
+        .watch()
+        .asyncMap(_rowsToViews);
+  }
+
+  /// One-tap confirmation from the review screen: sets the user-entered
+  /// amount, releases the row back into the normal pipeline, and re-queues
+  /// sync (plain updates never re-sync on their own).
+  Future<void> confirmReview(
+    String id,
+    double amountMyr, {
+    String? impactUser,
+  }) async {
+    await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(id)))
+        .write(
+      OutboxTransactionsCompanion(
+        amountMyr: Value(amountMyr),
+        needsAmount: const Value(false),
+        amountSource: const Value('user'),
+        pipelineStatus: const Value('provisional'),
+        syncStatus: const Value('pending'),
+        retryCount: const Value(0),
+        impactUser:
+            impactUser != null ? Value(impactUser) : const Value.absent(),
+      ),
+    );
+    unawaited(SyncWorker.run(_db, id));
   }
 
   Future<void> updateTransaction(TransactionView view) async {
@@ -140,6 +248,22 @@ class TransactionRepository {
         impactUser: Value(view.impactUser),
       ),
     );
+  }
+
+  Future<void> updateTransactionPlace(String id, PlaceResult place) async {
+    await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(id)))
+        .write(
+      OutboxTransactionsCompanion(
+        placeName: Value(place.name),
+        placeGooglePlaceId: Value(place.id),
+        placeLat: Value(place.lat),
+        placeLng: Value(place.lng),
+        placeStatus: const Value('user_locked'),
+        syncStatus: const Value('pending'),
+        retryCount: const Value(0),
+      ),
+    );
+    unawaited(SyncWorker.run(_db, id));
   }
 
   Future<void> retryStuckSync() async {
@@ -206,7 +330,7 @@ class TransactionRepository {
   }
 
   Future<void> seedReceiptShowcaseIfEmpty({String userId = 'demo-user'}) async {
-    if (!kDebugMode) return;
+    if (!_kDebugMode) return;
 
     final rows = await _db.select(_db.outboxTransactions).get();
     final views = await _rowsToViews(rows);
@@ -241,7 +365,26 @@ class TransactionRepository {
     return artifact?.localFilePath;
   }
 
-  TransactionView _mapRow(OutboxTransaction row, String? localPath) {
+  Future<List<ReceiptLineItem>> _lineItemsFor(String transactionId) async {
+    final rows = await (_db.select(_db.outboxLineItems)
+          ..where((li) => li.transactionId.equals(transactionId))
+          ..orderBy([(li) => OrderingTerm.asc(li.sortOrder)]))
+        .get();
+    return rows
+        .map((r) => ReceiptLineItem(
+              name: r.name,
+              priceMyr: r.priceMyr,
+              quantity: r.quantity,
+              confidence: r.confidence,
+            ))
+        .toList();
+  }
+
+  TransactionView _mapRow(
+    OutboxTransaction row,
+    String? localPath,
+    List<ReceiptLineItem> lineItems,
+  ) {
     return TransactionView(
       id: row.id,
       occurredAt: row.occurredAt,
@@ -259,6 +402,11 @@ class TransactionRepository {
       localThumbnailPath: localPath,
       impactUser: row.impactUser,
       ritualledAt: row.ritualledAt,
+      lineItems: lineItems,
+      rawOcrText: row.rawOcrText,
+      ocrConfidence: row.ocrConfidence,
+      shareLocationLat: row.shareLocationLat,
+      shareLocationLng: row.shareLocationLng,
     );
   }
 }

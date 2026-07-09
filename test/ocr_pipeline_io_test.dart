@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/features/share/ocr_pipeline_io.dart';
+import 'package:receipt_drop/features/share/ocr_pipeline_io.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -24,15 +24,17 @@ void main() {
     ocrLogger = fakeLogger;
   });
 
-  test('logs and returns empty string when image OCR fails', () async {
+  test('returns empty when OCR API is not configured', () async {
     final result = await runOcrOnReceiptFile(
       filePath: 'nonexistent-receipt.jpg',
       mimeType: 'image/jpeg',
     );
 
-    expect(result, isEmpty);
-    expect(captured, isNotEmpty);
-    expect(captured.any((c) => c.error != null), isTrue);
+    expect(result.text, isEmpty);
+    expect(
+      captured.any((c) => c.message.contains('OCR unavailable')),
+      isTrue,
+    );
   });
 
   test('logs and returns empty string when PDF extraction fails', () async {
@@ -41,7 +43,7 @@ void main() {
       mimeType: 'application/pdf',
     );
 
-    expect(result, isEmpty);
+    expect(result.text, isEmpty);
     expect(captured, isNotEmpty);
     expect(captured.any((c) => c.error != null), isTrue);
   });

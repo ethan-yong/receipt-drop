@@ -69,6 +69,9 @@ abstract final class AdaptiveSheet {
     required BuildContext context,
     required Widget child,
     bool isScrollControlled = true,
+    Color? backgroundColor,
+    double? topRadius,
+    bool showDragHandle = true,
   }) {
     if (PlatformUtils.isCupertino) {
       return showCupertinoModalPopup<T>(
@@ -84,9 +87,11 @@ abstract final class AdaptiveSheet {
                   maxHeight: MediaQuery.sizeOf(ctx).height * 0.92,
                 ),
                 margin: const EdgeInsets.only(top: 48),
-                decoration: const BoxDecoration(
-                  color: AppColors.cardSurface,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                decoration: BoxDecoration(
+                  color: backgroundColor ?? AppColors.cardSurface,
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(topRadius ?? 16),
+                  ),
                 ),
                 child: Padding(
                   padding: EdgeInsets.only(bottom: bottom),
@@ -102,7 +107,15 @@ abstract final class AdaptiveSheet {
     return showModalBottomSheet<T>(
       context: context,
       isScrollControlled: isScrollControlled,
-      showDragHandle: true,
+      showDragHandle: showDragHandle,
+      backgroundColor: backgroundColor,
+      shape: topRadius != null
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(topRadius),
+              ),
+            )
+          : null,
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.viewInsetsOf(ctx).bottom,

@@ -265,6 +265,50 @@ class $OutboxTransactionsTable extends OutboxTransactions
     type: DriftSqlType.double,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _rawOcrTextMeta = const VerificationMeta(
+    'rawOcrText',
+  );
+  @override
+  late final GeneratedColumn<String> rawOcrText = GeneratedColumn<String>(
+    'raw_ocr_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ocrServiceConfidenceMeta =
+      const VerificationMeta('ocrServiceConfidence');
+  @override
+  late final GeneratedColumn<double> ocrServiceConfidence =
+      GeneratedColumn<double>(
+        'ocr_service_confidence',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _lineItemsConfidenceMeta =
+      const VerificationMeta('lineItemsConfidence');
+  @override
+  late final GeneratedColumn<double> lineItemsConfidence =
+      GeneratedColumn<double>(
+        'line_items_confidence',
+        aliasedName,
+        true,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _parseFailureReasonMeta =
+      const VerificationMeta('parseFailureReason');
+  @override
+  late final GeneratedColumn<String> parseFailureReason =
+      GeneratedColumn<String>(
+        'parse_failure_reason',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _pipelineStatusMeta = const VerificationMeta(
     'pipelineStatus',
   );
@@ -323,6 +367,28 @@ class $OutboxTransactionsTable extends OutboxTransactions
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _merchantCandidatesJsonMeta =
+      const VerificationMeta('merchantCandidatesJson');
+  @override
+  late final GeneratedColumn<String> merchantCandidatesJson =
+      GeneratedColumn<String>(
+        'merchant_candidates_json',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _ocrHeaderTextMeta = const VerificationMeta(
+    'ocrHeaderText',
+  );
+  @override
+  late final GeneratedColumn<String> ocrHeaderText = GeneratedColumn<String>(
+    'ocr_header_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -348,11 +414,17 @@ class $OutboxTransactionsTable extends OutboxTransactions
     shareLocationLng,
     shareLocationCapturedAt,
     ocrConfidence,
+    rawOcrText,
+    ocrServiceConfidence,
+    lineItemsConfidence,
+    parseFailureReason,
     pipelineStatus,
     syncStatus,
     lastError,
     retryCount,
     ritualledAt,
+    merchantCandidatesJson,
+    ocrHeaderText,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -547,6 +619,42 @@ class $OutboxTransactionsTable extends OutboxTransactions
         ),
       );
     }
+    if (data.containsKey('raw_ocr_text')) {
+      context.handle(
+        _rawOcrTextMeta,
+        rawOcrText.isAcceptableOrUnknown(
+          data['raw_ocr_text']!,
+          _rawOcrTextMeta,
+        ),
+      );
+    }
+    if (data.containsKey('ocr_service_confidence')) {
+      context.handle(
+        _ocrServiceConfidenceMeta,
+        ocrServiceConfidence.isAcceptableOrUnknown(
+          data['ocr_service_confidence']!,
+          _ocrServiceConfidenceMeta,
+        ),
+      );
+    }
+    if (data.containsKey('line_items_confidence')) {
+      context.handle(
+        _lineItemsConfidenceMeta,
+        lineItemsConfidence.isAcceptableOrUnknown(
+          data['line_items_confidence']!,
+          _lineItemsConfidenceMeta,
+        ),
+      );
+    }
+    if (data.containsKey('parse_failure_reason')) {
+      context.handle(
+        _parseFailureReasonMeta,
+        parseFailureReason.isAcceptableOrUnknown(
+          data['parse_failure_reason']!,
+          _parseFailureReasonMeta,
+        ),
+      );
+    }
     if (data.containsKey('pipeline_status')) {
       context.handle(
         _pipelineStatusMeta,
@@ -580,6 +688,24 @@ class $OutboxTransactionsTable extends OutboxTransactions
         ritualledAt.isAcceptableOrUnknown(
           data['ritualled_at']!,
           _ritualledAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('merchant_candidates_json')) {
+      context.handle(
+        _merchantCandidatesJsonMeta,
+        merchantCandidatesJson.isAcceptableOrUnknown(
+          data['merchant_candidates_json']!,
+          _merchantCandidatesJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('ocr_header_text')) {
+      context.handle(
+        _ocrHeaderTextMeta,
+        ocrHeaderText.isAcceptableOrUnknown(
+          data['ocr_header_text']!,
+          _ocrHeaderTextMeta,
         ),
       );
     }
@@ -684,6 +810,22 @@ class $OutboxTransactionsTable extends OutboxTransactions
         DriftSqlType.double,
         data['${effectivePrefix}ocr_confidence'],
       ),
+      rawOcrText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}raw_ocr_text'],
+      ),
+      ocrServiceConfidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}ocr_service_confidence'],
+      ),
+      lineItemsConfidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}line_items_confidence'],
+      ),
+      parseFailureReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parse_failure_reason'],
+      ),
       pipelineStatus: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}pipeline_status'],
@@ -703,6 +845,14 @@ class $OutboxTransactionsTable extends OutboxTransactions
       ritualledAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}ritualled_at'],
+      ),
+      merchantCandidatesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}merchant_candidates_json'],
+      ),
+      ocrHeaderText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ocr_header_text'],
       ),
     );
   }
@@ -742,6 +892,20 @@ class OutboxTransaction extends DataClass
   final double? shareLocationLng;
   final DateTime? shareLocationCapturedAt;
   final double? ocrConfidence;
+
+  /// Raw OCR text, kept only when the parse failed or was low-confidence —
+  /// the evidence needed to fix parser rules later.
+  final String? rawOcrText;
+
+  /// OCR engine's scan-quality confidence (mean word confidence, 0..1).
+  /// Distinct from [ocrConfidence], which scores the amount *extraction*.
+  final double? ocrServiceConfidence;
+
+  /// Aggregate confidence over extracted line items.
+  final double? lineItemsConfidence;
+
+  /// Machine-readable reason when amount parsing failed outright.
+  final String? parseFailureReason;
   final String pipelineStatus;
   final String syncStatus;
   final String? lastError;
@@ -749,6 +913,15 @@ class OutboxTransaction extends DataClass
 
   /// Set after the receipt has been shown in the ritual animation.
   final DateTime? ritualledAt;
+
+  /// Ranked merchant-name candidates (JSON-encoded `MerchantCandidate` list),
+  /// synced to `transactions.merchant_candidates` (jsonb) so enrichment can
+  /// try more than one Places text-search query.
+  final String? merchantCandidatesJson;
+
+  /// Top-of-receipt OCR lines, always populated (unlike [rawOcrText], which
+  /// is review-only) — extra context for merchant/place enrichment.
+  final String? ocrHeaderText;
   const OutboxTransaction({
     required this.id,
     required this.userId,
@@ -773,11 +946,17 @@ class OutboxTransaction extends DataClass
     this.shareLocationLng,
     this.shareLocationCapturedAt,
     this.ocrConfidence,
+    this.rawOcrText,
+    this.ocrServiceConfidence,
+    this.lineItemsConfidence,
+    this.parseFailureReason,
     required this.pipelineStatus,
     required this.syncStatus,
     this.lastError,
     required this.retryCount,
     this.ritualledAt,
+    this.merchantCandidatesJson,
+    this.ocrHeaderText,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -841,6 +1020,18 @@ class OutboxTransaction extends DataClass
     if (!nullToAbsent || ocrConfidence != null) {
       map['ocr_confidence'] = Variable<double>(ocrConfidence);
     }
+    if (!nullToAbsent || rawOcrText != null) {
+      map['raw_ocr_text'] = Variable<String>(rawOcrText);
+    }
+    if (!nullToAbsent || ocrServiceConfidence != null) {
+      map['ocr_service_confidence'] = Variable<double>(ocrServiceConfidence);
+    }
+    if (!nullToAbsent || lineItemsConfidence != null) {
+      map['line_items_confidence'] = Variable<double>(lineItemsConfidence);
+    }
+    if (!nullToAbsent || parseFailureReason != null) {
+      map['parse_failure_reason'] = Variable<String>(parseFailureReason);
+    }
     map['pipeline_status'] = Variable<String>(pipelineStatus);
     map['sync_status'] = Variable<String>(syncStatus);
     if (!nullToAbsent || lastError != null) {
@@ -849,6 +1040,14 @@ class OutboxTransaction extends DataClass
     map['retry_count'] = Variable<int>(retryCount);
     if (!nullToAbsent || ritualledAt != null) {
       map['ritualled_at'] = Variable<DateTime>(ritualledAt);
+    }
+    if (!nullToAbsent || merchantCandidatesJson != null) {
+      map['merchant_candidates_json'] = Variable<String>(
+        merchantCandidatesJson,
+      );
+    }
+    if (!nullToAbsent || ocrHeaderText != null) {
+      map['ocr_header_text'] = Variable<String>(ocrHeaderText);
     }
     return map;
   }
@@ -912,6 +1111,18 @@ class OutboxTransaction extends DataClass
       ocrConfidence: ocrConfidence == null && nullToAbsent
           ? const Value.absent()
           : Value(ocrConfidence),
+      rawOcrText: rawOcrText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rawOcrText),
+      ocrServiceConfidence: ocrServiceConfidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ocrServiceConfidence),
+      lineItemsConfidence: lineItemsConfidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lineItemsConfidence),
+      parseFailureReason: parseFailureReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parseFailureReason),
       pipelineStatus: Value(pipelineStatus),
       syncStatus: Value(syncStatus),
       lastError: lastError == null && nullToAbsent
@@ -921,6 +1132,12 @@ class OutboxTransaction extends DataClass
       ritualledAt: ritualledAt == null && nullToAbsent
           ? const Value.absent()
           : Value(ritualledAt),
+      merchantCandidatesJson: merchantCandidatesJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(merchantCandidatesJson),
+      ocrHeaderText: ocrHeaderText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ocrHeaderText),
     );
   }
 
@@ -961,11 +1178,25 @@ class OutboxTransaction extends DataClass
         json['shareLocationCapturedAt'],
       ),
       ocrConfidence: serializer.fromJson<double?>(json['ocrConfidence']),
+      rawOcrText: serializer.fromJson<String?>(json['rawOcrText']),
+      ocrServiceConfidence: serializer.fromJson<double?>(
+        json['ocrServiceConfidence'],
+      ),
+      lineItemsConfidence: serializer.fromJson<double?>(
+        json['lineItemsConfidence'],
+      ),
+      parseFailureReason: serializer.fromJson<String?>(
+        json['parseFailureReason'],
+      ),
       pipelineStatus: serializer.fromJson<String>(json['pipelineStatus']),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       lastError: serializer.fromJson<String?>(json['lastError']),
       retryCount: serializer.fromJson<int>(json['retryCount']),
       ritualledAt: serializer.fromJson<DateTime?>(json['ritualledAt']),
+      merchantCandidatesJson: serializer.fromJson<String?>(
+        json['merchantCandidatesJson'],
+      ),
+      ocrHeaderText: serializer.fromJson<String?>(json['ocrHeaderText']),
     );
   }
   @override
@@ -997,11 +1228,19 @@ class OutboxTransaction extends DataClass
         shareLocationCapturedAt,
       ),
       'ocrConfidence': serializer.toJson<double?>(ocrConfidence),
+      'rawOcrText': serializer.toJson<String?>(rawOcrText),
+      'ocrServiceConfidence': serializer.toJson<double?>(ocrServiceConfidence),
+      'lineItemsConfidence': serializer.toJson<double?>(lineItemsConfidence),
+      'parseFailureReason': serializer.toJson<String?>(parseFailureReason),
       'pipelineStatus': serializer.toJson<String>(pipelineStatus),
       'syncStatus': serializer.toJson<String>(syncStatus),
       'lastError': serializer.toJson<String?>(lastError),
       'retryCount': serializer.toJson<int>(retryCount),
       'ritualledAt': serializer.toJson<DateTime?>(ritualledAt),
+      'merchantCandidatesJson': serializer.toJson<String?>(
+        merchantCandidatesJson,
+      ),
+      'ocrHeaderText': serializer.toJson<String?>(ocrHeaderText),
     };
   }
 
@@ -1029,11 +1268,17 @@ class OutboxTransaction extends DataClass
     Value<double?> shareLocationLng = const Value.absent(),
     Value<DateTime?> shareLocationCapturedAt = const Value.absent(),
     Value<double?> ocrConfidence = const Value.absent(),
+    Value<String?> rawOcrText = const Value.absent(),
+    Value<double?> ocrServiceConfidence = const Value.absent(),
+    Value<double?> lineItemsConfidence = const Value.absent(),
+    Value<String?> parseFailureReason = const Value.absent(),
     String? pipelineStatus,
     String? syncStatus,
     Value<String?> lastError = const Value.absent(),
     int? retryCount,
     Value<DateTime?> ritualledAt = const Value.absent(),
+    Value<String?> merchantCandidatesJson = const Value.absent(),
+    Value<String?> ocrHeaderText = const Value.absent(),
   }) => OutboxTransaction(
     id: id ?? this.id,
     userId: userId ?? this.userId,
@@ -1076,11 +1321,27 @@ class OutboxTransaction extends DataClass
     ocrConfidence: ocrConfidence.present
         ? ocrConfidence.value
         : this.ocrConfidence,
+    rawOcrText: rawOcrText.present ? rawOcrText.value : this.rawOcrText,
+    ocrServiceConfidence: ocrServiceConfidence.present
+        ? ocrServiceConfidence.value
+        : this.ocrServiceConfidence,
+    lineItemsConfidence: lineItemsConfidence.present
+        ? lineItemsConfidence.value
+        : this.lineItemsConfidence,
+    parseFailureReason: parseFailureReason.present
+        ? parseFailureReason.value
+        : this.parseFailureReason,
     pipelineStatus: pipelineStatus ?? this.pipelineStatus,
     syncStatus: syncStatus ?? this.syncStatus,
     lastError: lastError.present ? lastError.value : this.lastError,
     retryCount: retryCount ?? this.retryCount,
     ritualledAt: ritualledAt.present ? ritualledAt.value : this.ritualledAt,
+    merchantCandidatesJson: merchantCandidatesJson.present
+        ? merchantCandidatesJson.value
+        : this.merchantCandidatesJson,
+    ocrHeaderText: ocrHeaderText.present
+        ? ocrHeaderText.value
+        : this.ocrHeaderText,
   );
   OutboxTransaction copyWithCompanion(OutboxTransactionsCompanion data) {
     return OutboxTransaction(
@@ -1139,6 +1400,18 @@ class OutboxTransaction extends DataClass
       ocrConfidence: data.ocrConfidence.present
           ? data.ocrConfidence.value
           : this.ocrConfidence,
+      rawOcrText: data.rawOcrText.present
+          ? data.rawOcrText.value
+          : this.rawOcrText,
+      ocrServiceConfidence: data.ocrServiceConfidence.present
+          ? data.ocrServiceConfidence.value
+          : this.ocrServiceConfidence,
+      lineItemsConfidence: data.lineItemsConfidence.present
+          ? data.lineItemsConfidence.value
+          : this.lineItemsConfidence,
+      parseFailureReason: data.parseFailureReason.present
+          ? data.parseFailureReason.value
+          : this.parseFailureReason,
       pipelineStatus: data.pipelineStatus.present
           ? data.pipelineStatus.value
           : this.pipelineStatus,
@@ -1152,6 +1425,12 @@ class OutboxTransaction extends DataClass
       ritualledAt: data.ritualledAt.present
           ? data.ritualledAt.value
           : this.ritualledAt,
+      merchantCandidatesJson: data.merchantCandidatesJson.present
+          ? data.merchantCandidatesJson.value
+          : this.merchantCandidatesJson,
+      ocrHeaderText: data.ocrHeaderText.present
+          ? data.ocrHeaderText.value
+          : this.ocrHeaderText,
     );
   }
 
@@ -1181,11 +1460,17 @@ class OutboxTransaction extends DataClass
           ..write('shareLocationLng: $shareLocationLng, ')
           ..write('shareLocationCapturedAt: $shareLocationCapturedAt, ')
           ..write('ocrConfidence: $ocrConfidence, ')
+          ..write('rawOcrText: $rawOcrText, ')
+          ..write('ocrServiceConfidence: $ocrServiceConfidence, ')
+          ..write('lineItemsConfidence: $lineItemsConfidence, ')
+          ..write('parseFailureReason: $parseFailureReason, ')
           ..write('pipelineStatus: $pipelineStatus, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
           ..write('retryCount: $retryCount, ')
-          ..write('ritualledAt: $ritualledAt')
+          ..write('ritualledAt: $ritualledAt, ')
+          ..write('merchantCandidatesJson: $merchantCandidatesJson, ')
+          ..write('ocrHeaderText: $ocrHeaderText')
           ..write(')'))
         .toString();
   }
@@ -1215,11 +1500,17 @@ class OutboxTransaction extends DataClass
     shareLocationLng,
     shareLocationCapturedAt,
     ocrConfidence,
+    rawOcrText,
+    ocrServiceConfidence,
+    lineItemsConfidence,
+    parseFailureReason,
     pipelineStatus,
     syncStatus,
     lastError,
     retryCount,
     ritualledAt,
+    merchantCandidatesJson,
+    ocrHeaderText,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1248,11 +1539,17 @@ class OutboxTransaction extends DataClass
           other.shareLocationLng == this.shareLocationLng &&
           other.shareLocationCapturedAt == this.shareLocationCapturedAt &&
           other.ocrConfidence == this.ocrConfidence &&
+          other.rawOcrText == this.rawOcrText &&
+          other.ocrServiceConfidence == this.ocrServiceConfidence &&
+          other.lineItemsConfidence == this.lineItemsConfidence &&
+          other.parseFailureReason == this.parseFailureReason &&
           other.pipelineStatus == this.pipelineStatus &&
           other.syncStatus == this.syncStatus &&
           other.lastError == this.lastError &&
           other.retryCount == this.retryCount &&
-          other.ritualledAt == this.ritualledAt);
+          other.ritualledAt == this.ritualledAt &&
+          other.merchantCandidatesJson == this.merchantCandidatesJson &&
+          other.ocrHeaderText == this.ocrHeaderText);
 }
 
 class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
@@ -1279,11 +1576,17 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
   final Value<double?> shareLocationLng;
   final Value<DateTime?> shareLocationCapturedAt;
   final Value<double?> ocrConfidence;
+  final Value<String?> rawOcrText;
+  final Value<double?> ocrServiceConfidence;
+  final Value<double?> lineItemsConfidence;
+  final Value<String?> parseFailureReason;
   final Value<String> pipelineStatus;
   final Value<String> syncStatus;
   final Value<String?> lastError;
   final Value<int> retryCount;
   final Value<DateTime?> ritualledAt;
+  final Value<String?> merchantCandidatesJson;
+  final Value<String?> ocrHeaderText;
   final Value<int> rowid;
   const OutboxTransactionsCompanion({
     this.id = const Value.absent(),
@@ -1309,11 +1612,17 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.shareLocationLng = const Value.absent(),
     this.shareLocationCapturedAt = const Value.absent(),
     this.ocrConfidence = const Value.absent(),
+    this.rawOcrText = const Value.absent(),
+    this.ocrServiceConfidence = const Value.absent(),
+    this.lineItemsConfidence = const Value.absent(),
+    this.parseFailureReason = const Value.absent(),
     this.pipelineStatus = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.lastError = const Value.absent(),
     this.retryCount = const Value.absent(),
     this.ritualledAt = const Value.absent(),
+    this.merchantCandidatesJson = const Value.absent(),
+    this.ocrHeaderText = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   OutboxTransactionsCompanion.insert({
@@ -1340,11 +1649,17 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.shareLocationLng = const Value.absent(),
     this.shareLocationCapturedAt = const Value.absent(),
     this.ocrConfidence = const Value.absent(),
+    this.rawOcrText = const Value.absent(),
+    this.ocrServiceConfidence = const Value.absent(),
+    this.lineItemsConfidence = const Value.absent(),
+    this.parseFailureReason = const Value.absent(),
     this.pipelineStatus = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.lastError = const Value.absent(),
     this.retryCount = const Value.absent(),
     this.ritualledAt = const Value.absent(),
+    this.merchantCandidatesJson = const Value.absent(),
+    this.ocrHeaderText = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        userId = Value(userId);
@@ -1372,11 +1687,17 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Expression<double>? shareLocationLng,
     Expression<DateTime>? shareLocationCapturedAt,
     Expression<double>? ocrConfidence,
+    Expression<String>? rawOcrText,
+    Expression<double>? ocrServiceConfidence,
+    Expression<double>? lineItemsConfidence,
+    Expression<String>? parseFailureReason,
     Expression<String>? pipelineStatus,
     Expression<String>? syncStatus,
     Expression<String>? lastError,
     Expression<int>? retryCount,
     Expression<DateTime>? ritualledAt,
+    Expression<String>? merchantCandidatesJson,
+    Expression<String>? ocrHeaderText,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1405,11 +1726,21 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       if (shareLocationCapturedAt != null)
         'share_location_captured_at': shareLocationCapturedAt,
       if (ocrConfidence != null) 'ocr_confidence': ocrConfidence,
+      if (rawOcrText != null) 'raw_ocr_text': rawOcrText,
+      if (ocrServiceConfidence != null)
+        'ocr_service_confidence': ocrServiceConfidence,
+      if (lineItemsConfidence != null)
+        'line_items_confidence': lineItemsConfidence,
+      if (parseFailureReason != null)
+        'parse_failure_reason': parseFailureReason,
       if (pipelineStatus != null) 'pipeline_status': pipelineStatus,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (lastError != null) 'last_error': lastError,
       if (retryCount != null) 'retry_count': retryCount,
       if (ritualledAt != null) 'ritualled_at': ritualledAt,
+      if (merchantCandidatesJson != null)
+        'merchant_candidates_json': merchantCandidatesJson,
+      if (ocrHeaderText != null) 'ocr_header_text': ocrHeaderText,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1438,11 +1769,17 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Value<double?>? shareLocationLng,
     Value<DateTime?>? shareLocationCapturedAt,
     Value<double?>? ocrConfidence,
+    Value<String?>? rawOcrText,
+    Value<double?>? ocrServiceConfidence,
+    Value<double?>? lineItemsConfidence,
+    Value<String?>? parseFailureReason,
     Value<String>? pipelineStatus,
     Value<String>? syncStatus,
     Value<String?>? lastError,
     Value<int>? retryCount,
     Value<DateTime?>? ritualledAt,
+    Value<String?>? merchantCandidatesJson,
+    Value<String?>? ocrHeaderText,
     Value<int>? rowid,
   }) {
     return OutboxTransactionsCompanion(
@@ -1470,11 +1807,18 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       shareLocationCapturedAt:
           shareLocationCapturedAt ?? this.shareLocationCapturedAt,
       ocrConfidence: ocrConfidence ?? this.ocrConfidence,
+      rawOcrText: rawOcrText ?? this.rawOcrText,
+      ocrServiceConfidence: ocrServiceConfidence ?? this.ocrServiceConfidence,
+      lineItemsConfidence: lineItemsConfidence ?? this.lineItemsConfidence,
+      parseFailureReason: parseFailureReason ?? this.parseFailureReason,
       pipelineStatus: pipelineStatus ?? this.pipelineStatus,
       syncStatus: syncStatus ?? this.syncStatus,
       lastError: lastError ?? this.lastError,
       retryCount: retryCount ?? this.retryCount,
       ritualledAt: ritualledAt ?? this.ritualledAt,
+      merchantCandidatesJson:
+          merchantCandidatesJson ?? this.merchantCandidatesJson,
+      ocrHeaderText: ocrHeaderText ?? this.ocrHeaderText,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1553,6 +1897,22 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     if (ocrConfidence.present) {
       map['ocr_confidence'] = Variable<double>(ocrConfidence.value);
     }
+    if (rawOcrText.present) {
+      map['raw_ocr_text'] = Variable<String>(rawOcrText.value);
+    }
+    if (ocrServiceConfidence.present) {
+      map['ocr_service_confidence'] = Variable<double>(
+        ocrServiceConfidence.value,
+      );
+    }
+    if (lineItemsConfidence.present) {
+      map['line_items_confidence'] = Variable<double>(
+        lineItemsConfidence.value,
+      );
+    }
+    if (parseFailureReason.present) {
+      map['parse_failure_reason'] = Variable<String>(parseFailureReason.value);
+    }
     if (pipelineStatus.present) {
       map['pipeline_status'] = Variable<String>(pipelineStatus.value);
     }
@@ -1567,6 +1927,14 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     }
     if (ritualledAt.present) {
       map['ritualled_at'] = Variable<DateTime>(ritualledAt.value);
+    }
+    if (merchantCandidatesJson.present) {
+      map['merchant_candidates_json'] = Variable<String>(
+        merchantCandidatesJson.value,
+      );
+    }
+    if (ocrHeaderText.present) {
+      map['ocr_header_text'] = Variable<String>(ocrHeaderText.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -1600,11 +1968,17 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           ..write('shareLocationLng: $shareLocationLng, ')
           ..write('shareLocationCapturedAt: $shareLocationCapturedAt, ')
           ..write('ocrConfidence: $ocrConfidence, ')
+          ..write('rawOcrText: $rawOcrText, ')
+          ..write('ocrServiceConfidence: $ocrServiceConfidence, ')
+          ..write('lineItemsConfidence: $lineItemsConfidence, ')
+          ..write('parseFailureReason: $parseFailureReason, ')
           ..write('pipelineStatus: $pipelineStatus, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
           ..write('retryCount: $retryCount, ')
           ..write('ritualledAt: $ritualledAt, ')
+          ..write('merchantCandidatesJson: $merchantCandidatesJson, ')
+          ..write('ocrHeaderText: $ocrHeaderText, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2090,6 +2464,529 @@ class OutboxArtifactsCompanion extends UpdateCompanion<OutboxArtifact> {
   }
 }
 
+class $OutboxLineItemsTable extends OutboxLineItems
+    with TableInfo<$OutboxLineItemsTable, OutboxLineItem> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $OutboxLineItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _transactionIdMeta = const VerificationMeta(
+    'transactionId',
+  );
+  @override
+  late final GeneratedColumn<String> transactionId = GeneratedColumn<String>(
+    'transaction_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES outbox_transactions (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _priceMyrMeta = const VerificationMeta(
+    'priceMyr',
+  );
+  @override
+  late final GeneratedColumn<double> priceMyr = GeneratedColumn<double>(
+    'price_myr',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _quantityMeta = const VerificationMeta(
+    'quantity',
+  );
+  @override
+  late final GeneratedColumn<int> quantity = GeneratedColumn<int>(
+    'quantity',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    transactionId,
+    name,
+    priceMyr,
+    quantity,
+    confidence,
+    sortOrder,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'outbox_line_items';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<OutboxLineItem> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('transaction_id')) {
+      context.handle(
+        _transactionIdMeta,
+        transactionId.isAcceptableOrUnknown(
+          data['transaction_id']!,
+          _transactionIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_transactionIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('price_myr')) {
+      context.handle(
+        _priceMyrMeta,
+        priceMyr.isAcceptableOrUnknown(data['price_myr']!, _priceMyrMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_priceMyrMeta);
+    }
+    if (data.containsKey('quantity')) {
+      context.handle(
+        _quantityMeta,
+        quantity.isAcceptableOrUnknown(data['quantity']!, _quantityMeta),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sortOrderMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  OutboxLineItem map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return OutboxLineItem(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      transactionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transaction_id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      priceMyr: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}price_myr'],
+      )!,
+      quantity: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}quantity'],
+      ),
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      ),
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+    );
+  }
+
+  @override
+  $OutboxLineItemsTable createAlias(String alias) {
+    return $OutboxLineItemsTable(attachedDatabase, alias);
+  }
+}
+
+class OutboxLineItem extends DataClass implements Insertable<OutboxLineItem> {
+  final String id;
+  final String userId;
+  final String transactionId;
+  final String name;
+  final double priceMyr;
+  final int? quantity;
+  final double? confidence;
+
+  /// 0-based position in the parsed item list; SQLite doesn't guarantee row
+  /// order, so this preserves the original OCR order on read.
+  final int sortOrder;
+  const OutboxLineItem({
+    required this.id,
+    required this.userId,
+    required this.transactionId,
+    required this.name,
+    required this.priceMyr,
+    this.quantity,
+    this.confidence,
+    required this.sortOrder,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['transaction_id'] = Variable<String>(transactionId);
+    map['name'] = Variable<String>(name);
+    map['price_myr'] = Variable<double>(priceMyr);
+    if (!nullToAbsent || quantity != null) {
+      map['quantity'] = Variable<int>(quantity);
+    }
+    if (!nullToAbsent || confidence != null) {
+      map['confidence'] = Variable<double>(confidence);
+    }
+    map['sort_order'] = Variable<int>(sortOrder);
+    return map;
+  }
+
+  OutboxLineItemsCompanion toCompanion(bool nullToAbsent) {
+    return OutboxLineItemsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      transactionId: Value(transactionId),
+      name: Value(name),
+      priceMyr: Value(priceMyr),
+      quantity: quantity == null && nullToAbsent
+          ? const Value.absent()
+          : Value(quantity),
+      confidence: confidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confidence),
+      sortOrder: Value(sortOrder),
+    );
+  }
+
+  factory OutboxLineItem.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return OutboxLineItem(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      transactionId: serializer.fromJson<String>(json['transactionId']),
+      name: serializer.fromJson<String>(json['name']),
+      priceMyr: serializer.fromJson<double>(json['priceMyr']),
+      quantity: serializer.fromJson<int?>(json['quantity']),
+      confidence: serializer.fromJson<double?>(json['confidence']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'transactionId': serializer.toJson<String>(transactionId),
+      'name': serializer.toJson<String>(name),
+      'priceMyr': serializer.toJson<double>(priceMyr),
+      'quantity': serializer.toJson<int?>(quantity),
+      'confidence': serializer.toJson<double?>(confidence),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+    };
+  }
+
+  OutboxLineItem copyWith({
+    String? id,
+    String? userId,
+    String? transactionId,
+    String? name,
+    double? priceMyr,
+    Value<int?> quantity = const Value.absent(),
+    Value<double?> confidence = const Value.absent(),
+    int? sortOrder,
+  }) => OutboxLineItem(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    transactionId: transactionId ?? this.transactionId,
+    name: name ?? this.name,
+    priceMyr: priceMyr ?? this.priceMyr,
+    quantity: quantity.present ? quantity.value : this.quantity,
+    confidence: confidence.present ? confidence.value : this.confidence,
+    sortOrder: sortOrder ?? this.sortOrder,
+  );
+  OutboxLineItem copyWithCompanion(OutboxLineItemsCompanion data) {
+    return OutboxLineItem(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      transactionId: data.transactionId.present
+          ? data.transactionId.value
+          : this.transactionId,
+      name: data.name.present ? data.name.value : this.name,
+      priceMyr: data.priceMyr.present ? data.priceMyr.value : this.priceMyr,
+      quantity: data.quantity.present ? data.quantity.value : this.quantity,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OutboxLineItem(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('transactionId: $transactionId, ')
+          ..write('name: $name, ')
+          ..write('priceMyr: $priceMyr, ')
+          ..write('quantity: $quantity, ')
+          ..write('confidence: $confidence, ')
+          ..write('sortOrder: $sortOrder')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    transactionId,
+    name,
+    priceMyr,
+    quantity,
+    confidence,
+    sortOrder,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is OutboxLineItem &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.transactionId == this.transactionId &&
+          other.name == this.name &&
+          other.priceMyr == this.priceMyr &&
+          other.quantity == this.quantity &&
+          other.confidence == this.confidence &&
+          other.sortOrder == this.sortOrder);
+}
+
+class OutboxLineItemsCompanion extends UpdateCompanion<OutboxLineItem> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<String> transactionId;
+  final Value<String> name;
+  final Value<double> priceMyr;
+  final Value<int?> quantity;
+  final Value<double?> confidence;
+  final Value<int> sortOrder;
+  final Value<int> rowid;
+  const OutboxLineItemsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.transactionId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.priceMyr = const Value.absent(),
+    this.quantity = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  OutboxLineItemsCompanion.insert({
+    required String id,
+    required String userId,
+    required String transactionId,
+    required String name,
+    required double priceMyr,
+    this.quantity = const Value.absent(),
+    this.confidence = const Value.absent(),
+    required int sortOrder,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       transactionId = Value(transactionId),
+       name = Value(name),
+       priceMyr = Value(priceMyr),
+       sortOrder = Value(sortOrder);
+  static Insertable<OutboxLineItem> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<String>? transactionId,
+    Expression<String>? name,
+    Expression<double>? priceMyr,
+    Expression<int>? quantity,
+    Expression<double>? confidence,
+    Expression<int>? sortOrder,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (transactionId != null) 'transaction_id': transactionId,
+      if (name != null) 'name': name,
+      if (priceMyr != null) 'price_myr': priceMyr,
+      if (quantity != null) 'quantity': quantity,
+      if (confidence != null) 'confidence': confidence,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  OutboxLineItemsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<String>? transactionId,
+    Value<String>? name,
+    Value<double>? priceMyr,
+    Value<int?>? quantity,
+    Value<double?>? confidence,
+    Value<int>? sortOrder,
+    Value<int>? rowid,
+  }) {
+    return OutboxLineItemsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      transactionId: transactionId ?? this.transactionId,
+      name: name ?? this.name,
+      priceMyr: priceMyr ?? this.priceMyr,
+      quantity: quantity ?? this.quantity,
+      confidence: confidence ?? this.confidence,
+      sortOrder: sortOrder ?? this.sortOrder,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (transactionId.present) {
+      map['transaction_id'] = Variable<String>(transactionId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (priceMyr.present) {
+      map['price_myr'] = Variable<double>(priceMyr.value);
+    }
+    if (quantity.present) {
+      map['quantity'] = Variable<int>(quantity.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OutboxLineItemsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('transactionId: $transactionId, ')
+          ..write('name: $name, ')
+          ..write('priceMyr: $priceMyr, ')
+          ..write('quantity: $quantity, ')
+          ..write('confidence: $confidence, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $CategoryConfigCacheTable extends CategoryConfigCache
     with TableInfo<$CategoryConfigCacheTable, CategoryConfigCacheRow> {
   @override
@@ -2453,6 +3350,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $OutboxArtifactsTable outboxArtifacts = $OutboxArtifactsTable(
     this,
   );
+  late final $OutboxLineItemsTable outboxLineItems = $OutboxLineItemsTable(
+    this,
+  );
   late final $CategoryConfigCacheTable categoryConfigCache =
       $CategoryConfigCacheTable(this);
   @override
@@ -2462,6 +3362,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     outboxTransactions,
     outboxArtifacts,
+    outboxLineItems,
     categoryConfigCache,
   ];
   @override
@@ -2472,6 +3373,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('outbox_artifacts', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'outbox_transactions',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('outbox_line_items', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -2501,11 +3409,17 @@ typedef $$OutboxTransactionsTableCreateCompanionBuilder =
       Value<double?> shareLocationLng,
       Value<DateTime?> shareLocationCapturedAt,
       Value<double?> ocrConfidence,
+      Value<String?> rawOcrText,
+      Value<double?> ocrServiceConfidence,
+      Value<double?> lineItemsConfidence,
+      Value<String?> parseFailureReason,
       Value<String> pipelineStatus,
       Value<String> syncStatus,
       Value<String?> lastError,
       Value<int> retryCount,
       Value<DateTime?> ritualledAt,
+      Value<String?> merchantCandidatesJson,
+      Value<String?> ocrHeaderText,
       Value<int> rowid,
     });
 typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
@@ -2533,11 +3447,17 @@ typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
       Value<double?> shareLocationLng,
       Value<DateTime?> shareLocationCapturedAt,
       Value<double?> ocrConfidence,
+      Value<String?> rawOcrText,
+      Value<double?> ocrServiceConfidence,
+      Value<double?> lineItemsConfidence,
+      Value<String?> parseFailureReason,
       Value<String> pipelineStatus,
       Value<String> syncStatus,
       Value<String?> lastError,
       Value<int> retryCount,
       Value<DateTime?> ritualledAt,
+      Value<String?> merchantCandidatesJson,
+      Value<String?> ocrHeaderText,
       Value<int> rowid,
     });
 
@@ -2571,6 +3491,29 @@ final class $$OutboxTransactionsTableReferences
 
     final cache = $_typedResult.readTableOrNull(
       _outboxArtifactsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$OutboxLineItemsTable, List<OutboxLineItem>>
+  _outboxLineItemsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.outboxLineItems,
+    aliasName: $_aliasNameGenerator(
+      db.outboxTransactions.id,
+      db.outboxLineItems.transactionId,
+    ),
+  );
+
+  $$OutboxLineItemsTableProcessedTableManager get outboxLineItemsRefs {
+    final manager = $$OutboxLineItemsTableTableManager(
+      $_db,
+      $_db.outboxLineItems,
+    ).filter((f) => f.transactionId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _outboxLineItemsRefsTable($_db),
     );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
@@ -2702,6 +3645,26 @@ class $$OutboxTransactionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get rawOcrText => $composableBuilder(
+    column: $table.rawOcrText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get ocrServiceConfidence => $composableBuilder(
+    column: $table.ocrServiceConfidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get lineItemsConfidence => $composableBuilder(
+    column: $table.lineItemsConfidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parseFailureReason => $composableBuilder(
+    column: $table.parseFailureReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get pipelineStatus => $composableBuilder(
     column: $table.pipelineStatus,
     builder: (column) => ColumnFilters(column),
@@ -2727,6 +3690,16 @@ class $$OutboxTransactionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get merchantCandidatesJson => $composableBuilder(
+    column: $table.merchantCandidatesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ocrHeaderText => $composableBuilder(
+    column: $table.ocrHeaderText,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> outboxArtifactsRefs(
     Expression<bool> Function($$OutboxArtifactsTableFilterComposer f) f,
   ) {
@@ -2743,6 +3716,31 @@ class $$OutboxTransactionsTableFilterComposer
           }) => $$OutboxArtifactsTableFilterComposer(
             $db: $db,
             $table: $db.outboxArtifacts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> outboxLineItemsRefs(
+    Expression<bool> Function($$OutboxLineItemsTableFilterComposer f) f,
+  ) {
+    final $$OutboxLineItemsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.outboxLineItems,
+      getReferencedColumn: (t) => t.transactionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxLineItemsTableFilterComposer(
+            $db: $db,
+            $table: $db.outboxLineItems,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -2877,6 +3875,26 @@ class $$OutboxTransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get rawOcrText => $composableBuilder(
+    column: $table.rawOcrText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get ocrServiceConfidence => $composableBuilder(
+    column: $table.ocrServiceConfidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get lineItemsConfidence => $composableBuilder(
+    column: $table.lineItemsConfidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get parseFailureReason => $composableBuilder(
+    column: $table.parseFailureReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get pipelineStatus => $composableBuilder(
     column: $table.pipelineStatus,
     builder: (column) => ColumnOrderings(column),
@@ -2899,6 +3917,16 @@ class $$OutboxTransactionsTableOrderingComposer
 
   ColumnOrderings<DateTime> get ritualledAt => $composableBuilder(
     column: $table.ritualledAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get merchantCandidatesJson => $composableBuilder(
+    column: $table.merchantCandidatesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ocrHeaderText => $composableBuilder(
+    column: $table.ocrHeaderText,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -3013,6 +4041,26 @@ class $$OutboxTransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get rawOcrText => $composableBuilder(
+    column: $table.rawOcrText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get ocrServiceConfidence => $composableBuilder(
+    column: $table.ocrServiceConfidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get lineItemsConfidence => $composableBuilder(
+    column: $table.lineItemsConfidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get parseFailureReason => $composableBuilder(
+    column: $table.parseFailureReason,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get pipelineStatus => $composableBuilder(
     column: $table.pipelineStatus,
     builder: (column) => column,
@@ -3033,6 +4081,16 @@ class $$OutboxTransactionsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get ritualledAt => $composableBuilder(
     column: $table.ritualledAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get merchantCandidatesJson => $composableBuilder(
+    column: $table.merchantCandidatesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ocrHeaderText => $composableBuilder(
+    column: $table.ocrHeaderText,
     builder: (column) => column,
   );
 
@@ -3060,6 +4118,31 @@ class $$OutboxTransactionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> outboxLineItemsRefs<T extends Object>(
+    Expression<T> Function($$OutboxLineItemsTableAnnotationComposer a) f,
+  ) {
+    final $$OutboxLineItemsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.outboxLineItems,
+      getReferencedColumn: (t) => t.transactionId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxLineItemsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.outboxLineItems,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$OutboxTransactionsTableTableManager
@@ -3075,7 +4158,10 @@ class $$OutboxTransactionsTableTableManager
           $$OutboxTransactionsTableUpdateCompanionBuilder,
           (OutboxTransaction, $$OutboxTransactionsTableReferences),
           OutboxTransaction,
-          PrefetchHooks Function({bool outboxArtifactsRefs})
+          PrefetchHooks Function({
+            bool outboxArtifactsRefs,
+            bool outboxLineItemsRefs,
+          })
         > {
   $$OutboxTransactionsTableTableManager(
     _$AppDatabase db,
@@ -3118,11 +4204,17 @@ class $$OutboxTransactionsTableTableManager
                 Value<double?> shareLocationLng = const Value.absent(),
                 Value<DateTime?> shareLocationCapturedAt = const Value.absent(),
                 Value<double?> ocrConfidence = const Value.absent(),
+                Value<String?> rawOcrText = const Value.absent(),
+                Value<double?> ocrServiceConfidence = const Value.absent(),
+                Value<double?> lineItemsConfidence = const Value.absent(),
+                Value<String?> parseFailureReason = const Value.absent(),
                 Value<String> pipelineStatus = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
                 Value<int> retryCount = const Value.absent(),
                 Value<DateTime?> ritualledAt = const Value.absent(),
+                Value<String?> merchantCandidatesJson = const Value.absent(),
+                Value<String?> ocrHeaderText = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion(
                 id: id,
@@ -3148,11 +4240,17 @@ class $$OutboxTransactionsTableTableManager
                 shareLocationLng: shareLocationLng,
                 shareLocationCapturedAt: shareLocationCapturedAt,
                 ocrConfidence: ocrConfidence,
+                rawOcrText: rawOcrText,
+                ocrServiceConfidence: ocrServiceConfidence,
+                lineItemsConfidence: lineItemsConfidence,
+                parseFailureReason: parseFailureReason,
                 pipelineStatus: pipelineStatus,
                 syncStatus: syncStatus,
                 lastError: lastError,
                 retryCount: retryCount,
                 ritualledAt: ritualledAt,
+                merchantCandidatesJson: merchantCandidatesJson,
+                ocrHeaderText: ocrHeaderText,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3180,11 +4278,17 @@ class $$OutboxTransactionsTableTableManager
                 Value<double?> shareLocationLng = const Value.absent(),
                 Value<DateTime?> shareLocationCapturedAt = const Value.absent(),
                 Value<double?> ocrConfidence = const Value.absent(),
+                Value<String?> rawOcrText = const Value.absent(),
+                Value<double?> ocrServiceConfidence = const Value.absent(),
+                Value<double?> lineItemsConfidence = const Value.absent(),
+                Value<String?> parseFailureReason = const Value.absent(),
                 Value<String> pipelineStatus = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
                 Value<int> retryCount = const Value.absent(),
                 Value<DateTime?> ritualledAt = const Value.absent(),
+                Value<String?> merchantCandidatesJson = const Value.absent(),
+                Value<String?> ocrHeaderText = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion.insert(
                 id: id,
@@ -3210,11 +4314,17 @@ class $$OutboxTransactionsTableTableManager
                 shareLocationLng: shareLocationLng,
                 shareLocationCapturedAt: shareLocationCapturedAt,
                 ocrConfidence: ocrConfidence,
+                rawOcrText: rawOcrText,
+                ocrServiceConfidence: ocrServiceConfidence,
+                lineItemsConfidence: lineItemsConfidence,
+                parseFailureReason: parseFailureReason,
                 pipelineStatus: pipelineStatus,
                 syncStatus: syncStatus,
                 lastError: lastError,
                 retryCount: retryCount,
                 ritualledAt: ritualledAt,
+                merchantCandidatesJson: merchantCandidatesJson,
+                ocrHeaderText: ocrHeaderText,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -3225,40 +4335,63 @@ class $$OutboxTransactionsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({outboxArtifactsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [
-                if (outboxArtifactsRefs) db.outboxArtifacts,
-              ],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (outboxArtifactsRefs)
-                    await $_getPrefetchedData<
-                      OutboxTransaction,
-                      $OutboxTransactionsTable,
-                      OutboxArtifact
-                    >(
-                      currentTable: table,
-                      referencedTable: $$OutboxTransactionsTableReferences
-                          ._outboxArtifactsRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$OutboxTransactionsTableReferences(
-                            db,
-                            table,
-                            p0,
-                          ).outboxArtifactsRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where(
-                            (e) => e.transactionId == item.id,
-                          ),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({outboxArtifactsRefs = false, outboxLineItemsRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (outboxArtifactsRefs) db.outboxArtifacts,
+                    if (outboxLineItemsRefs) db.outboxLineItems,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (outboxArtifactsRefs)
+                        await $_getPrefetchedData<
+                          OutboxTransaction,
+                          $OutboxTransactionsTable,
+                          OutboxArtifact
+                        >(
+                          currentTable: table,
+                          referencedTable: $$OutboxTransactionsTableReferences
+                              ._outboxArtifactsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$OutboxTransactionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).outboxArtifactsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.transactionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (outboxLineItemsRefs)
+                        await $_getPrefetchedData<
+                          OutboxTransaction,
+                          $OutboxTransactionsTable,
+                          OutboxLineItem
+                        >(
+                          currentTable: table,
+                          referencedTable: $$OutboxTransactionsTableReferences
+                              ._outboxLineItemsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$OutboxTransactionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).outboxLineItemsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.transactionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -3275,7 +4408,10 @@ typedef $$OutboxTransactionsTableProcessedTableManager =
       $$OutboxTransactionsTableUpdateCompanionBuilder,
       (OutboxTransaction, $$OutboxTransactionsTableReferences),
       OutboxTransaction,
-      PrefetchHooks Function({bool outboxArtifactsRefs})
+      PrefetchHooks Function({
+        bool outboxArtifactsRefs,
+        bool outboxLineItemsRefs,
+      })
     >;
 typedef $$OutboxArtifactsTableCreateCompanionBuilder =
     OutboxArtifactsCompanion Function({
@@ -3651,6 +4787,397 @@ typedef $$OutboxArtifactsTableProcessedTableManager =
       OutboxArtifact,
       PrefetchHooks Function({bool transactionId})
     >;
+typedef $$OutboxLineItemsTableCreateCompanionBuilder =
+    OutboxLineItemsCompanion Function({
+      required String id,
+      required String userId,
+      required String transactionId,
+      required String name,
+      required double priceMyr,
+      Value<int?> quantity,
+      Value<double?> confidence,
+      required int sortOrder,
+      Value<int> rowid,
+    });
+typedef $$OutboxLineItemsTableUpdateCompanionBuilder =
+    OutboxLineItemsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<String> transactionId,
+      Value<String> name,
+      Value<double> priceMyr,
+      Value<int?> quantity,
+      Value<double?> confidence,
+      Value<int> sortOrder,
+      Value<int> rowid,
+    });
+
+final class $$OutboxLineItemsTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $OutboxLineItemsTable, OutboxLineItem> {
+  $$OutboxLineItemsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $OutboxTransactionsTable _transactionIdTable(_$AppDatabase db) =>
+      db.outboxTransactions.createAlias(
+        $_aliasNameGenerator(
+          db.outboxLineItems.transactionId,
+          db.outboxTransactions.id,
+        ),
+      );
+
+  $$OutboxTransactionsTableProcessedTableManager get transactionId {
+    final $_column = $_itemColumn<String>('transaction_id')!;
+
+    final manager = $$OutboxTransactionsTableTableManager(
+      $_db,
+      $_db.outboxTransactions,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_transactionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$OutboxLineItemsTableFilterComposer
+    extends Composer<_$AppDatabase, $OutboxLineItemsTable> {
+  $$OutboxLineItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get priceMyr => $composableBuilder(
+    column: $table.priceMyr,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get quantity => $composableBuilder(
+    column: $table.quantity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$OutboxTransactionsTableFilterComposer get transactionId {
+    final $$OutboxTransactionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.transactionId,
+      referencedTable: $db.outboxTransactions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxTransactionsTableFilterComposer(
+            $db: $db,
+            $table: $db.outboxTransactions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OutboxLineItemsTableOrderingComposer
+    extends Composer<_$AppDatabase, $OutboxLineItemsTable> {
+  $$OutboxLineItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get priceMyr => $composableBuilder(
+    column: $table.priceMyr,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get quantity => $composableBuilder(
+    column: $table.quantity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$OutboxTransactionsTableOrderingComposer get transactionId {
+    final $$OutboxTransactionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.transactionId,
+      referencedTable: $db.outboxTransactions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxTransactionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.outboxTransactions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OutboxLineItemsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $OutboxLineItemsTable> {
+  $$OutboxLineItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<double> get priceMyr =>
+      $composableBuilder(column: $table.priceMyr, builder: (column) => column);
+
+  GeneratedColumn<int> get quantity =>
+      $composableBuilder(column: $table.quantity, builder: (column) => column);
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  $$OutboxTransactionsTableAnnotationComposer get transactionId {
+    final $$OutboxTransactionsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.transactionId,
+          referencedTable: $db.outboxTransactions,
+          getReferencedColumn: (t) => t.id,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$OutboxTransactionsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.outboxTransactions,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return composer;
+  }
+}
+
+class $$OutboxLineItemsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $OutboxLineItemsTable,
+          OutboxLineItem,
+          $$OutboxLineItemsTableFilterComposer,
+          $$OutboxLineItemsTableOrderingComposer,
+          $$OutboxLineItemsTableAnnotationComposer,
+          $$OutboxLineItemsTableCreateCompanionBuilder,
+          $$OutboxLineItemsTableUpdateCompanionBuilder,
+          (OutboxLineItem, $$OutboxLineItemsTableReferences),
+          OutboxLineItem,
+          PrefetchHooks Function({bool transactionId})
+        > {
+  $$OutboxLineItemsTableTableManager(
+    _$AppDatabase db,
+    $OutboxLineItemsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$OutboxLineItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$OutboxLineItemsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$OutboxLineItemsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> transactionId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<double> priceMyr = const Value.absent(),
+                Value<int?> quantity = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => OutboxLineItemsCompanion(
+                id: id,
+                userId: userId,
+                transactionId: transactionId,
+                name: name,
+                priceMyr: priceMyr,
+                quantity: quantity,
+                confidence: confidence,
+                sortOrder: sortOrder,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required String transactionId,
+                required String name,
+                required double priceMyr,
+                Value<int?> quantity = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                required int sortOrder,
+                Value<int> rowid = const Value.absent(),
+              }) => OutboxLineItemsCompanion.insert(
+                id: id,
+                userId: userId,
+                transactionId: transactionId,
+                name: name,
+                priceMyr: priceMyr,
+                quantity: quantity,
+                confidence: confidence,
+                sortOrder: sortOrder,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$OutboxLineItemsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({transactionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (transactionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.transactionId,
+                                referencedTable:
+                                    $$OutboxLineItemsTableReferences
+                                        ._transactionIdTable(db),
+                                referencedColumn:
+                                    $$OutboxLineItemsTableReferences
+                                        ._transactionIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$OutboxLineItemsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $OutboxLineItemsTable,
+      OutboxLineItem,
+      $$OutboxLineItemsTableFilterComposer,
+      $$OutboxLineItemsTableOrderingComposer,
+      $$OutboxLineItemsTableAnnotationComposer,
+      $$OutboxLineItemsTableCreateCompanionBuilder,
+      $$OutboxLineItemsTableUpdateCompanionBuilder,
+      (OutboxLineItem, $$OutboxLineItemsTableReferences),
+      OutboxLineItem,
+      PrefetchHooks Function({bool transactionId})
+    >;
 typedef $$CategoryConfigCacheTableCreateCompanionBuilder =
     CategoryConfigCacheCompanion Function({
       Value<int> id,
@@ -3869,6 +5396,8 @@ class $AppDatabaseManager {
       $$OutboxTransactionsTableTableManager(_db, _db.outboxTransactions);
   $$OutboxArtifactsTableTableManager get outboxArtifacts =>
       $$OutboxArtifactsTableTableManager(_db, _db.outboxArtifacts);
+  $$OutboxLineItemsTableTableManager get outboxLineItems =>
+      $$OutboxLineItemsTableTableManager(_db, _db.outboxLineItems);
   $$CategoryConfigCacheTableTableManager get categoryConfigCache =>
       $$CategoryConfigCacheTableTableManager(_db, _db.categoryConfigCache);
 }

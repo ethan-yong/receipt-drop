@@ -178,7 +178,7 @@ ReceiptCardPalette receiptPaletteForCategory(String category) {
   );
 }
 
-/// Bundled category illustration from [receipt_images/], if available.
+/// Bundled category illustration from [category_images/], if available.
 String? receiptIllustrationAssetForCategory(String category) {
   final c = category.toLowerCase();
 
@@ -189,14 +189,33 @@ String? receiptIllustrationAssetForCategory(String category) {
       c.contains('tea') ||
       c.contains('boba') ||
       c.contains('bubble')) {
-    return 'receipt_images/cafe.png';
+    return 'category_images/cafe.png';
   }
 
   if (c.contains('grocery') ||
       c.contains('groceries') ||
       c.contains('market') ||
       c.contains('supermarket')) {
-    return 'receipt_images/grocery.png';
+    return 'category_images/grocery.png';
+  }
+
+  if (c.contains('clothing') ||
+      c.contains('clothes') ||
+      c.contains('fashion') ||
+      c.contains('shopping') ||
+      c.contains('mall') ||
+      c.contains('boutique')) {
+    return 'category_images/clothing.png';
+  }
+
+  if (c.contains('tech') ||
+      c.contains('technology') ||
+      c.contains('electronics') ||
+      c.contains('gaming') ||
+      c.contains('game') ||
+      c.contains('console') ||
+      c.contains('pc')) {
+    return 'category_images/technology.png';
   }
 
   if (c.contains('restaurant') ||
@@ -207,7 +226,7 @@ String? receiptIllustrationAssetForCategory(String category) {
       c.contains('fastfood') ||
       c.contains('burger') ||
       c.contains('takeaway')) {
-    return 'receipt_images/restaurant.png';
+    return 'category_images/restaurant.png';
   }
 
   return null;
@@ -367,55 +386,24 @@ class ReceiptCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
               child: Column(
                 children: [
-                  // Single item row
-                  Row(
-                    children: [
-                      Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: palette.tile,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          palette.emoji,
-                          style: const TextStyle(fontSize: 17),
-                        ),
+                  // Item row(s): one row per line item when available,
+                  // otherwise the merchant/place summary row.
+                  if (tx.lineItems != null && tx.lineItems!.isNotEmpty)
+                    for (var i = 0; i < tx.lineItems!.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 14),
+                      _buildItemRow(
+                        palette: palette,
+                        name: tx.lineItems![i].name,
+                        priceText:
+                            'RM ${tx.lineItems![i].priceMyr.toStringAsFixed(2)}',
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: tx.needsAmount
-                            ? Text(
-                                'Needs amount',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  fontStyle: FontStyle.italic,
-                                  color: palette.ink.withValues(alpha: 0.6),
-                                ),
-                              )
-                            : Text(
-                                tx.displayPlace,
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: palette.ink,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                      ),
-                      Text(
-                        tx.needsAmount ? '' : amountText,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: palette.ink,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ]
+                  else
+                    _buildItemRow(
+                      palette: palette,
+                      name: tx.needsAmount ? null : tx.displayPlace,
+                      priceText: tx.needsAmount ? '' : amountText,
+                    ),
 
                   // Dashed divider
                   Padding(
@@ -466,6 +454,58 @@ class ReceiptCard extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _buildItemRow({
+  required ReceiptCardPalette palette,
+  required String? name,
+  required String priceText,
+}) {
+  return Row(
+    children: [
+      Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: palette.tile,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Text(palette.emoji, style: const TextStyle(fontSize: 17)),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: name == null
+            ? Text(
+                'Needs amount',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontStyle: FontStyle.italic,
+                  color: palette.ink.withValues(alpha: 0.6),
+                ),
+              )
+            : Text(
+                name,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: palette.ink,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+      ),
+      Text(
+        priceText,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: palette.ink,
+        ),
+      ),
+    ],
+  );
 }
 
 class _ReceiptIllustration extends StatelessWidget {

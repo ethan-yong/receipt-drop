@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/env.dart';
+import '../../domain/logic/merchant_extractor.dart';
 
 class PlaceResult {
   const PlaceResult({
@@ -18,7 +20,33 @@ class PlaceResult {
   final double lng;
 }
 
-/// Google Places search via the `places-proxy` Supabase Edge Function.
+/// A ranked nearby place candidate returned by the [places-proxy] edge
+/// function's `nearby_candidates` mode.
+class PlaceCandidate {
+  const PlaceCandidate({
+    required this.id,
+    required this.name,
+    required this.address,
+    required this.lat,
+    required this.lng,
+    required this.distanceMeters,
+    required this.confidence,
+  });
+
+  final String id;
+  final String name;
+  final String address;
+  final double lat;
+  final double lng;
+  final double distanceMeters;
+  final double confidence;
+
+  PlaceResult toPlaceResult() =>
+      PlaceResult(id: id, name: name, address: address, lat: lat, lng: lng);
+}
+
+/// Google Places search and nearby-candidate ranking via the
+/// `places-proxy` Supabase Edge Function.
 class PlacesRepository {
   PlacesRepository._();
 
@@ -69,5 +97,72 @@ class PlacesRepository {
     } on Object {
       return const [];
     }
+  }
+
+  static Future<List<PlaceCandidate>> fetchNearbyCandidates({
+    required double lat,
+    required double lng,
+    List<MerchantCandidate> candidates = const [],
+    String? merchantName,
+    String? category,
+    int limit = 5,
+  }) async {
+    if (!Env.hasSupabaseConfig) return const [];
+    try {
+      final body = <String, dynamic>{
+        'mode': 'nearby_candidates',
+        'lat': lat,
+        'lng': lng,
+        'limit': limit,
+      };
+      if (candidates.isNotEmpty) {
+        body['candidates'] = candidates
+            .map((c) => {'text': c.text, 'confidence': c.confidence, 'source': c.source})
+            .toList();
+      }
+      if (merchantName != null && merchantName.trim().isNotEmpty) {
+        body['query'] = merchantName.trim();
+      }
+      if (category != null) body['category'] = category;
+
+      final response = await Supabase.instance.client.functions.invoke(
+        'places-proxy',
+        body: body,
+      );
+      if (response.status != 200) return const [];
+
+      final data = response.data;
+      if (data is! Map<String, dynamic>) return const [];
+      final raw = data['candidates'];
+      if (raw is! List) return const [];
+
+      return parseCandidates(raw);
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// Parses the raw `candidates` array from the `places-proxy` nearby response.
+  /// Exposed for unit testing; callers should use [fetchNearbyCandidates].
+  @visibleForTesting
+  static List<PlaceCandidate> parseCandidates(List<dynamic> raw) {
+    return raw
+        .cast<Map<String, dynamic>>()
+        .where((c) =>
+            c['name'] != null &&
+            (c['name'] as String).isNotEmpty &&
+            c['lat'] != null &&
+            c['lng'] != null)
+        .map((c) => PlaceCandidate(
+              id: (c['id'] as String?) ?? '',
+              name: c['name'] as String,
+              address: (c['address'] as String?) ?? '',
+              lat: (c['lat'] as num).toDouble(),
+              lng: (c['lng'] as num).toDouble(),
+              distanceMeters:
+                  (c['distanceMeters'] as num?)?.toDouble() ?? 0,
+              confidence: (c['confidence'] as num?)?.toDouble() ?? 0,
+            ))
+        .toList();
   }
 }

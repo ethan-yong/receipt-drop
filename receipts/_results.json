@@ -1,0 +1,111 @@
+[
+  {
+    "file": "14852c88-2010-47c8-98d0-496151dab64a.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "2933cd3c-20bb-4653-9754-8337aab50fb6.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "2a098a98-94da-46d6-8b10-e0eaa1182ed7.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "43acec35-3d7b-4488-9139-5739d10eef29.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "4d36394a-b162-4a40-b124-141b4bc998e0.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "6f1b85ab-b844-4969-a4fd-0f8cc87bfc32.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "741ed815-15ab-4035-b243-4ea0d56c70fd.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "c0be2462-c437-44ea-a9d3-389b45824dc8.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "c93a9a12-b49a-4ec2-913e-1561f9a798b6.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "cf647331-0c9e-4797-9f3a-9eb88378c87d.png",
+    "error": "ocr_failed_or_empty"
+  },
+  {
+    "file": "rock_cafe.png.jpeg",
+    "amountMyr": 64.8,
+    "needsAmount": false,
+    "ocrConfidence": 0.6249999999999999,
+    "combinedConfidence": 0.5199705431134127,
+    "amountSource": "rmPrefixed",
+    "merchantRaw": "RESTORAN ANWAR MAU",
+    "categoryGuess": "Food & Drink",
+    "categoryConfidence": 0.85,
+    "impactLevel": "high",
+    "lowConfidence": false,
+    "lineItems": [
+      {
+        "name": "Rsb Biasa",
+        "priceMyr": 7.0,
+        "quantity": 1,
+        "confidence": 0.8
+      },
+      {
+        "name": "Teh O Limau Ais",
+        "priceMyr": 8.7,
+        "quantity": 3,
+        "confidence": 0.8
+      },
+      {
+        "name": "1d Maggi G Double",
+        "priceMyr": 11.0,
+        "confidence": 0.55
+      },
+      {
+        "name": "Limau Ais Bungkus",
+        "priceMyr": 3.0,
+        "confidence": 0.55
+      },
+      {
+        "name": "Milo Ais Bungkus",
+        "priceMyr": 4.2,
+        "quantity": 1,
+        "confidence": 0.8
+      },
+      {
+        "name": "Maggi Goreng Telur M",
+        "priceMyr": 9.0,
+        "quantity": 1,
+        "confidence": 0.8
+      },
+      {
+        "name": "Nasi GAyam Mamak",
+        "priceMyr": 12.5,
+        "confidence": 0.55
+      },
+      {
+        "name": "I Ayam Goreng",
+        "priceMyr": 6.0,
+        "confidence": 0.55
+      },
+      {
+        "name": "Teh Ais Bungkus",
+        "priceMyr": 3.4,
+        "quantity": 1,
+        "confidence": 0.8
+      }
+    ],
+    "lineItemsConfidence": 0.6888888888888888,
+    "itemsSubtotalMyr": 64.8,
+    "itemsMatchTotal": true,
+    "ocrServiceConfidence": 0.3624263577835318
+  }
+]

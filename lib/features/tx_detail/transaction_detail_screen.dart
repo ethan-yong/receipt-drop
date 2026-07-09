@@ -4,8 +4,13 @@ import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
+import '../../domain/models/receipt_line_item.dart';
+import '../../domain/models/transaction_view.dart';
 import '../../data/repositories/places_repository.dart';
+import '../../domain/logic/category_matcher.dart';
+import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/logic/impact_level.dart';
+import '../../features/places/place_picker_screen.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/place_block.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
@@ -29,18 +34,13 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   String? _placeGooglePlaceId;
   double? _placeLat;
   double? _placeLng;
+  double? _shareLocationLat;
+  double? _shareLocationLng;
   DateTime? _occurredAt;
   ImpactLevel? _impactOverride;
   bool _loading = true;
-
-  static const _categories = [
-    'Food & Drink',
-    'Groceries',
-    'Transport',
-    'Shopping',
-    'Others',
-    'Unclassified',
-  ];
+  CategoryConfig? _categoryConfig;
+  List<ReceiptLineItem> _lineItems = const [];
 
   @override
   void dispose() {
@@ -49,18 +49,26 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<void> _load() async {
-    final tx = await AppServices.transactions.getById(widget.transactionId);
+    final results = await Future.wait([
+      AppServices.transactions.getById(widget.transactionId),
+      loadBundledCategoryConfig(),
+    ]);
+    final tx = results[0] as TransactionView?;
+    final config = results[1] as CategoryConfig;
     if (tx == null || !mounted) return;
     setState(() {
-      _amountController.text =
-          tx.amountMyr?.toStringAsFixed(2) ?? '';
+      _amountController.text = tx.amountMyr?.toStringAsFixed(2) ?? '';
       _category = tx.effectiveCategory;
       _placeName = tx.displayPlace;
       _placeGooglePlaceId = tx.placeGooglePlaceId;
       _placeLat = tx.placeLat;
       _placeLng = tx.placeLng;
+      _shareLocationLat = tx.shareLocationLat;
+      _shareLocationLng = tx.shareLocationLng;
       _occurredAt = tx.occurredAt;
       _impactOverride = impactLevelFromStorage(tx.impactUser);
+      _categoryConfig = config;
+      _lineItems = tx.lineItems ?? const [];
       _loading = false;
     });
   }
@@ -125,15 +133,30 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<void> _pickPlace() async {
-    final result = await context.pushNamed<PlaceResult>('places-search');
-    if (result != null && mounted) {
-      setState(() {
-        _placeName = result.name;
-        _placeGooglePlaceId = result.id;
-        _placeLat = result.lat;
-        _placeLng = result.lng;
-      });
+    final lat = _shareLocationLat;
+    final lng = _shareLocationLng;
+    PlaceResult? result;
+    if (lat != null && lng != null) {
+      result = await PlacePickerScreen.push(
+        context,
+        lat: lat,
+        lng: lng,
+        candidates: const [],
+        merchantName: _placeName == 'No place' ? null : _placeName,
+        category: _category,
+      );
+    } else {
+      result = await context.pushNamed<PlaceResult>('places-search');
     }
+    if (result == null || !mounted) return;
+    await AppServices.transactions
+        .updateTransactionPlace(widget.transactionId, result);
+    setState(() {
+      _placeName = result!.name;
+      _placeGooglePlaceId = result.id;
+      _placeLat = result.lat;
+      _placeLng = result.lng;
+    });
   }
 
   Future<void> _pickDate() async {
@@ -161,6 +184,16 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         );
       });
     }
+  }
+
+  List<String> _buildCategoryItems() {
+    final config = _categoryConfig;
+    if (config == null) return [_category ?? 'Unclassified'];
+    return {
+      ...config.rules.map((r) => r.category),
+      config.defaultCategory,
+      'Unclassified',
+    }.toList();
   }
 
   @override
@@ -202,6 +235,46 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 child: AmountField(controller: _amountController),
               ),
             ),
+            if (_lineItems.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              Card(
+                child: Padding(
+                  padding: AppSpacing.cardPadding,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Items',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      for (final item in _lineItems)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.displayLabel,
+                                  style:
+                                      Theme.of(context).textTheme.bodyMedium,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: AppSpacing.sm),
+                              Text(
+                                item.priceDisplay,
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             Text('Impact', style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: AppSpacing.sm),
@@ -238,7 +311,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     border: InputBorder.none,
                     filled: false,
                   ),
-                  items: _categories
+                  items: _buildCategoryItems()
                       .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                       .toList(),
                   onChanged: (v) => setState(() => _category = v),

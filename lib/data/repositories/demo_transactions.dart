@@ -24,7 +24,7 @@ List<TransactionView> demoTransactions({String userId = 'demo-user'}) {
       place: '7-Eleven Sunway',
       lat: 3.0738,
       lng: 101.6067,
-      sync: 'pending',
+      sync: 'synced',
       ago: const Duration(hours: 2),
     ),
     (
@@ -57,7 +57,7 @@ List<TransactionView> demoTransactions({String userId = 'demo-user'}) {
       place: 'No place',
       lat: 3.1390,
       lng: 101.6869,
-      sync: 'pending',
+      sync: 'synced',
       ago: const Duration(days: 1, hours: 8),
     ),
     (
@@ -90,7 +90,7 @@ List<TransactionView> demoTransactions({String userId = 'demo-user'}) {
       place: 'MyNews',
       lat: 3.0899,
       lng: 101.5950,
-      sync: 'stuck',
+      sync: 'synced',
       ago: const Duration(days: 6),
     ),
   ];

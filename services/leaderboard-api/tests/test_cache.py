@@ -41,9 +41,13 @@ async def test_cache_hit_skips_database():
     with (
         patch("app.main.verify_bearer") as mock_verify,
         patch("app.main.get_cached_leaderboard", new_callable=AsyncMock) as mock_get,
-        patch("app.main.fetch_leaderboard_as_user", new_callable=AsyncMock) as mock_fetch,
+        patch(
+            "app.main.fetch_leaderboard_as_user", new_callable=AsyncMock
+        ) as mock_fetch,
     ):
-        mock_verify.return_value = type("U", (), {"user_id": "11111111-1111-1111-1111-111111111111"})()
+        mock_verify.return_value = type(
+            "U", (), {"user_id": "11111111-1111-1111-1111-111111111111"}
+        )()
         mock_get.return_value = cached_entries
 
         transport = ASGITransport(app=app)
@@ -78,9 +82,13 @@ async def test_fresh_bypasses_cache():
         patch("app.main.verify_bearer") as mock_verify,
         patch("app.main.get_cached_leaderboard", new_callable=AsyncMock) as mock_get,
         patch("app.main.set_cached_leaderboard", new_callable=AsyncMock) as mock_set,
-        patch("app.main.fetch_leaderboard_as_user", new_callable=AsyncMock) as mock_fetch,
+        patch(
+            "app.main.fetch_leaderboard_as_user", new_callable=AsyncMock
+        ) as mock_fetch,
     ):
-        mock_verify.return_value = type("U", (), {"user_id": "11111111-1111-1111-1111-111111111111"})()
+        mock_verify.return_value = type(
+            "U", (), {"user_id": "11111111-1111-1111-1111-111111111111"}
+        )()
         mock_get.return_value = [{"user_id": "stale"}]
         mock_fetch.return_value = db_entries
 
@@ -101,7 +109,7 @@ async def test_fresh_bypasses_cache():
 
 @pytest.mark.asyncio
 async def test_rls_non_friend_excluded_from_db_rows():
-    """Document RLS expectation: leaderboard rows only include self + accepted friends."""
+    """RLS: leaderboard rows only include self and accepted friends."""
     friend_id = "22222222-2222-2222-2222-222222222222"
     stranger_id = "33333333-3333-3333-3333-333333333333"
     me_id = "11111111-1111-1111-1111-111111111111"

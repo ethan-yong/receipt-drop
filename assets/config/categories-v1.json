@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-02.1",
+  "version": "2026-07-05.2",
   "default_category": "Others",
   "rules": [
     {
@@ -9,7 +9,10 @@
         "starbucks", "coffee bean", "tealive", "chatime", "zus coffee",
         "old town", "oldtown", "secret recipe", "nando", "sushi king",
         "marrybrown", "a&w", "texas chicken", "papa john", "mixue",
-        "kenny rogers", "wendy", "dunkin", "7-eleven", "kopitiam", "restoran"
+        "kenny rogers", "wendy", "dunkin", "7-eleven", "kopitiam", "restoran",
+        "rotiboy", "big apple donut", "baskin robbins", "bread story",
+        "madam kwan", "the loaf", "paddington house", "delicious group",
+        "chillis", "johnny rockets", "little caesars", "popeyes"
       ]
     },
     {
@@ -17,7 +20,9 @@
       "any_of": [
         "aeon big", "aeon", "village grocer", "jaya grocer", "lotus",
         "mydin", "nsk", "econsave", "99 speedmart", "giant", "cold storage",
-        "mercato", "jusco"
+        "mercato", "jusco", "tesco", "sunshine supermarket",
+        "kk super mart", "hero supermarket", "bens independent grocer",
+        "fresh grocer"
       ]
     },
     {
@@ -25,7 +30,15 @@
       "any_of": [
         "touch n go", "touch 'n go", "tng", "grab", "petron", "shell",
         "petronas", "caltex", "bhpetrol", "rapidkl", "mrt", "lrt", "ktm",
-        "gocar", "mypark"
+        "gocar", "mypark", "plus highway", "smart tag", "carpark"
+      ]
+    },
+    {
+      "category": "Travel",
+      "any_of": [
+        "airasia", "malindo", "firefly", "mas airlines", "malaysia airlines",
+        "scoot", "batik air", "hotel", "resort", "inn", "homestay",
+        "booking.com", "agoda", "airbnb", "klook"
       ]
     },
     {
@@ -34,7 +47,19 @@
         "uniqlo", "h&m", "padini", "brands outlet", "watsons", "guardian",
         "sephora", "sasa", "cotton on", "popular", "mr diy", "daiso",
         "ikea", "courts", "harvey norman", "senheng", "decathlon",
-        "parkson", "sogo", "isetan"
+        "parkson", "sogo", "isetan", "miniso", "typo",
+        "marks & spencer", "forever 21", "ace hardware", "japan home",
+        "switch", "machines", "all it hypermarket"
+      ]
+    },
+    {
+      "category": "Health & Beauty",
+      "any_of": [
+        "pharmacy", "farmasi", "klinik", "clinic", "hospital",
+        "caring pharmacy", "alpro pharmacy", "aeon wellness",
+        "guardian pharmacy", "watson pharmacy", "columbia asia",
+        "pantai hospital", "gleneagles", "sunway medical",
+        "kpj", "poliklinik"
       ]
     }
   ]

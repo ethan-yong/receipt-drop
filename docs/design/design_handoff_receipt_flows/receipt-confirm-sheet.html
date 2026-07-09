@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;background:#EDE4D3;font-family:'Baloo 2',sans-serif;}
+  *{box-sizing:border-box;}
+  a{color:#C4841C;} a:hover{color:#A66B12;}
+  input{font-family:inherit;}
+</style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;gap:16px;">
+
+  <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+    <div style="font-size:22px;font-weight:800;color:#2c2c33;letter-spacing:-.3px;">Receipt confirmation</div>
+    <div style="font-size:14px;font-weight:600;color:#8a8170;">Tap a checkbox to exclude an item · tap the pencil to rename the vendor</div>
+  </div>
+
+  <!-- ============ PHONE FRAME ============ -->
+  <div style="position:relative;width:375px;height:760px;border-radius:44px;overflow:hidden;background:#FAF3E7;box-shadow:0 24px 60px rgba(60,40,20,.24);">
+
+    <!-- dimmed feed behind -->
+    <div style="position:absolute;inset:0;background:#8B8577;padding:58px 24px 0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:15px;font-weight:700;color:#2c2c2c;">2:32</span>
+        <span style="font-size:12px;font-weight:700;color:#2c2c2c;">51</span>
+      </div>
+      <div style="font-size:30px;font-weight:800;color:#26241f;margin-top:22px;">Feed</div>
+      <div style="font-size:15px;font-weight:600;color:#4d4a40;margin-top:4px;">What friends are dropping.</div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:110px;">
+        <div style="width:44px;height:32px;border:2.5px solid #524f45;border-radius:0 0 20px 20px;position:relative;">
+          <div style="position:absolute;left:6px;top:-10px;width:14px;height:14px;border-radius:50%;border:2.5px solid #524f45;background:#8B8577;"></div>
+          <div style="position:absolute;right:6px;top:-10px;width:14px;height:14px;border-radius:50%;border:2.5px solid #524f45;background:#8B8577;"></div>
+        </div>
+        <div style="font-size:17px;font-weight:700;color:#2c2c2c;">No drops from friends yet</div>
+        <div style="font-size:13px;font-weight:600;color:#57544a;text-align:center;">Add friends from Settings to see their activity here.</div>
+      </div>
+    </div>
+
+    <!-- ============ SHEET ============ -->
+    <div style="position:absolute;left:0;right:0;bottom:0;background:#FFFDF8;border-radius:28px 28px 0 0;box-shadow:0 -18px 40px rgba(60,40,20,.16);padding:12px 22px 26px;">
+
+      <div style="width:38px;height:5px;border-radius:3px;background:#E9DDC8;margin:0 auto 18px;"></div>
+
+      <!-- category + count -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:7px;padding:6px 14px;border-radius:999px;background:#F4E8D6;">
+          <span style="font-size:13px;">🍽️</span>
+          <span style="font-size:13px;font-weight:700;color:#9C8A72;">Others</span>
+        </div>
+        <div style="font-size:13px;font-weight:600;color:#B0A48D;">{{ includedCount }} of {{ itemCount }} items</div>
+      </div>
+
+      <!-- vendor + edit -->
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:42px;height:42px;flex:none;border-radius:50%;background:#F0AA2A;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;">{{ vendorInitial }}</div>
+
+        <sc-if value="{{ editing }}" hint-placeholder-val="{{ false }}">
+          <input ref="{{ setVendorInput }}" value="{{ vendorName }}" onChange="{{ vendorChange }}" onBlur="{{ saveVendor }}" onKeyDown="{{ vendorKeyDown }}" style="flex:1;min-width:0;font-size:20px;font-weight:800;color:#4F2D23;letter-spacing:-.2px;border:none;border-bottom:2px solid #F5C242;outline:none;background:transparent;padding:0 0 2px;" />
+        </sc-if>
+        <sc-if value="{{ notEditing }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;min-width:0;font-size:20px;font-weight:800;color:#4F2D23;letter-spacing:-.2px;">{{ vendorName }}</div>
+        </sc-if>
+
+        <div onClick="{{ startEdit }}" style="width:32px;height:32px;flex:none;border-radius:50%;background:#F4E8D6;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20L4.6 16.7L16.4 4.9C16.9 4.4 17.7 4.4 18.2 4.9L19.1 5.8C19.6 6.3 19.6 7.1 19.1 7.6L7.3 19.4L4 20Z" stroke="#9C8A72" stroke-width="1.6" stroke-linejoin="round"></path></svg>
+        </div>
+      </div>
+
+      <div style="font-size:38px;font-weight:800;color:#4F2D23;letter-spacing:-.6px;margin-top:14px;">{{ totalLabel }}</div>
+
+      <div style="border-top:2px dashed rgba(79,45,35,.2);margin:18px 0 14px;"></div>
+
+      <!-- items -->
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <sc-for list="{{ items }}" as="item" hint-placeholder-count="5">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+              <div onClick="{{ item.toggle }}" style="width:22px;height:22px;flex:none;border-radius:7px;background:{{ item.boxBg }};border:2px solid {{ item.boxBorder }};display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s,border-color .15s;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style="opacity:{{ item.checkOpacity }};"><path d="M5 12.5L10 17.5L19 7.5" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+              <span style="font-size:15px;font-weight:700;color:#5A4632;text-decoration:{{ item.textDecoration }};opacity:{{ item.textOpacity }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ item.name }}</span>
+            </div>
+            <span style="font-size:15px;font-weight:700;color:#5A4632;opacity:{{ item.textOpacity }};flex:none;margin-left:10px;">{{ item.priceLabel }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ hasUndo }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:14px;background:#F4E8D6;">
+          <span style="font-size:13.5px;font-weight:700;color:#5A4632;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ undoText }} excluded</span>
+          <span onClick="{{ undoLast }}" style="font-size:13.5px;font-weight:800;color:#C4841C;cursor:pointer;flex:none;margin-left:12px;">Undo</span>
+        </div>
+      </sc-if>
+
+      <!-- CTA -->
+      <div style="margin-top:20px;padding:16px;border-radius:18px;background:#F5C242;box-shadow:0 10px 22px rgba(197,142,20,.35);text-align:center;font-size:16px;font-weight:800;color:#5A3E0A;cursor:pointer;">Looks good</div>
+      <div style="margin-top:14px;text-align:center;font-size:15px;font-weight:700;color:#D89B1F;cursor:pointer;">Edit details</div>
+      <div style="margin-top:14px;text-align:center;font-size:15px;font-weight:700;color:#B0A48D;cursor:pointer;">Cancel</div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    vendorName: 'Sf',
+    editing: false,
+    undo: null,
+    items: [
+      { id: 1, name: 'Rsb Biasa', price: 7.00, checked: true },
+      { id: 2, name: '3\u00d7 Teh O Limau Ais', price: 8.70, checked: true },
+      { id: 3, name: 'td Maggi G Double', price: 11.00, checked: true },
+      { id: 4, name: 'Limau Ais Bungkus', price: 93.00, checked: true },
+      { id: 5, name: 'Milo Ais Bungkus', price: 4.20, checked: true },
+    ],
+  };
+
+  _fmt(n) {
+    return 'RM ' + n.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  _toggle(id) {
+    const it = this.state.items.find((i) => i.id === id);
+    if (!it) return;
+    const nowChecked = !it.checked;
+    this.setState((s) => ({
+      items: s.items.map((i) => i.id === id ? { ...i, checked: nowChecked } : i),
+    }));
+    clearTimeout(this._undoTimer);
+    if (!nowChecked) {
+      this.setState({ undo: { id, name: it.name } });
+      this._undoTimer = setTimeout(() => this.setState({ undo: null }), 4000);
+    } else if (this.state.undo && this.state.undo.id === id) {
+      this.setState({ undo: null });
+    }
+  }
+
+  _undoLast() {
+    if (!this.state.undo) return;
+    const id = this.state.undo.id;
+    clearTimeout(this._undoTimer);
+    this.setState((s) => ({
+      items: s.items.map((i) => i.id === id ? { ...i, checked: true } : i),
+      undo: null,
+    }));
+  }
+
+  renderVals() {
+    const items = this.state.items.map((it) => ({
+      id: it.id,
+      name: it.name,
+      priceLabel: this._fmt(it.price),
+      checked: it.checked,
+      toggle: () => this._toggle(it.id),
+      boxBg: it.checked ? '#F5C242' : '#FFFFFF',
+      boxBorder: it.checked ? '#F5C242' : '#E4D8C2',
+      checkOpacity: it.checked ? 1 : 0,
+      textDecoration: it.checked ? 'none' : 'line-through',
+      textOpacity: it.checked ? 1 : 0.4,
+    }));
+    const total = this.state.items.reduce((s, it) => s + (it.checked ? it.price : 0), 0);
+    const includedCount = this.state.items.filter((it) => it.checked).length;
+    const itemCount = this.state.items.length;
+
+    return {
+      items,
+      totalLabel: this._fmt(total),
+      includedCount,
+      itemCount,
+      hasUndo: !!this.state.undo,
+      undoText: this.state.undo ? this.state.undo.name : '',
+      undoLast: () => this._undoLast(),
+      vendorName: this.state.vendorName,
+      vendorInitial: (this.state.vendorName || '?').trim().charAt(0).toUpperCase() || '?',
+      editing: this.state.editing,
+      notEditing: !this.state.editing,
+      setVendorInput: (el) => {
+        this._vendorInput = el;
+        if (el && this.state.editing) { el.focus(); el.select(); }
+      },
+      startEdit: () => this.setState({ editing: true }),
+      vendorChange: (e) => this.setState({ vendorName: e.target.value }),
+      saveVendor: () => this.setState({ editing: false }),
+      vendorKeyDown: (e) => {
+        if (e.key === 'Enter') { e.target.blur(); }
+        if (e.key === 'Escape') { this.setState({ editing: false }); }
+      },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

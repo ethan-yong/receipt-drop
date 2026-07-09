@@ -41,8 +41,9 @@ dependencies:
   path: ^1.9.0
   uuid: ^4.5.1
   intl: ^0.19.0
-  google_mlkit_text_recognition: ^0.13.0
-  google_maps_flutter: ^2.9.0
+  flutter_map: ^8.1.1
+  flutter_map_cancellable_tile_provider: ^3.1.0
+  latlong2: ^0.9.1
   geolocator: ^13.0.1
   flutter_local_notifications: ^17.2.3
   receive_sharing_intent: ^1.8.0
@@ -87,7 +88,7 @@ flutter:
     - assets/config/categories-v1.json
     - assets/config/badges-v1.json
     - assets/branding/
-    - receipt_images/
+    - category_images/
     # Local secrets (gitignored). Copy `.env.example` → `.env` for debug; required for flutter_dotenv on all platforms including web.
     - .env
 

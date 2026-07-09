@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:intl/intl.dart';
 
 import '../models/transaction_view.dart';
@@ -223,6 +225,66 @@ List<MapPlaceCluster> mapClusters(List<TransactionView> rows) {
       transactions: txs,
     );
   }).toList();
+}
+
+class HeatCell {
+  const HeatCell({
+    required this.geohash,
+    required this.lat,
+    required this.lng,
+    required this.intensity,
+  });
+
+  final String geohash;
+  final double lat;
+  final double lng;
+
+  /// 0..1, sqrt-scaled against the busiest cell so mid-spend cells stay
+  /// visible instead of being washed out by one dominant hotspot.
+  final double intensity;
+}
+
+/// Spend totals bucketed into geohash cells for the map's heat overlay.
+List<HeatCell> heatCells(List<TransactionView> rows, {int precision = 5}) {
+  final totals = <String, double>{};
+  for (final t in rows) {
+    final lat = t.placeLat;
+    final lng = t.placeLng;
+    if (lat == null || lng == null || t.amountMyr == null) continue;
+    final cell = geohashAt(lat, lng, precision);
+    totals[cell] = (totals[cell] ?? 0) + t.amountMyr!;
+  }
+  if (totals.isEmpty) return const [];
+
+  final maxTotal = totals.values.reduce((a, b) => a > b ? a : b);
+  return totals.entries.map((e) {
+    final center = geohashCentroid(e.key);
+    final ratio = maxTotal <= 0 ? 0.0 : e.value / maxTotal;
+    return HeatCell(
+      geohash: e.key,
+      lat: center.lat,
+      lng: center.lng,
+      intensity: math.sqrt(ratio),
+    );
+  }).toList();
+}
+
+/// Category chip values for the map, derived from the geolocated rows in the
+/// current time window (highest spend first) instead of a hardcoded list.
+List<String> mapCategories(List<TransactionView> geoRows) {
+  final totals = <String, double>{};
+  for (final t in geoRows) {
+    if (!t.includeInCharts) continue;
+    if (t.placeLat == null || t.placeLng == null) continue;
+    totals.update(
+      t.effectiveCategory,
+      (v) => v + (t.amountMyr ?? 0),
+      ifAbsent: () => t.amountMyr ?? 0,
+    );
+  }
+  final entries = totals.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  return ['All categories', ...entries.map((e) => e.key)];
 }
 
 String dayGroupLabel(DateTime date, DateTime now) {

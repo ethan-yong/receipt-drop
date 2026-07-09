@@ -1,8 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:puggy_bank/core/theme/app_theme.dart';
-import 'package:puggy_bank/features/share/receipt_ingest_draft.dart';
-import 'package:puggy_bank/features/share/share_save_sheet.dart';
+import 'package:receipt_drop/core/theme/app_theme.dart';
+import 'package:receipt_drop/domain/logic/category_matcher.dart';
+import 'package:receipt_drop/features/share/receipt_ingest_draft.dart';
+import 'package:receipt_drop/features/share/share_save_sheet.dart';
+
+final _testCategories = CategoryConfig.fromJson({
+  'version': 'test',
+  'default_category': 'Others',
+  'rules': [
+    {
+      'category': 'Food & Drink',
+      'any_of': ['cafe', 'restoran'],
+    }
+  ],
+});
 
 void main() {
   ReceiptIngestDraft draftWith({
@@ -20,15 +32,21 @@ void main() {
     );
   }
 
-  Future<void> pumpSheet(WidgetTester tester, ReceiptIngestDraft draft) async {
+  Future<void> pumpSheet(
+    WidgetTester tester,
+    ReceiptIngestDraft draft, {
+    Future<void> Function(ReceiptIngestDraft)? onSaveForLater,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
-        theme: buildPuggyTestTheme(),
+        theme: buildReceiptDropTestTheme(),
         home: Scaffold(
           body: ShareSaveSheet(
             draft: draft,
+            categories: _testCategories,
             onSave: (_, _, _) async {},
             onCancel: (_) async {},
+            onSaveForLater: onSaveForLater,
           ),
         ),
       ),
@@ -69,5 +87,43 @@ void main() {
     );
 
     expect(find.text(warningText), findsNothing);
+  });
+
+  testWidgets('offers Save for later on a needs-amount draft and invokes it', (
+    tester,
+  ) async {
+    ReceiptIngestDraft? parked;
+    await pumpSheet(
+      tester,
+      draftWith(ocrConfidence: 0.1, needsAmount: true),
+      onSaveForLater: (draft) async => parked = draft,
+    );
+
+    final button = find.text('Save for later');
+    expect(button, findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(parked, isNotNull);
+    expect(parked!.needsAmount, isTrue);
+  });
+
+  testWidgets('hides Save for later on a confident draft', (tester) async {
+    await pumpSheet(
+      tester,
+      draftWith(ocrConfidence: 0.9),
+      onSaveForLater: (_) async {},
+    );
+
+    expect(find.text('Save for later'), findsNothing);
+  });
+
+  testWidgets('hides Save for later when no callback is wired', (
+    tester,
+  ) async {
+    await pumpSheet(tester, draftWith(ocrConfidence: 0.1, needsAmount: true));
+
+    expect(find.text('Save for later'), findsNothing);
   });
 }

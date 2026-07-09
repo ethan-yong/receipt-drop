@@ -4,8 +4,11 @@ import '../../core/platform/adaptive_sheet.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../core/platform/platform_utils.dart';
 import '../../core/theme/app_theme.dart';
+import '../../data/repositories/places_repository.dart';
+import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/rm_amount_parser.dart';
+import '../../features/places/place_picker_screen.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
 import '../../widgets/receipt_strip.dart';
@@ -16,11 +19,17 @@ class ShareSaveSheet extends StatefulWidget {
   const ShareSaveSheet({
     super.key,
     required this.draft,
+    required this.categories,
     required this.onSave,
     required this.onCancel,
+    this.onSaveForLater,
   });
 
   final ReceiptIngestDraft draft;
+
+  /// Category rules used to populate the inline category picker.
+  final CategoryConfig categories;
+
   final Future<void> Function(
     double? amount,
     ReceiptIngestDraft draft,
@@ -28,24 +37,32 @@ class ShareSaveSheet extends StatefulWidget {
   ) onSave;
   final Future<void> Function(ReceiptIngestDraft draft) onCancel;
 
+  /// Parks the receipt in the review queue instead of confirming now.
+  /// Offered only for needs-amount / low-confidence drafts.
+  final Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater;
+
   /// Returns true if the user saved.
   static Future<bool> show(
     BuildContext context, {
     required ReceiptIngestDraft draft,
+    required CategoryConfig categories,
     required Future<void> Function(
       double? amount,
       ReceiptIngestDraft draft,
       ImpactLevel impact,
     ) onSave,
     required Future<void> Function(ReceiptIngestDraft draft) onCancel,
+    Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater,
   }) async {
     final result = await AdaptiveSheet.showForm<bool>(
       context: context,
       isScrollControlled: true,
       child: ShareSaveSheet(
         draft: draft,
+        categories: categories,
         onSave: onSave,
         onCancel: onCancel,
+        onSaveForLater: onSaveForLater,
       ),
     );
     return result ?? false;
@@ -58,11 +75,20 @@ class ShareSaveSheet extends StatefulWidget {
 class _ShareSaveSheetState extends State<ShareSaveSheet> {
   late final TextEditingController _amountController;
   ImpactLevel? _impactOverride;
+  String? _categoryOverride;
+  PlaceResult? _pickedPlace;
   var _saving = false;
 
+  // Draft carries the combined-confidence verdict from the parse pipeline;
+  // the raw ocrConfidence threshold is only the fallback for older drafts.
   bool get _lowConfidence =>
-      !widget.draft.needsAmount &&
-      (widget.draft.ocrConfidence ?? 0) < lowOcrConfidenceThreshold;
+      widget.draft.lowConfidence ||
+      (!widget.draft.needsAmount &&
+          (widget.draft.ocrConfidence ?? 0) < lowOcrConfidenceThreshold);
+
+  bool get _canSaveForLater =>
+      widget.onSaveForLater != null &&
+      (widget.draft.needsAmount || _lowConfidence);
 
   @override
   void initState() {
@@ -98,6 +124,21 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
   ImpactLevel get _effectiveImpact =>
       _impactOverride ?? deriveImpactLevel(_parseAmount());
 
+  Future<void> _openPicker() async {
+    final lat = widget.draft.shareLocationLat;
+    final lng = widget.draft.shareLocationLng;
+    if (lat == null || lng == null) return;
+    final result = await PlacePickerScreen.push(
+      context,
+      lat: lat,
+      lng: lng,
+      candidates: widget.draft.merchantCandidates,
+      merchantName: widget.draft.merchantRaw,
+      category: widget.draft.categoryGuess,
+    );
+    if (result != null && mounted) setState(() => _pickedPlace = result);
+  }
+
   Future<void> _save() async {
     final amount = _parseAmount();
     if (amount == null || amount <= 0) {
@@ -105,8 +146,16 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
       return;
     }
     setState(() => _saving = true);
+    final draft = widget.draft.copyWith(
+      categoryUser: _categoryOverride,
+      pickedPlaceName: _pickedPlace?.name,
+      pickedPlaceGooglePlaceId: _pickedPlace?.id,
+      pickedPlaceLat: _pickedPlace?.lat,
+      pickedPlaceLng: _pickedPlace?.lng,
+      pickedPlaceLocked: _pickedPlace != null,
+    );
     try {
-      await widget.onSave(amount, widget.draft, _effectiveImpact);
+      await widget.onSave(amount, draft, _effectiveImpact);
       if (mounted) {
         PlatformFeedback.mediumTap();
         Navigator.pop(context, true);
@@ -119,6 +168,19 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
   Future<void> _cancel() async {
     await widget.onCancel(widget.draft);
     if (mounted) Navigator.pop(context, false);
+  }
+
+  Future<void> _saveForLater() async {
+    setState(() => _saving = true);
+    try {
+      await widget.onSaveForLater!(widget.draft);
+      if (mounted) {
+        PlatformFeedback.mediumTap();
+        Navigator.pop(context, false);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -155,11 +217,45 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
         ),
         if (widget.draft.merchantRaw != null) ...[
           const SizedBox(height: AppSpacing.sm),
-          Text(
-            widget.draft.merchantRaw!,
-            style: Theme.of(context).textTheme.bodySmall,
-            textAlign: TextAlign.center,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  widget.draft.merchantRaw!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (widget.draft.shareLocationLat != null) ...[
+                const SizedBox(width: 2),
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    iconSize: 16,
+                    icon: const Icon(Icons.edit_location_outlined),
+                    tooltip: 'Choose location',
+                    onPressed: _openPicker,
+                  ),
+                ),
+              ],
+            ],
           ),
+          if (_pickedPlace != null) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              _pickedPlace!.name,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ],
         if (_lowConfidence) ...[
           const SizedBox(height: AppSpacing.md),
@@ -194,6 +290,14 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
         ],
         const SizedBox(height: AppSpacing.lg),
         AmountField(controller: _amountController),
+        const SizedBox(height: AppSpacing.md),
+        Text('Category', style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: AppSpacing.sm),
+        _CategoryDropdown(
+          value: _categoryOverride ?? widget.draft.categoryGuess,
+          categories: widget.categories,
+          onChanged: (v) => setState(() => _categoryOverride = v),
+        ),
         const SizedBox(height: AppSpacing.lg),
         Text('Impact', style: Theme.of(context).textTheme.labelMedium),
         const SizedBox(height: AppSpacing.sm),
@@ -223,6 +327,11 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
           label: 'Save',
           onPressed: _saving ? null : _save,
         ),
+        if (_canSaveForLater)
+          TextButton(
+            onPressed: _saving ? null : _saveForLater,
+            child: const Text('Save for later'),
+          ),
         TextButton(
           onPressed: _saving ? null : _cancel,
           child: const Text('Cancel'),
@@ -281,6 +390,42 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CategoryDropdown extends StatelessWidget {
+  const _CategoryDropdown({
+    required this.value,
+    required this.categories,
+    required this.onChanged,
+  });
+
+  final String value;
+  final CategoryConfig categories;
+  final ValueChanged<String?> onChanged;
+
+  List<String> get _items => {
+        ...categories.rules.map((r) => r.category),
+        categories.defaultCategory,
+      }.toList();
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _items;
+    final safeValue = items.contains(value) ? value : items.first;
+    return DropdownButtonFormField<String>(
+      value: safeValue,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        isDense: true,
+      ),
+      items: items.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+      onChanged: onChanged,
     );
   }
 }

@@ -1,7 +1,17 @@
+import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:io';
 
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:http/http.dart' as http;
 import 'package:pdfrx/pdfrx.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../core/config/env.dart';
+import '../../domain/models/ocr_line.dart';
+import 'ocr_api_client.dart';
+
+const _ocrProxyTimeout = Duration(seconds: 30);
+const _ocrImageMimeTypes = {'image/jpeg', 'image/png', 'image/webp'};
 
 typedef OcrLogger = void Function(
   String message, {
@@ -28,17 +38,31 @@ void _defaultOcrLog(
   );
 }
 
-/// Runs OCR on receipt images (ML Kit) or extracts text from PDF (pdfrx).
-Future<String> runOcrOnReceiptFile({
+/// OCR text plus the engine's scan-quality confidence (null for PDF text
+/// extraction when no OCR service ran) and, when available, per-line
+/// visual-prominence data for merchant candidate ranking.
+typedef OcrFileResult = ({
+  String text,
+  double? serviceConfidence,
+  List<OcrLine>? lines,
+});
+
+/// Runs OCR on receipt images via the self-hosted OCR API, or extracts text
+/// from PDF (pdfrx). No on-device ML Kit fallback.
+Future<OcrFileResult> runOcrOnReceiptFile({
   required String filePath,
   required String mimeType,
 }) async {
   final isPdf =
       mimeType.contains('pdf') || filePath.toLowerCase().endsWith('.pdf');
   if (isPdf) {
-    return _extractPdfText(filePath);
+    return (
+      text: await _extractPdfText(filePath),
+      serviceConfidence: null,
+      lines: null,
+    );
   }
-  return _ocrImageFile(filePath);
+  return _ocrImageFile(filePath, mimeType);
 }
 
 Future<String> _extractPdfText(String pdfPath) async {
@@ -68,23 +92,121 @@ Future<String> _extractPdfText(String pdfPath) async {
   }
 }
 
-Future<String> _ocrImageFile(String imagePath) async {
-  try {
-    final recognizer = TextRecognizer();
-    final input = InputImage.fromFilePath(imagePath);
-    final result = await recognizer.processImage(input);
-    await recognizer.close();
-    if (result.text.isEmpty) {
-      ocrLogger('Image OCR found no text: $imagePath', level: 800);
+Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
+  if (!_ocrImageMimeTypes.contains(mimeType.toLowerCase())) {
+    ocrLogger('Unsupported MIME for OCR: $mimeType', level: 800);
+    return (text: '', serviceConfidence: null, lines: null);
+  }
+
+  if (Env.hasOcrApiConfig) {
+    final direct = await runOcrApi(
+      filePath: imagePath,
+      mimeType: mimeType,
+      ocrUrl: Uri.parse(Env.ocrApiUrl),
+      secret: Env.ocrSharedSecret,
+    );
+    if (direct != null && direct.text.trim().isNotEmpty) {
+      return (
+        text: direct.text,
+        serviceConfidence: direct.confidence,
+        lines: direct.lines,
+      );
     }
-    return result.text;
+    ocrLogger(
+      'Direct OCR API returned no text: $imagePath',
+      level: 800,
+    );
+    return (text: '', serviceConfidence: null, lines: null);
+  }
+
+  if (Env.hasSupabaseConfig) {
+    final proxied = await _ocrViaSupabaseProxy(
+      imagePath: imagePath,
+      mimeType: mimeType,
+    );
+    if (proxied != null && proxied.text.trim().isNotEmpty) {
+      return (
+        text: proxied.text,
+        serviceConfidence: proxied.confidence,
+        lines: proxied.lines,
+      );
+    }
+    ocrLogger(
+      'OCR proxy returned no text: $imagePath',
+      level: 800,
+    );
+    return (text: '', serviceConfidence: null, lines: null);
+  }
+
+  ocrLogger(
+    'OCR unavailable: set OCR_API_URL + OCR_SHARED_SECRET in .env, '
+    'or configure Supabase and sign in for ocr-proxy',
+    level: 1000,
+  );
+  return (text: '', serviceConfidence: null, lines: null);
+}
+
+/// Calls the self-hosted OCR service via the `ocr-proxy` Supabase Edge
+/// Function. Returns `null` on any failure — never throws.
+Future<({String text, double? confidence, List<OcrLine>? lines})?>
+    _ocrViaSupabaseProxy({
+  required String imagePath,
+  required String mimeType,
+}) async {
+  try {
+    final token = Supabase.instance.client.auth.currentSession?.accessToken;
+    if (token == null) {
+      ocrLogger('OCR proxy skipped: no auth session', level: 800);
+      return null;
+    }
+
+    final bytes = await File(imagePath).readAsBytes();
+    final uri = Uri.parse(
+      '${Env.supabaseUrl.replaceAll(RegExp(r'/+$'), '')}/functions/v1/ocr-proxy',
+    );
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Authorization': 'Bearer $token',
+            'apikey': Env.supabaseAnonKey,
+            'Content-Type': mimeType,
+          },
+          body: bytes,
+        )
+        .timeout(_ocrProxyTimeout);
+
+    if (response.statusCode != 200) {
+      ocrLogger(
+        'OCR proxy request failed: $imagePath (status ${response.statusCode})',
+        level: 800,
+      );
+      return null;
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) return null;
+    final text = decoded['text'];
+    if (text is! String) return null;
+    final confidence = decoded['confidence'];
+    final linesJson = decoded['lines'];
+    final lines = linesJson is List
+        ? [for (final item in linesJson) OcrLine.tryFromJson(item)]
+            .whereType<OcrLine>()
+            .toList()
+        : null;
+    return (
+      text: text,
+      confidence: confidence is num ? confidence.toDouble() : null,
+      lines: lines,
+    );
   } catch (e, st) {
     ocrLogger(
-      'Image OCR failed: $imagePath',
+      'OCR proxy failed: $imagePath',
       error: e,
       stackTrace: st,
-      level: 1000,
+      level: 400,
     );
-    return '';
+    return null;
   }
 }

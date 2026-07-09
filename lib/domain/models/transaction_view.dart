@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../logic/impact_level.dart';
+import 'receipt_line_item.dart';
 
 /// Unified transaction row for UI (outbox-first; cloud merge later).
 class TransactionView {
@@ -22,6 +23,11 @@ class TransactionView {
     this.thumbnailBytes,
     this.impactUser,
     this.ritualledAt,
+    this.lineItems,
+    this.rawOcrText,
+    this.ocrConfidence,
+    this.shareLocationLat,
+    this.shareLocationLng,
   });
 
   final String id;
@@ -41,6 +47,20 @@ class TransactionView {
   final Uint8List? thumbnailBytes;
   final String? impactUser;
   final DateTime? ritualledAt;
+  final List<ReceiptLineItem>? lineItems;
+
+  /// Raw OCR text kept as evidence on failed/low-confidence parses; shown on
+  /// the review screen so the user can find the amount themselves.
+  final String? rawOcrText;
+
+  /// Amount-extraction confidence (0..1) as stored on the outbox row.
+  final double? ocrConfidence;
+
+  final double? shareLocationLat;
+  final double? shareLocationLng;
+
+  /// Waiting for one-tap human confirmation on the review screen.
+  bool get needsReview => pipelineStatus == 'needs_review';
 
   String get effectiveCategory {
     final user = categoryUser?.trim();
@@ -101,6 +121,9 @@ class TransactionView {
     required String pipelineStatus,
     String? impactUser,
     DateTime? ritualledAt,
+    List<ReceiptLineItem>? lineItems,
+    double? shareLocationLat,
+    double? shareLocationLng,
   }) {
     return TransactionView(
       id: id,
@@ -119,6 +142,9 @@ class TransactionView {
       localThumbnailPath: null,
       impactUser: impactUser,
       ritualledAt: ritualledAt,
+      lineItems: lineItems,
+      shareLocationLat: shareLocationLat,
+      shareLocationLng: shareLocationLng,
     );
   }
 
@@ -133,6 +159,7 @@ class TransactionView {
     DateTime? occurredAt,
     String? impactUser,
     DateTime? ritualledAt,
+    List<ReceiptLineItem>? lineItems,
   }) {
     return TransactionView(
       id: id,
@@ -153,6 +180,11 @@ class TransactionView {
       thumbnailBytes: thumbnailBytes,
       impactUser: impactUser ?? this.impactUser,
       ritualledAt: ritualledAt ?? this.ritualledAt,
+      lineItems: lineItems ?? this.lineItems,
+      rawOcrText: rawOcrText,
+      ocrConfidence: ocrConfidence,
+      shareLocationLat: shareLocationLat,
+      shareLocationLng: shareLocationLng,
     );
   }
 }

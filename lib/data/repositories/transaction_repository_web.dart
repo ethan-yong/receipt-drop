@@ -7,6 +7,7 @@ import '../../domain/logic/avatar_mood.dart';
 import '../../domain/models/transaction_view.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
+import 'places_repository.dart';
 
 /// In-memory transactions for Flutter Web (Drift/SQLite uses dart:ffi on native only).
 class TransactionRepository {
@@ -71,11 +72,14 @@ class TransactionRepository {
       placeLat: request.shareLocationLat,
       placeLng: request.shareLocationLng,
       syncStatus: 'pending',
-      pipelineStatus: 'provisional',
+      pipelineStatus: request.needsReview ? 'needs_review' : 'provisional',
       localThumbnailPath: request.localFilePath,
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
       ritualledAt: null,
+      lineItems: request.lineItems,
+      rawOcrText: request.rawOcrText,
+      ocrConfidence: request.ocrConfidence,
     );
     _rows.add(view);
     _emit();
@@ -83,10 +87,72 @@ class TransactionRepository {
     return view;
   }
 
+  final _needsReviewController =
+      StreamController<List<TransactionView>>.broadcast();
+
+  Stream<List<TransactionView>> watchNeedsReview() {
+    Future.microtask(_emitNeedsReview);
+    return _needsReviewController.stream;
+  }
+
+  void _emitNeedsReview() {
+    final queued = _rows.where((r) => r.needsReview).toList()
+      ..sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
+    if (!_needsReviewController.isClosed) {
+      _needsReviewController.add(queued);
+    }
+  }
+
+  Future<void> confirmReview(
+    String id,
+    double amountMyr, {
+    String? impactUser,
+  }) async {
+    final i = _rows.indexWhere((r) => r.id == id);
+    if (i < 0) return;
+    final row = _rows[i];
+    _rows[i] = TransactionView(
+      id: row.id,
+      occurredAt: row.occurredAt,
+      amountMyr: amountMyr,
+      needsAmount: false,
+      merchantRaw: row.merchantRaw,
+      categoryGuess: row.categoryGuess,
+      categoryUser: row.categoryUser,
+      placeName: row.placeName,
+      placeGooglePlaceId: row.placeGooglePlaceId,
+      placeLat: row.placeLat,
+      placeLng: row.placeLng,
+      syncStatus: 'pending',
+      pipelineStatus: 'provisional',
+      localThumbnailPath: row.localThumbnailPath,
+      thumbnailBytes: row.thumbnailBytes,
+      impactUser: impactUser ?? row.impactUser,
+      ritualledAt: row.ritualledAt,
+      lineItems: row.lineItems,
+      rawOcrText: row.rawOcrText,
+      ocrConfidence: row.ocrConfidence,
+    );
+    _emit();
+  }
+
   Future<void> updateTransaction(TransactionView view) async {
     final i = _rows.indexWhere((r) => r.id == view.id);
     if (i >= 0) {
       _rows[i] = view;
+      _emit();
+    }
+  }
+
+  Future<void> updateTransactionPlace(String id, PlaceResult place) async {
+    final i = _rows.indexWhere((r) => r.id == id);
+    if (i >= 0) {
+      _rows[i] = _rows[i].copyWith(
+        placeName: place.name,
+        placeGooglePlaceId: place.id,
+        placeLat: place.lat,
+        placeLng: place.lng,
+      );
       _emit();
     }
   }
@@ -111,6 +177,7 @@ class TransactionRepository {
           localThumbnailPath: _rows[i].localThumbnailPath,
           thumbnailBytes: _rows[i].thumbnailBytes,
           impactUser: _rows[i].impactUser,
+          lineItems: _rows[i].lineItems,
         );
       }
     }
@@ -158,10 +225,12 @@ class TransactionRepository {
       _controller.add(sorted);
     }
     _emitUnritualled();
+    _emitNeedsReview();
   }
 
   Future<void> dispose() async {
     await _unritualledController.close();
+    await _needsReviewController.close();
     await _controller.close();
   }
 }

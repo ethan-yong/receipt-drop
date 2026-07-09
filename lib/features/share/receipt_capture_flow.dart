@@ -7,10 +7,11 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/platform/platform_feedback.dart';
-import '../../data/repositories/ingest_receipt_request.dart';
 import '../../data/repositories/social_repository.dart';
+import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/models/transaction_view.dart';
 import 'receipt_capture_menu.dart';
+import 'receipt_confirm_sheet.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_ingest_service.dart';
 import 'share_save_sheet.dart';
@@ -125,28 +126,39 @@ class ReceiptCaptureFlow {
   }) async {
     TransactionView? savedTx;
 
+    final categories = await loadBundledCategoryConfig();
+    if (!context.mounted) return;
+
+    // The confirm sheet may hand back an edited draft (renamed vendor,
+    // excluded line items with an adjusted total); null means cancelled.
+    final confirmedDraft = await ReceiptConfirmSheet.show(context, draft: draft);
+    if (!context.mounted) return;
+    if (confirmedDraft == null) {
+      await ReceiptIngestService.discardDraft(draft);
+      return;
+    }
+
     final saved = await ShareSaveSheet.show(
       context,
-      draft: draft,
+      draft: confirmedDraft,
+      categories: categories,
       onSave: (amount, draft, impact) async {
+        if (amount == null) return;
         savedTx = await AppServices.transactions.ingestReceipt(
-          IngestReceiptRequest(
-            localFilePath: draft.localFilePath,
-            mimeType: draft.mimeType,
-            amountMyr: amount,
-            needsAmount: false,
-            merchantRaw: draft.merchantRaw,
-            categoryGuess: draft.categoryGuess,
-            thumbnailBytes: draft.thumbnailBytes,
-            shareLocationLat: draft.shareLocationLat,
-            shareLocationLng: draft.shareLocationLng,
-            shareLocationCapturedAt: draft.shareLocationCapturedAt,
-            ocrConfidence: draft.ocrConfidence,
+          draft.toIngestRequest(
+            confirmedAmount: amount,
             impactUser: impact.name,
           ),
         );
         final tx = savedTx;
         if (tx != null) SocialRepository.createFeedPost(tx);
+      },
+      // Parks the receipt in the review queue (no ritual, no feed post) —
+      // closing the "cancel = receipt lost" hole for unreadable receipts.
+      onSaveForLater: (draft) async {
+        await AppServices.transactions.ingestReceipt(
+          draft.toNeedsReviewRequest(),
+        );
       },
       onCancel: ReceiptIngestService.discardDraft,
     );

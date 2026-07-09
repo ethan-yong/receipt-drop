@@ -1,0 +1,20 @@
+# Dev tooling for the monorepo. Run OCR API from repo root:
+#   uv sync
+#   uv run ocr-api
+[project]
+name = "receipt-drop"
+version = "0.0.0"
+description = "Receipt Drop — local dev scripts"
+requires-python = ">=3.11"
+dependencies = [
+  "ocr-api",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["services/ocr-api", "services/leaderboard-api"]
+
+[tool.uv.sources]
+ocr-api = { workspace = true }
