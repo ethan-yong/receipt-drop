@@ -133,8 +133,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<void> _pickPlace() async {
-    final lat = _shareLocationLat;
-    final lng = _shareLocationLng;
+    // Prefer the resolved place's coordinates (set for almost any synced/
+    // enriched transaction) over the share-time capture location, which is
+    // only available when location permission was granted at share time.
+    final lat = _placeLat ?? _shareLocationLat;
+    final lng = _placeLng ?? _shareLocationLng;
     PlaceResult? result;
     if (lat != null && lng != null) {
       result = await PlacePickerScreen.push(

@@ -16,6 +16,8 @@ ReceiptIngestDraft _draft({
   double? amount = 19.90,
   List<ReceiptLineItem> lineItems = _items,
   String? merchantRaw = 'SF CAFE SDN BHD',
+  double? shareLocationLat,
+  double? shareLocationLng,
 }) {
   return ReceiptIngestDraft(
     localFilePath: 'receipts/test.jpg',
@@ -25,6 +27,8 @@ ReceiptIngestDraft _draft({
     merchantRaw: merchantRaw,
     categoryGuess: 'Food & Drink',
     lineItems: lineItems,
+    shareLocationLat: shareLocationLat,
+    shareLocationLng: shareLocationLng,
   );
 }
 
@@ -145,12 +149,12 @@ void main() {
     expect(returned!.merchantRaw, 'SF CAFE SDN BHD');
   });
 
-  testWidgets('pencil renames the vendor and commits it on the draft',
+  testWidgets('tapping the vendor name renames it and commits it on the draft',
       (tester) async {
     ReceiptIngestDraft? returned;
     await _openSheet(tester, _draft(), (result) => returned = result);
 
-    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.tap(find.text('Sf Cafe'));
     await tester.pump();
 
     expect(find.byType(TextField), findsOneWidget);
@@ -166,6 +170,50 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(returned!.merchantRaw, 'Nasi Kandar Pelita');
+  });
+
+  testWidgets(
+      'tapping an item price edits it and recalculates the total on save',
+      (tester) async {
+    ReceiptIngestDraft? returned;
+    await _openSheet(tester, _draft(), (result) => returned = result);
+
+    await tester.tap(find.text('RM 7.00'));
+    await tester.pump();
+
+    expect(find.byType(TextField), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '9.50');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('RM 22.40'), findsOneWidget); // 19.90 + (9.50 - 7.00)
+
+    await tester.tap(find.text('Looks good'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(returned!.amountMyr, closeTo(22.40, 0.001));
+    expect(
+      returned!.lineItems.firstWhere((i) => i.name == 'Rsb Biasa').priceMyr,
+      closeTo(9.50, 0.001),
+    );
+  });
+
+  testWidgets('location pencil only shown when a share location is present',
+      (tester) async {
+    await _openSheet(tester, _draft(), (_) {});
+    expect(find.byIcon(Icons.edit_location_outlined), findsNothing);
+  });
+
+  testWidgets('location pencil is shown when a share location is present',
+      (tester) async {
+    await _openSheet(
+      tester,
+      _draft(shareLocationLat: 3.14, shareLocationLng: 101.6),
+      (_) {},
+    );
+    expect(find.byIcon(Icons.edit_location_outlined), findsOneWidget);
   });
 
   testWidgets('Cancel pops null', (tester) async {

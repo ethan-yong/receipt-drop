@@ -14,6 +14,14 @@ class ReceiptLineItem {
   final double? confidence; // parser confidence for this row
   final int? lineIndex; // source line in OCR text (debug / UI)
 
+  ReceiptLineItem copyWith({double? priceMyr}) => ReceiptLineItem(
+        name: name,
+        priceMyr: priceMyr ?? this.priceMyr,
+        quantity: quantity,
+        confidence: confidence,
+        lineIndex: lineIndex,
+      );
+
   /// "3× Teh O Limau Ais" when a quantity above one was detected, else just
   /// the name (a qty of 1 adds no information on screen).
   String get displayLabel =>

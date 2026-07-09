@@ -1,9 +1,10 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
@@ -23,10 +24,33 @@ import 'widgets/friend_pin_sheet.dart';
 import 'widgets/place_detail_panel.dart';
 import 'widgets/spend_place_marker.dart';
 
+/// Standard Web Mercator tile-pixel projection (256px tiles, doubling per
+/// zoom level) — mirrors the maths `flutter_map`'s `MapCamera.projectAtZoom`
+/// used internally. `google_maps_flutter` has no client-side equivalent, so
+/// it's reimplemented here purely for the "shift the pin up a quarter
+/// viewport" trick in `_selectPlace` — kept as synchronous math rather than
+/// an async `getScreenCoordinate` round trip, since that API is tied to the
+/// *current* camera/zoom, not the *target* zoom being animated to.
+Offset _mercatorProject(LatLng point, double zoom) {
+  final scale = 256.0 * math.pow(2, zoom);
+  final x = (point.longitude + 180) / 360 * scale;
+  final sinLat =
+      math.sin(point.latitude * math.pi / 180).clamp(-0.9999, 0.9999);
+  final y =
+      (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) * scale;
+  return Offset(x, y);
+}
+
+LatLng _mercatorUnproject(Offset point, double zoom) {
+  final scale = 256.0 * math.pow(2, zoom);
+  final lng = point.dx / scale * 360 - 180;
+  final n = math.pi - 2 * math.pi * point.dy / scale;
+  final lat = 180 / math.pi * math.atan(0.5 * (math.exp(n) - math.exp(-n)));
+  return LatLng(lat, lng);
+}
+
 /// Snap-style spend map: own spend bubbles (or heat overlay) plus friends'
-/// avatar pins at their latest receipt place. Free CARTO raster basemap —
-/// no API key; swap to a keyed provider (MapTiler/Stadia) at production
-/// scale, and never ship tile.openstreetmap.org as the default.
+/// avatar pins at their latest receipt place.
 class SpendMapScreen extends StatefulWidget {
   const SpendMapScreen({super.key});
 
@@ -37,10 +61,8 @@ class SpendMapScreen extends StatefulWidget {
 class _SpendMapScreenState extends State<SpendMapScreen>
     with TickerProviderStateMixin {
   static const _malaysiaCenter = LatLng(3.1390, 101.6869);
-  static const _tileUrl =
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
-  final MapController _mapController = MapController();
+  GoogleMapController? _controller;
   final _panelController = DraggableScrollableController();
   String _timeFilter = 'This month';
   String _categoryFilter = 'All categories';
@@ -51,7 +73,21 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   Position? _myPosition;
   AvatarConfig? _myAvatarConfig;
   MapPlaceCluster? _selectedCluster;
-  AnimationController? _cameraAnim;
+
+  /// Latest clusters from the stream, cached so the async reprojection pass
+  /// (which runs outside `build`) always has the current pin set.
+  List<MapPlaceCluster> _lastClusters = const [];
+  List<LatLng>? _pendingFitPoints;
+
+  /// Screen-pixel (logical) positions for the custom-widget pins, since
+  /// `google_maps_flutter`'s native `Marker` can only host a static bitmap,
+  /// not an arbitrary widget. Recomputed by [_reproject].
+  Map<String, Offset> _placeScreenPos = {};
+  Map<String, Offset> _friendScreenPos = {};
+  Offset? _meScreenPos;
+  bool _reprojectScheduled = false;
+  bool _reprojecting = false;
+  bool _reprojectPending = false;
 
   @override
   void initState() {
@@ -69,8 +105,6 @@ class _SpendMapScreenState extends State<SpendMapScreen>
 
   @override
   void dispose() {
-    _cameraAnim?.dispose();
-    _cameraAnim = null;
     _panelController.dispose();
     super.dispose();
   }
@@ -103,47 +137,18 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   Future<void> _openPlaceSearch() async {
     final result = await context.pushNamed<PlaceResult>('places-search');
     if (result == null || !mounted) return;
-    _mapController.move(LatLng(result.lat, result.lng), 15);
+    _controller?.moveCamera(
+      CameraUpdate.newLatLngZoom(LatLng(result.lat, result.lng), 15),
+    );
   }
 
   Future<void> _recenterOnMe() async {
     final pos = await getCurrentPositionOrNull();
     if (pos == null || !mounted) return;
     setState(() => _myPosition = pos);
-    _animatedMapMove(LatLng(pos.latitude, pos.longitude), 14);
-  }
-
-  /// Smoothly glides the camera to [dest]/[destZoom] (flutter_map's `move`
-  /// is instant; this is the standard tween recipe).
-  void _animatedMapMove(LatLng dest, double destZoom) {
-    _cameraAnim?.dispose();
-    final camera = _mapController.camera;
-    final latTween =
-        Tween(begin: camera.center.latitude, end: dest.latitude);
-    final lngTween =
-        Tween(begin: camera.center.longitude, end: dest.longitude);
-    final zoomTween = Tween(begin: camera.zoom, end: destZoom);
-
-    final controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 550),
+    _controller?.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 14),
     );
-    _cameraAnim = controller;
-    final anim = CurvedAnimation(parent: controller, curve: Curves.easeInOut);
-    controller.addListener(() {
-      _mapController.move(
-        LatLng(latTween.evaluate(anim), lngTween.evaluate(anim)),
-        zoomTween.evaluate(anim),
-      );
-    });
-    controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed ||
-          status == AnimationStatus.dismissed) {
-        if (identical(_cameraAnim, controller)) _cameraAnim = null;
-        controller.dispose();
-      }
-    });
-    controller.forward();
   }
 
   /// Google-Maps-style pin tap: open the half-screen panel and zoom in with
@@ -151,16 +156,15 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   void _selectPlace(MapPlaceCluster cluster) {
     setState(() => _selectedCluster = cluster);
     const zoom = 16.5;
-    final camera = _mapController.camera;
     final pin = LatLng(cluster.lat, cluster.lng);
     // Center the camera a quarter viewport south of the pin so the pin sits
     // ~25% from the top once the panel is up.
-    final shifted = camera.unprojectAtZoom(
-      camera.projectAtZoom(pin, zoom) +
-          Offset(0, camera.nonRotatedSize.height * 0.25),
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+    final shifted = _mercatorUnproject(
+      _mercatorProject(pin, zoom) + Offset(0, viewportHeight * 0.25),
       zoom,
     );
-    _animatedMapMove(shifted, zoom);
+    _controller?.animateCamera(CameraUpdate.newLatLngZoom(shifted, zoom));
   }
 
   void _closePanel() {
@@ -180,63 +184,188 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     ];
     if (points.isEmpty) return;
     _didAutoFit = true;
+    _pendingFitPoints = points;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (points.length == 1) {
-        _mapController.move(points.single, 13);
-      } else {
-        _mapController.fitCamera(
-          CameraFit.coordinates(
-            coordinates: points,
-            padding: const EdgeInsets.all(64),
-            maxZoom: 15,
-          ),
-        );
-      }
+      if (mounted) _applyPendingFitIfReady();
     });
   }
 
-  List<Marker> _placeMarkers(List<MapPlaceCluster> clusters) {
-    return clusters.map((c) {
-      return Marker(
-        point: LatLng(c.lat, c.lng),
-        width: 96,
-        height: 56,
-        // Bubble sits above the point; the tail tip is the anchor.
-        alignment: Alignment.topCenter,
+  /// `GoogleMapController` only exists once the platform view finishes
+  /// creating, which can race with the first stream emission — this is
+  /// called from both `onMapCreated` and the post-frame callback above, and
+  /// no-ops until both the controller and a pending fit are ready.
+  void _applyPendingFitIfReady() {
+    final controller = _controller;
+    final points = _pendingFitPoints;
+    if (controller == null || points == null) return;
+    _pendingFitPoints = null;
+    if (points.length == 1) {
+      controller.animateCamera(CameraUpdate.newLatLngZoom(points.single, 13));
+      return;
+    }
+    var minLat = points.first.latitude;
+    var maxLat = points.first.latitude;
+    var minLng = points.first.longitude;
+    var maxLng = points.first.longitude;
+    for (final p in points.skip(1)) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    controller.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        64,
+      ),
+    );
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _controller = controller;
+    _applyPendingFitIfReady();
+    _scheduleReproject();
+  }
+
+  /// Coalesces however many camera-move ticks land in one frame into a
+  /// single reprojection pass, instead of one `getScreenCoordinate`
+  /// platform-channel call per pin per tick (which would jank the drag).
+  void _scheduleReproject([CameraPosition? _]) {
+    if (_reprojectScheduled) return;
+    _reprojectScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _reprojectScheduled = false;
+      if (mounted) _reproject();
+    });
+  }
+
+  /// Re-derives on-screen positions for every custom-widget pin
+  /// (`SpendPlaceMarker`/`FriendMapMarker`/"you are here") via
+  /// `GoogleMapController.getScreenCoordinate`, since `google_maps_flutter`'s
+  /// native `Marker` can't host arbitrary widgets. Batches every pin into one
+  /// `Future.wait` so drag/pinch stays smooth, and folds in any reproject
+  /// request that arrives while a batch is already in flight rather than
+  /// piling up unbounded work.
+  Future<void> _reproject() async {
+    final controller = _controller;
+    if (controller == null) return;
+    if (_reprojecting) {
+      _reprojectPending = true;
+      return;
+    }
+    _reprojecting = true;
+    try {
+      final placeKeys = [for (final c in _lastClusters) c.placeKey];
+      final friendKeys = [for (final p in _friendPins) p.userId];
+      final me = _myPosition;
+
+      final futures = <Future<ScreenCoordinate>>[
+        for (final c in _lastClusters)
+          controller.getScreenCoordinate(LatLng(c.lat, c.lng)),
+        for (final p in _friendPins)
+          controller.getScreenCoordinate(LatLng(p.lat, p.lng)),
+        if (me != null)
+          controller.getScreenCoordinate(LatLng(me.latitude, me.longitude)),
+      ];
+
+      if (futures.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _placeScreenPos = {};
+            _friendScreenPos = {};
+            _meScreenPos = null;
+          });
+        }
+        return;
+      }
+
+      List<ScreenCoordinate> resolved;
+      try {
+        resolved = await Future.wait(futures);
+      } catch (_) {
+        // Controller likely disposed mid-flight (screen popped); drop this
+        // batch, nothing left to update.
+        return;
+      }
+      if (!mounted) return;
+
+      final dpr = MediaQuery.devicePixelRatioOf(context);
+      var i = 0;
+      final newPlacePos = <String, Offset>{};
+      for (final key in placeKeys) {
+        newPlacePos[key] = Offset(resolved[i].x / dpr, resolved[i].y / dpr);
+        i++;
+      }
+      final newFriendPos = <String, Offset>{};
+      for (final key in friendKeys) {
+        newFriendPos[key] = Offset(resolved[i].x / dpr, resolved[i].y / dpr);
+        i++;
+      }
+      final newMePos =
+          me != null ? Offset(resolved[i].x / dpr, resolved[i].y / dpr) : null;
+
+      setState(() {
+        _placeScreenPos = newPlacePos;
+        _friendScreenPos = newFriendPos;
+        _meScreenPos = newMePos;
+      });
+    } finally {
+      _reprojecting = false;
+      if (_reprojectPending) {
+        _reprojectPending = false;
+        unawaited(_reproject());
+      }
+    }
+  }
+
+  List<Widget> _placeOverlays(List<MapPlaceCluster> clusters) {
+    final widgets = <Widget>[];
+    for (final c in clusters) {
+      final pos = _placeScreenPos[c.placeKey];
+      if (pos == null) continue;
+      // Bubble sits above the point; the tail tip is the anchor (96×56 box,
+      // point at bottom-center).
+      widgets.add(Positioned(
+        left: pos.dx - 48,
+        top: pos.dy - 56,
         child: SpendPlaceMarker(
           cluster: c,
           onTap: () => _selectPlace(c),
         ),
-      );
-    }).toList();
+      ));
+    }
+    return widgets;
   }
 
-  List<Marker> _friendMarkers() {
-    return _friendPins.map((pin) {
-      return Marker(
-        point: LatLng(pin.lat, pin.lng),
-        width: 72,
-        height: 72,
-        alignment: Alignment.topCenter,
+  List<Widget> _friendOverlays() {
+    final widgets = <Widget>[];
+    for (final p in _friendPins) {
+      final pos = _friendScreenPos[p.userId];
+      if (pos == null) continue;
+      widgets.add(Positioned(
+        left: pos.dx - 36,
+        top: pos.dy - 72,
         child: FriendMapMarker(
-          pin: pin,
-          onTap: () => FriendPinSheet.show(context, pin),
+          pin: p,
+          onTap: () => FriendPinSheet.show(context, p),
         ),
-      );
-    }).toList();
+      ));
+    }
+    return widgets;
   }
 
-  Marker? _myLocationMarker(List<TransactionView> allRows) {
-    final pos = _myPosition;
+  Widget? _myLocationOverlay(List<TransactionView> allRows) {
+    final pos = _meScreenPos;
     final config = _myAvatarConfig;
     if (pos == null || config == null) return null;
     final mood =
         deriveAvatarMood(todaysTransactions(allRows, DateTime.now()));
-    return Marker(
-      point: LatLng(pos.latitude, pos.longitude),
-      width: 56,
-      height: 56,
+    return Positioned(
+      left: pos.dx - 28,
+      top: pos.dy - 28,
       child: Container(
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
@@ -262,8 +391,9 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     );
   }
 
-  List<CircleMarker> _heatCircles(List<TransactionView> rows) {
-    final circles = <CircleMarker>[];
+  Set<Circle> _heatCircles(List<TransactionView> rows) {
+    final circles = <Circle>{};
+    var i = 0;
     for (final cell in heatCells(rows)) {
       final color = Color.lerp(
         AppColors.impactLow,
@@ -274,21 +404,24 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       // Soft outer glow + stronger core reads like a heat blob instead of
       // the old single flat circle.
       circles.add(
-        CircleMarker(
-          point: center,
+        Circle(
+          circleId: CircleId('heat-outer-$i'),
+          center: center,
           radius: 3200,
-          useRadiusInMeter: true,
-          color: color.withValues(alpha: 0.15),
+          fillColor: color.withValues(alpha: 0.15),
+          strokeWidth: 0,
         ),
       );
       circles.add(
-        CircleMarker(
-          point: center,
+        Circle(
+          circleId: CircleId('heat-inner-$i'),
+          center: center,
           radius: 1600,
-          useRadiusInMeter: true,
-          color: color.withValues(alpha: 0.35),
+          fillColor: color.withValues(alpha: 0.35),
+          strokeWidth: 0,
         ),
       );
+      i++;
     }
     return circles;
   }
@@ -308,6 +441,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
           }
           final filtered = _categoryFiltered(timeFiltered);
           final clusters = mapClusters(filtered);
+          _lastClusters = clusters;
 
           if (filtered.isEmpty && _friendPins.isEmpty) {
             return const EmptyState(
@@ -319,7 +453,10 @@ class _SpendMapScreenState extends State<SpendMapScreen>
           }
 
           _autoFitOnce(clusters);
-          final myMarker = _myLocationMarker(all);
+          // Data changed (new stream emission) — pin positions may be stale
+          // or missing for newly-appeared pins, not just after camera moves.
+          _scheduleReproject();
+          final myOverlay = _myLocationOverlay(all);
 
           // Re-resolve the selection against the live stream so the panel
           // always shows fresh data — and closes if its place vanished
@@ -341,48 +478,27 @@ class _SpendMapScreenState extends State<SpendMapScreen>
 
           return Stack(
             children: [
-              FlutterMap(
-                mapController: _mapController,
-                options: MapOptions(
-                  initialCenter: _malaysiaCenter,
-                  initialZoom: 11,
-                  interactionOptions: const InteractionOptions(
-                    flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                  ),
-                  // Tapping bare map dismisses the place panel, like
-                  // Google Maps.
-                  onTap: (_, _) => _closePanel(),
+              GoogleMap(
+                initialCameraPosition: const CameraPosition(
+                  target: _malaysiaCenter,
+                  zoom: 11,
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate: _tileUrl,
-                    subdomains: const ['a', 'b', 'c', 'd'],
-                    userAgentPackageName: 'com.receiptdrop.receipt_drop',
-                    retinaMode: RetinaMode.isHighDensity(context),
-                    tileProvider: CancellableNetworkTileProvider(),
-                    // Tile fetch failures are otherwise swallowed silently,
-                    // which makes a dead basemap look like "still loading".
-                    errorTileCallback: (tile, error, stackTrace) =>
-                        debugPrint('Map tile failed: ${tile.coordinates} $error'),
-                  ),
-                  if (_heatmapMode)
-                    CircleLayer(circles: _heatCircles(filtered)),
-                  if (!_heatmapMode)
-                    MarkerLayer(markers: _placeMarkers(clusters)),
-                  MarkerLayer(
-                    markers: [
-                      ..._friendMarkers(),
-                      ?myMarker,
-                    ],
-                  ),
-                  RichAttributionWidget(
-                    attributions: [
-                      TextSourceAttribution('© OpenStreetMap contributors'),
-                      TextSourceAttribution('© CARTO'),
-                    ],
-                  ),
-                ],
+                onMapCreated: _onMapCreated,
+                // Tapping bare map dismisses the place panel, like
+                // Google Maps.
+                onTap: (_) => _closePanel(),
+                onCameraMove: _scheduleReproject,
+                onCameraIdle: _scheduleReproject,
+                rotateGesturesEnabled: false,
+                tiltGesturesEnabled: false,
+                myLocationButtonEnabled: false,
+                mapToolbarEnabled: false,
+                compassEnabled: false,
+                circles: _heatmapMode ? _heatCircles(filtered) : const {},
               ),
+              if (!_heatmapMode) ..._placeOverlays(clusters),
+              ..._friendOverlays(),
+              ?myOverlay,
               SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

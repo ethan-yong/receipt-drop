@@ -1,7 +1,4 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/core/theme/app_theme.dart';
 import 'package:receipt_drop/core/theme/receipt_sheet_theme.dart';
@@ -9,28 +6,6 @@ import 'package:receipt_drop/data/repositories/places_repository.dart';
 import 'package:receipt_drop/domain/logic/merchant_extractor.dart';
 import 'package:receipt_drop/features/places/place_picker_screen.dart';
 import 'package:receipt_drop/widgets/receipt_sheet_widgets.dart';
-
-// Verified minimal 1×1 transparent PNG — avoids any network requests in tests.
-final _kTransparentPng = Uint8List.fromList([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-  0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-  0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0x00, 0x01, 0x00, 0x00,
-  0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-  0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-]);
-
-/// Tile provider that returns a transparent 1×1 PNG without making HTTP
-/// requests, so tests don't leave pending timers after the widget tree is
-/// disposed.
-class _NoNetworkTileProvider extends TileProvider {
-  @override
-  ImageProvider<Object> getImage(
-    TileCoordinates coordinates,
-    TileLayer options,
-  ) =>
-      MemoryImage(_kTransparentPng);
-}
 
 const _candidates = [
   PlaceCandidate(
@@ -75,7 +50,7 @@ Widget _buildPicker(
         candidates: const [],
         candidatesFetcher: fetcher,
         searchFetcher: searchFetcher,
-        tileProvider: _NoNetworkTileProvider(),
+        mapOverride: const SizedBox.shrink(),
       ),
     );
 
@@ -100,12 +75,12 @@ void main() {
   testWidgets('shows loading indicator then candidate list', (tester) async {
     await tester.pumpWidget(_buildPicker(_makeStub(_candidates)));
 
-    // Initially loading
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // Initially loading: shimmering skeleton placeholder shown
+    expect(find.byType(ShaderMask), findsOneWidget);
 
     await _pumpUntilLoaded(tester);
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(ShaderMask), findsNothing);
     expect(find.text('Mamak Corner'), findsOneWidget);
     expect(find.text('Restoran Nasi Lemak'), findsOneWidget);
     expect(find.text('2 spots found nearby'), findsOneWidget);
@@ -147,7 +122,7 @@ void main() {
                     lng: 101.6789,
                     candidates: const [],
                     candidatesFetcher: _makeStub(_candidates),
-                    tileProvider: _NoNetworkTileProvider(),
+                    mapOverride: const SizedBox.shrink(),
                   ),
                 ),
               );
@@ -189,7 +164,7 @@ void main() {
                     lng: 101.6789,
                     candidates: const [],
                     candidatesFetcher: _makeStub(_candidates),
-                    tileProvider: _NoNetworkTileProvider(),
+                    mapOverride: const SizedBox.shrink(),
                   ),
                 ),
               );
@@ -256,7 +231,7 @@ void main() {
                     candidates: const [],
                     candidatesFetcher: _makeStub(_candidates),
                     searchFetcher: (query, {lat, lng}) async => [searchHit],
-                    tileProvider: _NoNetworkTileProvider(),
+                    mapOverride: const SizedBox.shrink(),
                   ),
                 ),
               );

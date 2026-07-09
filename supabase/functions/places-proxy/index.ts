@@ -98,10 +98,16 @@ async function handleNearbyMode(
           }),
         },
       );
-      if (!resp.ok) return null;
+      if (!resp.ok) {
+        console.error(
+          `places-proxy searchText failed: ${resp.status} ${await resp.text()}`,
+        );
+        return null;
+      }
       const json = (await resp.json()) as { places?: RawGooglePlace[] };
       return json.places ?? [];
-    } catch {
+    } catch (err) {
+      console.error(`places-proxy searchText threw: ${err}`);
       return null;
     }
   }
@@ -136,10 +142,16 @@ async function handleNearbyMode(
           }),
         },
       );
-      if (!resp.ok) return null;
+      if (!resp.ok) {
+        console.error(
+          `places-proxy searchNearby failed: ${resp.status} ${await resp.text()}`,
+        );
+        return null;
+      }
       const json = (await resp.json()) as { places?: RawGooglePlace[] };
       return json.places ?? [];
-    } catch {
+    } catch (err) {
+      console.error(`places-proxy searchNearby threw: ${err}`);
       return null;
     }
   }
