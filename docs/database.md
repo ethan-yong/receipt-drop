@@ -51,7 +51,7 @@ Core receipt row. RLS: owner-only for all of select/insert/update/delete (`20260
 | `parse_failure_reason` | text | added `20260705000000` |
 | `merchant_candidates` | jsonb | added `20260708000000` — ranked `MerchantCandidate[]` (`{text, confidence, source}`) from `extractMerchantCandidates()`; `merchant_raw` is always the top entry's text. No longer read by `enrich-transaction` (superseded by `llm_understanding`), kept for the alias-cache precedent and future heuristic comparisons |
 | `ocr_header_text` | text | added `20260708000000` — top-of-receipt OCR lines, always populated; used by `enrich-transaction` as a fallback when `raw_ocr_text` is empty |
-| `llm_understanding` | jsonb | added `20260709000000` — structured output of the LLM receipt-understanding step (`supabase/functions/_shared/receipt_understanding.ts`): `merchant_name`, `merchant_search_queries`, `address_text`, `location_clues`, `vendor_category`, `google_place_types`, `confidence`, plus a `_meta` (model/latency/prompt_source) or `_error`/`_raw` on failure |
+| `llm_understanding` | jsonb | added `20260709000000` — structured output of the LLM receipt-understanding step. `enrich-transaction` calls `services/ocr-api`'s `POST /understand` (which is what actually talks to the LLM gateway — see `docs/decisions.md`) and persists its response verbatim: `merchant_name`, `merchant_search_queries`, `address_text`, `location_clues`, `vendor_category`, `google_place_types`, `confidence`, plus a `_meta` (latency/prompt_source) or `_error`/`_raw` on failure |
 
 Index: `transactions_user_occurred_idx (user_id, occurred_at desc)`.
 

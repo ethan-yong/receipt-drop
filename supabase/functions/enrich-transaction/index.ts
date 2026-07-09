@@ -189,19 +189,19 @@ Deno.serve(async (req) => {
     );
   }
 
-  // LLM RECEIPT UNDERSTANDING: every enrichment goes through the LLM (no
-  // heuristic fallback during this testing phase). Failure here fails the
-  // whole enrichment rather than falling back to the old merchant-candidate
-  // heuristic — see docs/decisions.md.
-  const vllmBaseUrl = Deno.env.get("VLLM_BASE_URL");
-  const vllmModelName = Deno.env.get("VLLM_MODEL_NAME");
-  const vllmApiKey = Deno.env.get("VLLM_API_KEY") ?? null;
-  const vllmReasoningEffort = Deno.env.get("VLLM_REASONING_EFFORT") ?? null;
+  // LLM RECEIPT UNDERSTANDING: delegates to services/ocr-api's POST
+  // /understand (which itself calls the LLM gateway — see
+  // app/receipt_understanding.py and docs/decisions.md). Every enrichment
+  // goes through it, no heuristic fallback during this testing phase.
+  // Failure here fails the whole enrichment rather than falling back to the
+  // old merchant-candidate heuristic.
+  const ocrServiceUrl = Deno.env.get("OCR_SERVICE_URL");
+  const ocrServiceSecret = Deno.env.get("OCR_SERVICE_SECRET");
 
-  if (!vllmBaseUrl || !vllmModelName) {
+  if (!ocrServiceUrl || !ocrServiceSecret) {
     console.error(
-      `enrich-transaction[${transactionId}]: LLM gateway not configured ` +
-        `(VLLM_BASE_URL/VLLM_MODEL_NAME missing) — failing enrichment, no fallback`,
+      `enrich-transaction[${transactionId}]: OCR API not configured ` +
+        `(OCR_SERVICE_URL/OCR_SERVICE_SECRET missing) — failing enrichment, no fallback`,
     );
     await supabase
       .from("transactions")
@@ -216,18 +216,13 @@ Deno.serve(async (req) => {
   }
 
   console.log(
-    `enrich-transaction[${transactionId}]: calling LLM receipt-understanding ` +
-      `— model=${vllmModelName}, ocrTextChars=${ocrText.length}, ` +
+    `enrich-transaction[${transactionId}]: calling ocr-api /understand ` +
+      `— ocrTextChars=${ocrText.length}, ` +
       `source=${rawOcrText ? "raw_ocr_text" : "ocr_header_text"}`,
   );
 
   const llmResult = await callReceiptUnderstanding(
-    {
-      baseUrl: vllmBaseUrl,
-      apiKey: vllmApiKey,
-      modelName: vllmModelName,
-      reasoningEffort: vllmReasoningEffort,
-    },
+    { ocrServiceUrl, ocrServiceSecret },
     ocrText,
   );
 
@@ -273,7 +268,7 @@ Deno.serve(async (req) => {
 
   console.log(
     `enrich-transaction[${transactionId}]: LLM understanding ok in ` +
-      `${llmResult.latencyMs}ms (model=${llmResult.model}) — ` +
+      `${llmResult.latencyMs}ms — ` +
       `merchant=${JSON.stringify(understanding.merchant_name)} ` +
       `(confidence=${understanding.confidence.merchant}), ` +
       `category=${JSON.stringify(understanding.vendor_category)} ` +
@@ -292,7 +287,6 @@ Deno.serve(async (req) => {
         llm_understanding: {
           ...understanding,
           _meta: {
-            model: llmResult.model,
             latency_ms: llmResult.latencyMs,
             prompt_source: rawOcrText ? "raw_ocr_text" : "ocr_header_text",
           },

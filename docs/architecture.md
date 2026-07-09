@@ -20,16 +20,16 @@ A second, equally important mental model: **most of the gamification UI (avatar,
 ┌─────────────────────────┐      ┌──────────────────────────┐
 │ Supabase                │      │ services/ocr-api          │
 │  - Postgres + RLS       │◄─────┤  self-hosted Tesseract OCR│
-│  - Auth (PKCE)          │ proxy│  FastAPI, shared secret    │
-│  - Storage (receipts,   │      └──────────────────────────┘
-│    config buckets)      │
-│  - Edge Functions (Deno):│     ┌──────────────────────────┐
-│    enrich-transaction,   │     │ services/leaderboard-api  │
-│    ocr-proxy,            │◄────┤  FastAPI + Redis ZSET     │
-│    places-proxy          │ RPC │  global rank cache/service │
-└──────────┬───────────────┘     └──────────────────────────┘
-           │ server-side only (key never in client)
-           ▼
+│  - Auth (PKCE)          │ OCR  │  (POST /ocr) +            │
+│  - Storage (receipts,   │proxy,│  LLM receipt-understanding├──► LLM gateway
+│    config buckets)      │direct│  (POST /understand)       │    (self-hosted,
+│  - Edge Functions (Deno):│     │  FastAPI, shared secret   │    OpenAI-compat)
+│    enrich-transaction,   │     └──────────────────────────┘
+│    ocr-proxy,            │     ┌──────────────────────────┐
+│    places-proxy          │     │ services/leaderboard-api  │
+└──────────┬───────────────┘◄────┤  FastAPI + Redis ZSET     │
+           │ server-side only RPC│  global rank cache/service │
+           ▼ (key never in client)└──────────────────────────┘
     Google Places API v1
 
 ┌──────────────────────────┐
@@ -37,6 +37,8 @@ A second, equally important mental model: **most of the gamification UI (avatar,
 │ TanStack Start, Lovable)  │  NOT built/deployed with the product
 └──────────────────────────┘
 ```
+
+Both edges into `ocr-api` are used: `ocr-proxy` forwards the client's OCR calls (hides the OCR shared secret), and `enrich-transaction` calls `POST /understand` directly (no proxy hop needed — it's already server-side) to run the LLM receipt-understanding step before Google Places matching. `ocr-api` is the only thing that talks to the LLM gateway (`VLLM_*` env) — see `docs/decisions.md`.
 
 ## Data flow: receipt capture → dashboard
 
@@ -47,12 +49,12 @@ A second, equally important mental model: **most of the gamification UI (avatar,
 5. **Confirm**: user sees `ReceiptConfirmSheet` (exclude line items with a live-recalculating total, rename the vendor inline — hands an edited draft onward; see `docs/design/design_handoff_receipt_flows/`) then `ShareSaveSheet` (edit amount/category, Save / Save-for-later / Cancel). Low-confidence or failed parses route into a **review queue** (`pipeline_status='needs_review'`) instead of being silently dropped or blocking the happy path.
 6. **Local commit**: `TransactionRepository.ingestReceipt()` writes the outbox transaction + artifact + line items in one shot, fires a best-effort social feed post, and returns immediately — the UI never waits on the network.
 7. **Background sync**: `SyncWorker` (fire-and-forget, retried up to 5x before marking `stuck`) uploads the artifact to the `receipts` Storage bucket, upserts `transactions`/`receipt_artifacts`/`receipt_line_items`, then invokes `enrich-transaction` (skipped while `needs_review`). Afterward it re-fetches the enriched columns (`place_*`, `merchant_normalized`, `pipeline_status`) and writes them back into the local outbox row — without this the UI would keep showing raw OCR text forever even after successful server-side enrichment (a real bug, since fixed; see `memory/bugs.md`).
-8. **Enrichment**: the Edge Function first checks a **global merchant-alias cache** (`merchant_aliases`, keyed by normalized merchant text + a coarse geohash bucket) — a hit resolves the place instantly with no Google call. On a miss, it resolves a Google Place candidate (multi-query text search over the ranked merchant candidates + nearby search, Dice-coefficient + distance scoring) and marks `pipeline_status='enriched'` (or `'failed_enrichment'` — this never blocks the transaction from counting toward totals; only a null `amount_myr` does). A high-confidence fresh resolution is written back into the alias cache so the next scan of the same merchant near the same place skips Places entirely.
+8. **Enrichment**: the Edge Function first calls `services/ocr-api`'s `POST /understand` — an LLM step that turns the raw OCR text into a structured, corrected merchant name/search queries/address/category/Google-place-types (no fallback: a failed LLM call fails the whole enrichment, see `docs/decisions.md`). It then checks a **global merchant-alias cache** (`merchant_aliases`, keyed by the LLM's normalized merchant name + a coarse geohash bucket) — a hit resolves the place instantly with no Google call. On a miss, it resolves a Google Place candidate (multi-query text search from the LLM's queries + nearby search using the LLM's place types, Dice-coefficient + distance + type-match scoring) and marks `pipeline_status='enriched'` (or `'failed_enrichment'` — this never blocks the transaction from counting toward totals; only a null `amount_myr` does). A high-confidence fresh resolution is written back into the alias cache so the next scan of the same merchant near the same place skips Places entirely.
 9. **Read side**: dashboard/map/home screens read a **unified stream** of outbox rows (`TransactionView`) — the UI doesn't care whether a row has synced yet, only whether it `isPendingSync`/`isStuckSync`.
 
 ## Frontend/backend relationship
 
-The Flutter app never talks to Postgres directly except through the Supabase client SDK (table CRUD under RLS) and three narrow Edge Functions (BFF pattern — Google Places key and OCR shared secret both live server-side only). The two Python services are peers to Supabase, not behind it: `ocr-api` is called by an Edge Function (or directly in dev); `leaderboard-api` is called directly by Flutter and itself talks to Postgres (impersonating the user's JWT so RLS still applies) and Redis.
+The Flutter app never talks to Postgres directly except through the Supabase client SDK (table CRUD under RLS) and three narrow Edge Functions (BFF pattern — Google Places key and OCR shared secret both live server-side only). The two Python services are peers to Supabase, not behind it: `ocr-api` is called by an Edge Function (`ocr-proxy` for client OCR, or directly in dev) **and** by `enrich-transaction` itself (`POST /understand`, the LLM receipt-understanding step — enrich-transaction is already server-side, so no proxy hop is needed there); `leaderboard-api` is called directly by Flutter and itself talks to Postgres (impersonating the user's JWT so RLS still applies) and Redis.
 
 ## Platform-split pattern (used pervasively — read this once)
 
@@ -76,6 +78,7 @@ Repositories that only talk to Supabase over HTTP (`avatar_repository.dart`, `ba
 
 - **Google Places API v1** — server-side only (Edge Functions), never in the client.
 - **Tesseract OCR** — self-hosted (`services/ocr-api`), not a third-party API.
+- **LLM gateway** — self-hosted, OpenAI-compatible (LiteLLM/vLLM), called only from `services/ocr-api` (`POST /understand`) — never from an Edge Function or the client directly. See `docs/decisions.md`.
 - **CARTO Voyager raster tiles** (via `flutter_map`) — free, no key, for the spend map. Explicitly flagged in code (`spend_map_screen.dart`) to swap for a keyed provider before production scale.
 - **Redis** — self-hosted/dockerized, for the global leaderboard only.
 

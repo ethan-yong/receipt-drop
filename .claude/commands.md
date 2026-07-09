@@ -40,7 +40,7 @@ supabase db reset              # replay all migrations in supabase/migrations/
 supabase status                # get local API URL, anon key, JWT secret
 ```
 
-Edge functions run automatically with `supabase start`; secrets for them go in `supabase/functions/.env` (copy from `.env.example` there — note `GOOGLE_PLACES_API_KEY` is required but **not** listed in that example file, see `docs/database.md`; `VLLM_BASE_URL`/`VLLM_MODEL_NAME` etc. for `enrich-transaction`'s LLM step **are** listed there).
+Edge functions run automatically with `supabase start`; secrets for them go in `supabase/functions/.env` (copy from `.env.example` there — note `GOOGLE_PLACES_API_KEY` is required but **not** listed in that example file, see `docs/database.md`). `enrich-transaction`'s LLM step needs `OCR_SERVICE_URL`/`OCR_SERVICE_SECRET` (already required for `ocr-proxy`, no extra config) — the LLM-specific `VLLM_*` vars go on the `services/ocr-api` side instead (root `.env`, see below), not here.
 
 Deploy migrations/functions to a remote project: `supabase db push`, `supabase functions deploy <name>`.
 
@@ -58,7 +58,7 @@ uv run ocr-api                     # or: .\scripts\run_ocr_api.ps1 from repo roo
 .\scripts\stop_ocr_api.ps1 -Port 8081   # force-stop (kills uvicorn --reload child too)
 ```
 
-Requires `OCR_SHARED_SECRET` set (root `.env` or environment) — startup aborts otherwise, and it refuses to start a second instance on an already-listening port.
+Requires `OCR_SHARED_SECRET` set (root `.env` or environment) — startup aborts otherwise, and it refuses to start a second instance on an already-listening port. `POST /understand` (the LLM receipt-understanding step, called by `enrich-transaction`) additionally requires `VLLM_BASE_URL`/`VLLM_MODEL_NAME` (+ optional `VLLM_API_KEY`/`VLLM_REASONING_EFFORT`) in root `.env` — commented-out template already there; `/ocr` itself doesn't need these.
 
 Batch/fixture processing against local receipt images:
 

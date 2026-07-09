@@ -3,7 +3,10 @@ import logging
 import os
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,6 +15,12 @@ from app.auth import verify_ocr_secret
 from app.models import OcrLine, OcrResponse
 from app.ocr_engine import run_ocr_detailed
 from app.preprocessing import InvalidImageError, preprocess
+from app.receipt_understanding import (
+    ReceiptUnderstandingError,
+    ReceiptUnderstandingRequest,
+    ReceiptUnderstandingResponse,
+    call_receipt_understanding,
+)
 
 # Short id correlating every log line produced while handling one request.
 # Without this, concurrent requests interleave in the log with no way to
@@ -36,7 +45,20 @@ for _handler in logging.getLogger().handlers:
 
 logger = logging.getLogger("ocr_api.main")
 
-app = FastAPI(title="Receipt Drop OCR API")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # One pooled client for the process, not one per /understand call — the
+    # LLM gateway is a separate host from Tesseract, so this is the only
+    # outbound HTTP client this service makes.
+    app.state.http_client = httpx.AsyncClient()
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
+
+
+app = FastAPI(title="Receipt Drop OCR API", lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -68,6 +90,22 @@ def _confidence_label(confidence: float) -> str:
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+
+_RECEIPT_UNDERSTANDING_STATUS = {
+    "server_misconfigured": 500,
+    "llm_timeout": 504,
+}
+
+
+@app.exception_handler(ReceiptUnderstandingError)
+async def receipt_understanding_error_handler(
+    _: Request, exc: ReceiptUnderstandingError
+) -> JSONResponse:
+    # Every other code (llm_fetch_failed, llm_http_*, llm_invalid_response_json,
+    # llm_unparseable_content) is an upstream (LLM gateway) failure -> 502.
+    status_code = _RECEIPT_UNDERSTANDING_STATUS.get(exc.code, 502)
+    return JSONResponse(status_code=status_code, content={"error": exc.code})
 
 
 @app.get("/health")
@@ -120,9 +158,9 @@ async def ocr(request: Request) -> OcrResponse:
     if text:
         logger.info("extracted text:\n%s", text)
         # This response body (text/lines) is what the client later persists
-        # as transactions.raw_ocr_text/ocr_header_text and hands to the
-        # server-side LLM receipt-understanding step in enrich-transaction —
-        # log the per-line breakdown at DEBUG so a bad LLM extraction can be
+        # as transactions.raw_ocr_text/ocr_header_text, and what a later
+        # POST /understand call for the same receipt hands to the LLM — log
+        # the per-line breakdown at DEBUG so a bad LLM extraction can be
         # traced back to what OCR actually saw (e.g. a merchant header line
         # OCR split across two lines, or a height_ratio too low for the
         # large-text merchant-candidate heuristic to have caught it either).
@@ -142,4 +180,31 @@ async def ocr(request: Request) -> OcrResponse:
         lines=[
             OcrLine(text=line.text, height_ratio=line.height_ratio) for line in lines
         ],
+    )
+
+
+@app.post(
+    "/understand",
+    response_model=ReceiptUnderstandingResponse,
+    dependencies=[Depends(verify_ocr_secret)],
+)
+async def understand(
+    request: Request, body: ReceiptUnderstandingRequest
+) -> ReceiptUnderstandingResponse:
+    """LLM receipt-understanding step: raw OCR text in, structured merchant
+    info out (see app/receipt_understanding.py). Called by enrich-transaction
+    after OCR text has already been persisted — not part of the /ocr
+    request/response cycle, since enrich-transaction runs later, async, on
+    the synced transaction row.
+
+    No fallback: any failure here (timeout, LLM gateway down, unparseable
+    response) propagates as an error response (see
+    receipt_understanding_error_handler) rather than degrading to a weaker
+    heuristic — this is a deliberate testing-phase decision, see
+    docs/decisions.md.
+    """
+    if not body.ocr_text.strip():
+        raise HTTPException(status_code=400, detail="empty_ocr_text")
+    return await call_receipt_understanding(
+        body.ocr_text, http_client=request.app.state.http_client
     )

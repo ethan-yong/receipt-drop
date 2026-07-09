@@ -1,16 +1,11 @@
 import { DEFAULT_NEARBY_TYPES, normalizeForCompare } from "./place_matching.ts";
 
-/** Hard ceiling on the LLM round-trip — enrich-transaction is invoked
- * fire-and-forget from the sync worker, but edge functions still have a
- * wall-clock budget and the user may be watching the place fill in. */
-export const LLM_TIMEOUT_MS = 25_000;
-
-/** Receipt OCR is normally 0.5-3 KB; anything past this is almost always
- * OCR noise (long itemized invoices already carry the merchant in the
- * header), so cap the prompt rather than pay for the tokens. */
-export const MAX_OCR_PROMPT_CHARS = 6_000;
-
-export const LLM_MAX_TOKENS = 700;
+/** Hard ceiling on the ocr-api /understand round-trip — enrich-transaction is
+ * invoked fire-and-forget from the sync worker, but edge functions still have
+ * a wall-clock budget and the user may be watching the place fill in. Well
+ * above ocr-api's own LLM_TIMEOUT_SECONDS (25s) so a slow-but-successful LLM
+ * call there isn't cut off here first. */
+export const UNDERSTAND_TIMEOUT_MS = 30_000;
 
 export const MAX_MERCHANT_SEARCH_QUERIES = 3;
 
@@ -180,44 +175,6 @@ export interface ReceiptUnderstanding {
   vendor_category: string | null;
   google_place_types: string[];
   confidence: ReceiptUnderstandingConfidence;
-}
-
-const SYSTEM_PROMPT =
-  `You are a receipt-understanding engine for Malaysian receipts. The input is raw OCR text from ONE receipt — a mix of Malay and English, often with OCR errors (dropped letters, wrong characters, merged words).
-
-Respond with ONE JSON object and nothing else — no markdown, no explanation — with exactly these keys:
-
-"merchant_name" (string or null): the business name printed on the receipt, with obvious OCR spelling errors corrected (e.g. "RESTORAN ANWAR MAU" -> "Restoran Anwar Maju") ONLY when you are confident of the intended name, normalized to Title Case. Keep legal suffixes (Sdn Bhd, Enterprise) here if printed. NEVER a phone number, receipt/invoice number, tax/SST/GST/ROC registration ID, cashier name, or slogan. null if no business name is readable.
-
-"merchant_search_queries" (array of 1-3 strings, most specific first): variants of the merchant name suitable for a Google Places text search — strip legal suffixes (Sdn Bhd, Trading, Enterprise), branch codes, and store numbers. Empty array if merchant_name is null.
-
-"address_text" (string or null): the vendor's street address as printed on the receipt, cleaned up, or null if none is present. Never the customer's address.
-
-"location_clues" (array of strings): short area tokens found on the receipt that help locate the vendor — neighbourhood (SS2, USJ 10), mall (Pavilion KL, 1 Utama), city (Petaling Jaya, Kuala Lumpur). Empty array if none.
-
-"vendor_category" (string): exactly one of food_and_drink, groceries, transport, travel, shopping, health_beauty, entertainment, services, other. Infer from the merchant name AND the purchased line items — e.g. shampoo + milk + bread means groceries even if the shop name is unreadable.
-
-"google_place_types" (array of 1-4 strings): Google Places API place types matching this vendor, e.g. restaurant, cafe, bakery, meal_takeaway, fast_food_restaurant, coffee_shop, supermarket, convenience_store, pharmacy, gas_station, clothing_store, hair_salon, gym.
-
-"confidence" (object): {"merchant": 0-1, "address": 0-1, "category": 0-1} — your confidence in each extraction.
-
-If the merchant name is unreadable but an address or line items are present, set merchant_name to null with a low merchant confidence and still fill in the address, location clues, and category.`;
-
-export interface ChatMessage {
-  role: "system" | "user";
-  content: string;
-}
-
-export function buildReceiptUnderstandingMessages(
-  ocrText: string,
-): ChatMessage[] {
-  const truncated = ocrText.length > MAX_OCR_PROMPT_CHARS
-    ? ocrText.slice(0, MAX_OCR_PROMPT_CHARS)
-    : ocrText;
-  return [
-    { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: truncated },
-  ];
 }
 
 /**
@@ -423,99 +380,49 @@ export function adjustScoreForTypeMatch(
   return overlaps ? score : score * TYPE_MISMATCH_PENALTY;
 }
 
-export interface LlmGatewayConfig {
-  /** Gateway base URL, with or without a trailing /v1. */
-  baseUrl: string;
-  apiKey: string | null;
-  modelName: string;
-  reasoningEffort?: string | null;
-}
-
-/** Mirrors scripts/inspect_llm_endpoint.py's _normalize_urls: the gateway
- * base may be configured with or without /v1. */
-export function chatCompletionsUrl(baseUrl: string): string {
-  const base = baseUrl.replace(/\/+$/, "");
-  const apiBase = base.endsWith("/v1") ? base : `${base}/v1`;
-  return `${apiBase}/chat/completions`;
+export interface OcrApiUnderstandingConfig {
+  /** Same base URL ocr-proxy forwards OCR requests to — the LLM call now
+   * lives in services/ocr-api itself (POST /understand), not a direct call
+   * to the vLLM gateway from this edge function. See docs/decisions.md. */
+  ocrServiceUrl: string;
+  ocrServiceSecret: string;
 }
 
 export type ReceiptUnderstandingCallResult =
-  | {
-    ok: true;
-    understanding: ReceiptUnderstanding;
-    raw: string;
-    model: string;
-    latencyMs: number;
-  }
+  | { ok: true; understanding: ReceiptUnderstanding; raw: string; latencyMs: number }
   | { ok: false; error: string; raw: string | null; latencyMs: number };
 
 /**
- * Calls the OpenAI-compatible gateway and returns a validated
- * [ReceiptUnderstanding]. `response_format: json_object` is sent as a hint
- * (with one retry without it on HTTP 400, since some LiteLLM/vLLM backends
- * reject the parameter); [parseReceiptUnderstanding] is the authority. Any
- * other failure — timeout, non-2xx, unparseable content — returns an error
- * result with no retry: during the testing phase every enrichment must
- * either go through the LLM or fail visibly.
+ * Calls services/ocr-api's `POST /understand` (which itself calls the LLM
+ * gateway and validates the response) and re-validates whatever comes back
+ * through [parseReceiptUnderstanding] as a second line of defense — cheap,
+ * and guards against a version-skew or malformed response between the two
+ * services. No fallback: during the testing phase every enrichment must
+ * either go through the LLM or fail visibly (timeout, non-2xx, unparseable
+ * content all return an error result with no retry).
  */
 export async function callReceiptUnderstanding(
-  cfg: LlmGatewayConfig,
+  cfg: OcrApiUnderstandingConfig,
   ocrText: string,
   fetchFn: typeof fetch = fetch,
 ): Promise<ReceiptUnderstandingCallResult> {
   const startedAt = Date.now();
   const elapsed = () => Date.now() - startedAt;
-  const messages = buildReceiptUnderstandingMessages(ocrText);
+  const url = `${cfg.ocrServiceUrl.replace(/\/+$/, "")}/understand`;
 
-  const buildBody = (withResponseFormat: boolean): string => {
-    const body: Record<string, unknown> = {
-      model: cfg.modelName,
-      messages,
-      temperature: 0,
-      max_tokens: LLM_MAX_TOKENS,
-    };
-    if (withResponseFormat) {
-      body.response_format = { type: "json_object" };
-    }
-    if (cfg.reasoningEffort) {
-      body.reasoning_effort = cfg.reasoningEffort;
-    }
-    return JSON.stringify(body);
-  };
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (cfg.apiKey) headers["Authorization"] = `Bearer ${cfg.apiKey}`;
-
-  const url = chatCompletionsUrl(cfg.baseUrl);
-
-  const attempt = async (
-    withResponseFormat: boolean,
-  ): Promise<Response> => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
-    try {
-      return await fetchFn(url, {
-        method: "POST",
-        headers,
-        body: buildBody(withResponseFormat),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  };
-
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UNDERSTAND_TIMEOUT_MS);
   let resp: Response;
   try {
-    resp = await attempt(true);
-    if (resp.status === 400) {
-      // Some gateways reject response_format outright — one narrow retry
-      // without it; the manual parser downstream copes with prose-wrapped
-      // JSON anyway.
-      resp = await attempt(false);
-    }
+    resp = await fetchFn(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-OCR-Secret": cfg.ocrServiceSecret,
+      },
+      body: JSON.stringify({ ocr_text: ocrText }),
+      signal: controller.signal,
+    });
   } catch (e) {
     const aborted = e instanceof DOMException && e.name === "AbortError";
     return {
@@ -524,6 +431,8 @@ export async function callReceiptUnderstanding(
       raw: null,
       latencyMs: elapsed(),
     };
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!resp.ok) {
@@ -541,15 +450,9 @@ export async function callReceiptUnderstanding(
     };
   }
 
-  let content: string;
-  let model: string;
+  let raw: string;
   try {
-    const json = await resp.json() as {
-      model?: string;
-      choices?: { message?: { content?: string } }[];
-    };
-    content = json.choices?.[0]?.message?.content ?? "";
-    model = json.model ?? cfg.modelName;
+    raw = JSON.stringify(await resp.json());
   } catch {
     return {
       ok: false,
@@ -559,21 +462,15 @@ export async function callReceiptUnderstanding(
     };
   }
 
-  const understanding = parseReceiptUnderstanding(content);
+  const understanding = parseReceiptUnderstanding(raw);
   if (understanding === null) {
     return {
       ok: false,
       error: "llm_unparseable_content",
-      raw: content.slice(0, 2000),
+      raw: raw.slice(0, 2000),
       latencyMs: elapsed(),
     };
   }
 
-  return {
-    ok: true,
-    understanding,
-    raw: content,
-    model,
-    latencyMs: elapsed(),
-  };
+  return { ok: true, understanding, raw, latencyMs: elapsed() };
 }

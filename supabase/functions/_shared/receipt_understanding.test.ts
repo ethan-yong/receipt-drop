@@ -1,9 +1,13 @@
 // Deno.test unit tests for the pure helpers in receipt_understanding.ts. No
-// network access — callReceiptUnderstanding is exercised through an injected
-// fetch stub, and the parsing/query-building/scoring helpers run on canned
-// LLM JSON responses paired with the receipt scenarios from the LLM
-// enrichment plan (clear restaurant, OCR corruption, mall vendor, grocery,
-// missing merchant name).
+// network access — callReceiptUnderstanding (which now calls services/ocr-api's
+// POST /understand, not the LLM gateway directly — see docs/decisions.md) is
+// exercised through an injected fetch stub, and the parsing/query-building/
+// scoring helpers run on canned understanding JSON paired with the receipt
+// scenarios from the LLM enrichment plan (clear restaurant, OCR corruption,
+// mall vendor, grocery, missing merchant name). The prompt-building and LLM
+// gateway-calling logic itself now lives in
+// services/ocr-api/app/receipt_understanding.py — see
+// services/ocr-api/tests/test_receipt_understanding.py for its tests.
 //
 // Run with: deno test supabase/functions/_shared/receipt_understanding.test.ts
 
@@ -16,12 +20,9 @@ import { normalizeForCompare } from "./place_matching.ts";
 import {
   adjustScoreForTypeMatch,
   buildLlmTextQueries,
-  buildReceiptUnderstandingMessages,
   callReceiptUnderstanding,
-  chatCompletionsUrl,
   extractJsonObject,
   MAX_MERCHANT_SEARCH_QUERIES,
-  MAX_OCR_PROMPT_CHARS,
   parseReceiptUnderstanding,
   resolveIncludedTypes,
   TYPE_MISMATCH_PENALTY,
@@ -32,7 +33,7 @@ import {
 // Scenario 1: clear restaurant receipt (McDonald's, Pavilion KL)
 // ---------------------------------------------------------------------------
 
-const MCD_RESPONSE = JSON.stringify({
+const MCD_RESPONSE_OBJ = {
   merchant_name: "McDonald's Pavilion KL",
   merchant_search_queries: ["McDonald's Pavilion KL", "McDonald's"],
   address_text: "168 Jalan Bukit Bintang, Kuala Lumpur",
@@ -40,7 +41,8 @@ const MCD_RESPONSE = JSON.stringify({
   vendor_category: "food_and_drink",
   google_place_types: ["restaurant", "fast_food_restaurant"],
   confidence: { merchant: 0.97, address: 0.9, category: 0.99 },
-});
+};
+const MCD_RESPONSE = JSON.stringify(MCD_RESPONSE_OBJ);
 
 Deno.test("clear restaurant: parses all fields and keeps LLM place types", () => {
   const u = parseReceiptUnderstanding(MCD_RESPONSE);
@@ -292,14 +294,6 @@ Deno.test("more than 3 queries are capped", () => {
   assert(buildLlmTextQueries(u).length <= MAX_MERCHANT_SEARCH_QUERIES);
 });
 
-Deno.test("prompt user message is truncated to the OCR cap", () => {
-  const messages = buildReceiptUnderstandingMessages(
-    "x".repeat(MAX_OCR_PROMPT_CHARS + 500),
-  );
-  assertEquals(messages.length, 2);
-  assertEquals(messages[1].content.length, MAX_OCR_PROMPT_CHARS);
-});
-
 // ---------------------------------------------------------------------------
 // adjustScoreForTypeMatch
 // ---------------------------------------------------------------------------
@@ -328,88 +322,74 @@ Deno.test("missing candidate or expected types are neutral", () => {
 });
 
 // ---------------------------------------------------------------------------
-// callReceiptUnderstanding (injected fetch, no network)
+// callReceiptUnderstanding (injected fetch, no network — calls services/
+// ocr-api's POST /understand, which is what actually talks to the LLM
+// gateway now; see services/ocr-api/tests/test_receipt_understanding.py)
 // ---------------------------------------------------------------------------
 
-const GATEWAY_CFG = {
-  baseUrl: "http://gateway.local:31180",
-  apiKey: "sk-test",
-  modelName: "test-model",
-  reasoningEffort: "low",
+const OCR_API_CFG = {
+  ocrServiceUrl: "http://ocr-api.local:8081",
+  ocrServiceSecret: "shared-secret",
 };
 
-function chatResponse(content: string, status = 200): Response {
-  return new Response(
-    JSON.stringify({
-      model: "test-model",
-      choices: [{ message: { content } }],
-    }),
-    { status, headers: { "Content-Type": "application/json" } },
-  );
+function understandResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
-Deno.test("chatCompletionsUrl normalizes bases with and without /v1", () => {
-  assertEquals(
-    chatCompletionsUrl("http://gw:31180"),
-    "http://gw:31180/v1/chat/completions",
-  );
-  assertEquals(
-    chatCompletionsUrl("http://gw:31180/v1/"),
-    "http://gw:31180/v1/chat/completions",
-  );
-});
-
-Deno.test("callReceiptUnderstanding returns a validated understanding", async () => {
+Deno.test("callReceiptUnderstanding posts to {ocrServiceUrl}/understand with the shared secret", async () => {
+  let seenUrl: string | undefined;
+  let seenSecret: string | null | undefined;
   const result = await callReceiptUnderstanding(
-    GATEWAY_CFG,
+    OCR_API_CFG,
     "MCDONALD'S PAVILION KL...",
-    () => Promise.resolve(chatResponse(MCD_RESPONSE)),
-  );
-  assert(result.ok);
-  assertEquals(result.understanding.merchant_name, "McDonald's Pavilion KL");
-  assertEquals(result.model, "test-model");
-});
-
-Deno.test("callReceiptUnderstanding retries once without response_format on 400", async () => {
-  const bodies: string[] = [];
-  const result = await callReceiptUnderstanding(
-    GATEWAY_CFG,
-    "receipt text",
-    (_url, init) => {
-      bodies.push(String(init?.body));
-      return Promise.resolve(
-        bodies.length === 1
-          ? new Response("response_format unsupported", { status: 400 })
-          : chatResponse(MCD_RESPONSE),
-      );
+    (url, init) => {
+      seenUrl = String(url);
+      seenSecret = (init?.headers as Record<string, string>)["X-OCR-Secret"];
+      return Promise.resolve(understandResponse(MCD_RESPONSE_OBJ));
     },
   );
+  assertEquals(seenUrl, "http://ocr-api.local:8081/understand");
+  assertEquals(seenSecret, "shared-secret");
   assert(result.ok);
-  assertEquals(bodies.length, 2);
-  assert(bodies[0].includes("response_format"));
-  assert(!bodies[1].includes("response_format"));
+  assertEquals(result.understanding.merchant_name, "McDonald's Pavilion KL");
 });
 
 Deno.test("callReceiptUnderstanding surfaces HTTP errors without retrying", async () => {
   let calls = 0;
   const result = await callReceiptUnderstanding(
-    GATEWAY_CFG,
+    OCR_API_CFG,
     "receipt text",
     () => {
       calls++;
-      return Promise.resolve(new Response("boom", { status: 503 }));
+      return Promise.resolve(
+        understandResponse({ error: "llm_http_503" }, 502),
+      );
     },
   );
   assert(!result.ok);
-  assertEquals(result.error, "llm_http_503");
+  assertEquals(result.error, "llm_http_502");
   assertEquals(calls, 1);
 });
 
 Deno.test("callReceiptUnderstanding flags unparseable content with the raw output", async () => {
+  // Defense-in-depth: even though ocr-api validates before responding, a
+  // malformed/empty 200 must still fail closed here, not crash or coerce.
   const result = await callReceiptUnderstanding(
-    GATEWAY_CFG,
+    OCR_API_CFG,
     "receipt text",
-    () => Promise.resolve(chatResponse("I cannot read this receipt, sorry.")),
+    () =>
+      Promise.resolve(understandResponse({
+        merchant_name: null,
+        merchant_search_queries: [],
+        address_text: null,
+        location_clues: [],
+        vendor_category: null,
+        google_place_types: [],
+        confidence: { merchant: 0, address: 0, category: 0 },
+      })),
   );
   assert(!result.ok);
   assertEquals(result.error, "llm_unparseable_content");
@@ -418,7 +398,7 @@ Deno.test("callReceiptUnderstanding flags unparseable content with the raw outpu
 
 Deno.test("callReceiptUnderstanding reports fetch failures", async () => {
   const result = await callReceiptUnderstanding(
-    GATEWAY_CFG,
+    OCR_API_CFG,
     "receipt text",
     () => Promise.reject(new TypeError("connection refused")),
   );
