@@ -34,6 +34,21 @@ That comes from Flutter’s **native assets / hooks** step (often `sqlite3`, `jn
 
 4. Long-term: keep the repo **outside OneDrive** (e.g. `C:\dev\receipt-drop`) to reduce hook **lock** friction while keeping native assets **enabled**.
 
+### Google Maps API key setup
+
+The map screens use `google_maps_flutter`, which needs a per-platform API key wired into native config (not the Dart `.env`). A key with a billing account attached is required — without one, the map renders blank.
+
+- **Android**: add a line to `android/local.properties` (gitignored):
+  ```
+  MAPS_API_KEY=your-android-key-here
+  ```
+- **iOS**: copy `ios/Flutter/Secrets.xcconfig.example` → `ios/Flutter/Secrets.xcconfig` (gitignored) and fill in:
+  ```
+  MAPS_API_KEY = your-ios-key-here
+  ```
+
+Create keys in the Google Cloud Console with **Maps SDK for Android** / **Maps SDK for iOS** enabled, restricted to this app's package name + SHA-1 (Android) or bundle ID (iOS).
+
 ### Android `flutter run` stuck on Gradle for a long time
 
 First debug builds download Android SDK components (CMake, etc.) and compile native deps (ML Kit, SQLite). Under **OneDrive**, `assembleDebug` can appear hung for an hour+.

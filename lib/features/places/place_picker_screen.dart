@@ -1,9 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/places_repository.dart';
@@ -49,7 +48,7 @@ class PlacePickerScreen extends StatefulWidget {
     this.category,
     @visibleForTesting this.candidatesFetcher,
     @visibleForTesting this.searchFetcher,
-    @visibleForTesting this.tileProvider,
+    @visibleForTesting this.mapOverride,
   });
 
   final double lat;
@@ -66,9 +65,10 @@ class PlacePickerScreen extends StatefulWidget {
   @visibleForTesting
   final PlaceSearchFetcher? searchFetcher;
 
-  /// Override the tile provider in widget tests to avoid HTTP requests.
+  /// Overrides the real `GoogleMap` in widget tests, which can't construct a
+  /// live platform view outside a real device/emulator.
   @visibleForTesting
-  final TileProvider? tileProvider;
+  final Widget? mapOverride;
 
   static Future<PlaceResult?> push(
     BuildContext context, {
@@ -98,15 +98,11 @@ class PlacePickerScreen extends StatefulWidget {
 
 class _PlacePickerScreenState extends State<PlacePickerScreen>
     with TickerProviderStateMixin {
-  static const _tileUrl =
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-
   /// Mirrors SEARCH_RADIUS_METERS in supabase/functions/_shared/place_matching.ts
   /// so the ring shows the area the backend actually searched.
   static const _searchRadiusMeters = 300.0;
 
-  final _mapController = MapController();
-  AnimationController? _cameraAnim;
+  GoogleMapController? _controller;
 
   /// Sheet entrance: slides up from off-screen whenever the screen is pushed.
   late final AnimationController _sheetController = AnimationController(
@@ -142,8 +138,6 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
     _searchDebounce?.cancel();
     _searchController.dispose();
     _sheetController.dispose();
-    _cameraAnim?.dispose();
-    _mapController.dispose();
     super.dispose();
   }
 
@@ -164,16 +158,31 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
       if (results.isNotEmpty) _selectedIndex = 0;
     });
     if (results.isNotEmpty) {
-      // Move the camera to the top candidate after the map has been built.
+      // Move the camera to the top candidate once the map has been built —
+      // deferred a frame since the map's `onMapCreated` may not have fired
+      // yet (see `_focusOnTopCandidateIfReady`).
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _mapController.move(
-            LatLng(results[0].lat, results[0].lng),
-            17,
-          );
-        }
+        if (mounted) _focusOnTopCandidateIfReady();
       });
     }
+  }
+
+  /// `GoogleMapController` only exists once the platform view finishes
+  /// creating, which can race with [_fetchCandidates] resolving — this is
+  /// called from both `onMapCreated` and the post-frame callback above, and
+  /// no-ops until both the controller and results are ready.
+  void _focusOnTopCandidateIfReady() {
+    final controller = _controller;
+    if (controller == null || _results.isEmpty) return;
+    final c = _results[0];
+    controller.moveCamera(
+      CameraUpdate.newLatLngZoom(LatLng(c.lat, c.lng), 17),
+    );
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _controller = controller;
+    _focusOnTopCandidateIfReady();
   }
 
   void _selectCandidate(int index) {
@@ -221,10 +230,11 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
   /// Promotes a text-search result to the top of the candidate list and
   /// selects it, so Confirm commits it like any nearby candidate.
   void _pickSearchResult(PlaceResult result) {
-    final distance = const Distance().as(
-      LengthUnit.Meter,
-      LatLng(widget.lat, widget.lng),
-      LatLng(result.lat, result.lng),
+    final distance = Geolocator.distanceBetween(
+      widget.lat,
+      widget.lng,
+      result.lat,
+      result.lng,
     );
     final candidate = PlaceCandidate(
       id: result.id,
@@ -232,7 +242,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
       address: result.address,
       lat: result.lat,
       lng: result.lng,
-      distanceMeters: distance.toDouble(),
+      distanceMeters: distance,
       confidence: 1,
     );
     _searchDebounce?.cancel();
@@ -251,34 +261,10 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
   }
 
   void _animatedMapMove(LatLng dest, double destZoom) {
-    _cameraAnim?.dispose();
-    final camera = _mapController.camera;
-    final latTween =
-        Tween(begin: camera.center.latitude, end: dest.latitude);
-    final lngTween =
-        Tween(begin: camera.center.longitude, end: dest.longitude);
-    final zoomTween = Tween(begin: camera.zoom, end: destZoom);
-
-    final controller = AnimationController(
-      vsync: this,
+    _controller?.animateCamera(
+      CameraUpdate.newLatLngZoom(dest, destZoom),
       duration: const Duration(milliseconds: 550),
     );
-    _cameraAnim = controller;
-    final anim = CurvedAnimation(parent: controller, curve: Curves.easeInOut);
-    controller.addListener(() {
-      _mapController.move(
-        LatLng(latTween.evaluate(anim), lngTween.evaluate(anim)),
-        zoomTween.evaluate(anim),
-      );
-    });
-    controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed ||
-          status == AnimationStatus.dismissed) {
-        if (identical(_cameraAnim, controller)) _cameraAnim = null;
-        controller.dispose();
-      }
-    });
-    controller.forward();
   }
 
   void _confirm() {
@@ -308,95 +294,48 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
   }
 
   Widget _buildMap() {
+    if (widget.mapOverride != null) return widget.mapOverride!;
+
     final here = LatLng(widget.lat, widget.lng);
     final selected = _selectedIndex;
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: here,
-        initialZoom: 16,
-        interactionOptions: const InteractionOptions(
-          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(target: here, zoom: 16),
+      onMapCreated: _onMapCreated,
+      onTap: (_) {},
+      rotateGesturesEnabled: false,
+      tiltGesturesEnabled: false,
+      myLocationButtonEnabled: false,
+      mapToolbarEnabled: false,
+      compassEnabled: false,
+      circles: {
+        Circle(
+          circleId: const CircleId('search-radius'),
+          center: here,
+          radius: _searchRadiusMeters,
+          fillColor: ReceiptSheetColors.gold.withValues(alpha: 0.12),
+          strokeColor: ReceiptSheetColors.linkStrong.withValues(alpha: 0.35),
+          strokeWidth: 2,
         ),
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: _tileUrl,
-          subdomains: const ['a', 'b', 'c', 'd'],
-          userAgentPackageName: 'com.receiptdrop.receipt_drop',
-          retinaMode: RetinaMode.isHighDensity(context),
-          tileProvider:
-              widget.tileProvider ?? CancellableNetworkTileProvider(),
-          errorTileCallback: (tile, error, stackTrace) =>
-              debugPrint('Map tile failed: ${tile.coordinates} $error'),
+        Circle(
+          circleId: const CircleId('you-are-here'),
+          center: here,
+          radius: 6,
+          fillColor: ReceiptSheetColors.youAreHere,
+          strokeColor: Colors.white,
+          strokeWidth: 3,
         ),
-        CircleLayer(
-          circles: [
-            CircleMarker(
-              point: here,
-              radius: _searchRadiusMeters,
-              useRadiusInMeter: true,
-              color: ReceiptSheetColors.gold.withValues(alpha: 0.12),
-              borderColor:
-                  ReceiptSheetColors.linkStrong.withValues(alpha: 0.35),
-              borderStrokeWidth: 1.5,
+      },
+      markers: {
+        for (var i = 0; i < _results.length; i++)
+          Marker(
+            markerId: MarkerId(_results[i].id),
+            position: LatLng(_results[i].lat, _results[i].lng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              i == selected ? BitmapDescriptor.hueOrange : BitmapDescriptor.hueAzure,
             ),
-          ],
-        ),
-        MarkerLayer(
-          markers: [
-            for (var i = 0; i < _results.length; i++)
-              Marker(
-                point: LatLng(_results[i].lat, _results[i].lng),
-                width: i == selected ? 38 : 28,
-                height: i == selected ? 38 : 28,
-                alignment: Alignment.topCenter,
-                child: GestureDetector(
-                  onTap: () => _selectCandidate(i),
-                  child: Icon(
-                    Icons.location_pin,
-                    size: i == selected ? 38 : 28,
-                    color: i == selected
-                        ? ReceiptSheetColors.gold
-                        : ReceiptSheetColors.pinNeutral,
-                    shadows: const [
-                      Shadow(
-                        color: ReceiptSheetColors.sheetShadow,
-                        blurRadius: 8,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            Marker(
-              point: here,
-              width: 24,
-              height: 24,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: ReceiptSheetColors.youAreHere,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                      color:
-                          ReceiptSheetColors.youAreHere.withValues(alpha: 0.25),
-                      spreadRadius: 4,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        RichAttributionWidget(
-          attributions: [
-            TextSourceAttribution('© OpenStreetMap contributors'),
-            TextSourceAttribution('© CARTO'),
-          ],
-        ),
-      ],
+            onTap: () => _selectCandidate(i),
+          ),
+      },
     );
   }
 
@@ -504,14 +443,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
   }
 
   Widget _sheetBody() {
-    if (_loading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 32),
-        child: Center(
-          child: CircularProgressIndicator(color: ReceiptSheetColors.gold),
-        ),
-      );
-    }
+    if (_loading) return const _CandidateListSkeleton();
     if (_searchOpen) return _searchBody();
     if (_results.isEmpty) return _emptyBody();
     return _browseBody();
@@ -674,6 +606,129 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
           onTap: _openSearch,
         ),
       ],
+    );
+  }
+}
+
+/// Skeleton placeholder shown in the sheet while candidates are loading,
+/// shaped like [_browseBody]'s header + [_CandidateRow]s so the real content
+/// doesn't visually "pop in" once it arrives.
+class _CandidateListSkeleton extends StatefulWidget {
+  const _CandidateListSkeleton();
+
+  @override
+  State<_CandidateListSkeleton> createState() =>
+      _CandidateListSkeletonState();
+}
+
+class _CandidateListSkeletonState extends State<_CandidateListSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmerController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _shimmerController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (bounds) {
+            final dx = -1.5 + 3.0 * _shimmerController.value;
+            return LinearGradient(
+              colors: const [
+                ReceiptSheetColors.tile,
+                Colors.white,
+                ReceiptSheetColors.tile,
+              ],
+              stops: const [0.4, 0.5, 0.6],
+              begin: Alignment(dx - 0.3, 0),
+              end: Alignment(dx + 0.3, 0),
+            ).createShader(bounds);
+          },
+          child: child,
+        );
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SkeletonBar(width: 150, height: 20),
+          const SizedBox(height: 8),
+          _SkeletonBar(width: 120, height: 13),
+          const SizedBox(height: 14),
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            const _SkeletonCandidateRow(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonBar extends StatelessWidget {
+  const _SkeletonBar({required this.width, required this.height});
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: ReceiptSheetColors.tile,
+        borderRadius: BorderRadius.circular(6),
+      ),
+    );
+  }
+}
+
+class _SkeletonCandidateRow extends StatelessWidget {
+  const _SkeletonCandidateRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: ReceiptSheetColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ReceiptSheetColors.rowBorder, width: 2),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: ReceiptSheetColors.tile,
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SkeletonBar(width: 130, height: 14),
+                const SizedBox(height: 6),
+                _SkeletonBar(width: 90, height: 11),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

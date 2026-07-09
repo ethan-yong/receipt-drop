@@ -32,6 +32,8 @@
 	<string>Receipt Drop needs photo library access to import receipt images.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Receipt Drop uses your location to suggest nearby places for receipts.</string>
+	<key>GMSApiKey</key>
+	<string>$(MAPS_API_KEY)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

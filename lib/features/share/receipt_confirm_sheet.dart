@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../../core/platform/adaptive_sheet.dart';
 import '../../core/theme/receipt_sheet_theme.dart';
+import '../../data/repositories/places_repository.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
+import '../places/place_picker_screen.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_summary_view_model.dart';
 
@@ -14,7 +16,10 @@ import 'receipt_summary_view_model.dart';
 ///
 /// Lets the user review vendor / total / itemized breakdown before saving:
 /// tapping an item's checkbox excludes it (the total recalculates and an
-/// Undo banner appears), tapping the pencil renames the vendor inline.
+/// Undo banner appears), tapping an item's price lets the user correct it
+/// (the total recalculates), tapping the vendor name renames it inline, and
+/// tapping the pencil opens the nearby-location picker to lock the vendor's
+/// place.
 ///
 /// [show] returns the (possibly edited) draft when the user proceeds via
 /// either CTA, or `null` when they cancel or dismiss the sheet.
@@ -44,6 +49,7 @@ class ReceiptConfirmSheet extends StatefulWidget {
 class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   late final List<ReceiptLineItem> _items;
   late final List<bool> _checked;
+  late List<double> _prices;
   late String _vendorName;
   late bool _vendorKnown;
   bool _vendorEdited = false;
@@ -52,6 +58,10 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   Timer? _undoTimer;
   late final TextEditingController _vendorController;
   final FocusNode _vendorFocus = FocusNode();
+  int? _editingPriceIndex;
+  late final TextEditingController _priceController;
+  final FocusNode _priceFocus = FocusNode();
+  PlaceResult? _pickedPlace;
   late final bool _hasParsedAmount;
   late final bool _lowConfidence;
 
@@ -61,6 +71,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     final vm = ReceiptSummaryViewModel.from(widget.draft);
     _items = widget.draft.lineItems;
     _checked = List.filled(_items.length, true);
+    _prices = [for (final item in _items) item.priceMyr];
     _vendorName = vm.merchantDisplay;
     _vendorKnown = widget.draft.merchantRaw?.trim().isNotEmpty ?? false;
     _hasParsedAmount = vm.hasAmount;
@@ -69,6 +80,12 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _vendorFocus.addListener(() {
       if (!_vendorFocus.hasFocus && _editingVendor) _commitVendor();
     });
+    _priceController = TextEditingController();
+    _priceFocus.addListener(() {
+      if (!_priceFocus.hasFocus && _editingPriceIndex != null) {
+        _commitPriceEdit();
+      }
+    });
   }
 
   @override
@@ -76,12 +93,16 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _undoTimer?.cancel();
     _vendorController.dispose();
     _vendorFocus.dispose();
+    _priceController.dispose();
+    _priceFocus.dispose();
     super.dispose();
   }
 
-  /// The parsed receipt total minus every excluded item's price. Starting
-  /// from the OCR total (instead of re-summing checked items) keeps tax and
-  /// service charge intact when the printed items don't add up to the total.
+  /// The parsed receipt total adjusted for excluded items and any per-item
+  /// price corrections. Starting from the OCR total (instead of re-summing
+  /// checked items) keeps tax and service charge intact when the printed
+  /// items don't add up to the total; an edited item's delta from its
+  /// original OCR price is folded in on top of that baseline.
   double? get _total {
     final base = widget.draft.amountMyr ??
         (_items.isEmpty
@@ -90,7 +111,11 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     if (base == null) return null;
     var total = base;
     for (var i = 0; i < _items.length; i++) {
-      if (!_checked[i]) total -= _items[i].priceMyr;
+      if (_checked[i]) {
+        total += _prices[i] - _items[i].priceMyr;
+      } else {
+        total -= _items[i].priceMyr;
+      }
     }
     return total < 0 ? 0 : total;
   }
@@ -98,6 +123,13 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   int get _includedCount => _checked.where((c) => c).length;
 
   bool get _anyExcluded => _checked.contains(false);
+
+  bool get _anyPriceEdited {
+    for (var i = 0; i < _items.length; i++) {
+      if (_prices[i] != _items[i].priceMyr) return true;
+    }
+    return false;
+  }
 
   String get _vendorInitial {
     if (!_vendorKnown && !_vendorEdited) return '?';
@@ -155,25 +187,80 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     });
   }
 
+  void _startPriceEdit(int index) {
+    if (_editingPriceIndex != null && _editingPriceIndex != index) {
+      _commitPriceEdit();
+    }
+    setState(() {
+      _editingPriceIndex = index;
+      _priceController.text = _prices[index].toStringAsFixed(2);
+      _priceController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _priceController.text.length,
+      );
+    });
+  }
+
+  void _commitPriceEdit() {
+    final index = _editingPriceIndex;
+    if (index == null) return;
+    final parsed =
+        double.tryParse(_priceController.text.trim().replaceAll(',', ''));
+    setState(() {
+      if (parsed != null && parsed >= 0) _prices[index] = parsed;
+      _editingPriceIndex = null;
+    });
+  }
+
+  /// Opens the nearby-place picker (top ranked candidates within the
+  /// enrichment search radius) so the user can lock the vendor's location,
+  /// mirroring `ShareSaveSheet._openPicker`.
+  Future<void> _openPlacePicker() async {
+    final lat = widget.draft.shareLocationLat;
+    final lng = widget.draft.shareLocationLng;
+    if (lat == null || lng == null) return;
+    final result = await PlacePickerScreen.push(
+      context,
+      lat: lat,
+      lng: lng,
+      candidates: widget.draft.merchantCandidates,
+      merchantName: _vendorName,
+      category: widget.draft.categoryUser ?? widget.draft.categoryGuess,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _pickedPlace = result;
+      _vendorName = result.name;
+      _vendorEdited = true;
+    });
+  }
+
   /// The draft with the user's edits applied. Untouched fields pass through
   /// unchanged so a plain "Looks good" behaves exactly like before.
   ReceiptIngestDraft _editedDraft() {
     final total = _total;
+    final anyItemChange = _anyExcluded || _anyPriceEdited;
     return widget.draft.copyWith(
       merchantRaw: _vendorEdited ? _vendorName : null,
-      amountMyr: _anyExcluded ? total : null,
-      needsAmount: _anyExcluded && total != null ? false : null,
-      lineItems: _anyExcluded
+      amountMyr: anyItemChange ? total : null,
+      needsAmount: anyItemChange && total != null ? false : null,
+      lineItems: anyItemChange
           ? [
               for (var i = 0; i < _items.length; i++)
-                if (_checked[i]) _items[i],
+                if (_checked[i]) _items[i].copyWith(priceMyr: _prices[i]),
             ]
           : null,
+      pickedPlaceName: _pickedPlace?.name,
+      pickedPlaceGooglePlaceId: _pickedPlace?.id,
+      pickedPlaceLat: _pickedPlace?.lat,
+      pickedPlaceLng: _pickedPlace?.lng,
+      pickedPlaceLocked: _pickedPlace != null,
     );
   }
 
   void _proceed() {
     if (_editingVendor) _commitVendor();
+    if (_editingPriceIndex != null) _commitPriceEdit();
     Navigator.pop(context, _editedDraft());
   }
 
@@ -226,24 +313,26 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
             Expanded(
               child: _editingVendor ? _vendorField() : _vendorLabel(),
             ),
-            const SizedBox(width: 12),
-            Material(
-              color: ReceiptSheetColors.tile,
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: _startVendorEdit,
-                child: const SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: Icon(
-                    Icons.edit_outlined,
-                    size: 15,
-                    color: ReceiptSheetColors.sub,
+            if (widget.draft.shareLocationLat != null) ...[
+              const SizedBox(width: 12),
+              Material(
+                color: ReceiptSheetColors.tile,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _openPlacePicker,
+                  child: const SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Icon(
+                      Icons.edit_location_outlined,
+                      size: 15,
+                      color: ReceiptSheetColors.sub,
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
         const SizedBox(height: 14),
@@ -266,8 +355,13 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
             if (i > 0) const SizedBox(height: 14),
             _ItemRow(
               item: _items[i],
+              price: _prices[i],
               checked: _checked[i],
-              onTap: () => _toggleItem(i),
+              editing: _editingPriceIndex == i,
+              priceController: _priceController,
+              priceFocus: _priceFocus,
+              onToggle: () => _toggleItem(i),
+              onEditPrice: () => _startPriceEdit(i),
             ),
           ],
         ],
@@ -337,15 +431,19 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   }
 
   Widget _vendorLabel() {
-    return Text(
-      _vendorName,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: balooText(
-        20,
-        FontWeight.w800,
-        color: ReceiptSheetColors.ink,
-        letterSpacing: -0.2,
+    return GestureDetector(
+      onTap: _startVendorEdit,
+      behavior: HitTestBehavior.opaque,
+      child: Text(
+        _vendorName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: balooText(
+          20,
+          FontWeight.w800,
+          color: ReceiptSheetColors.ink,
+          letterSpacing: -0.2,
+        ),
       ),
     );
   }
@@ -429,61 +527,121 @@ class _CategoryChip extends StatelessWidget {
 class _ItemRow extends StatelessWidget {
   const _ItemRow({
     required this.item,
+    required this.price,
     required this.checked,
-    required this.onTap,
+    required this.editing,
+    required this.priceController,
+    required this.priceFocus,
+    required this.onToggle,
+    required this.onEditPrice,
   });
 
   final ReceiptLineItem item;
+  final double price;
   final bool checked;
-  final VoidCallback onTap;
+  final bool editing;
+  final TextEditingController priceController;
+  final FocusNode priceFocus;
+  final VoidCallback onToggle;
+  final VoidCallback onEditPrice;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: checked ? ReceiptSheetColors.gold : Colors.white,
-              borderRadius: BorderRadius.circular(7),
-              border: Border.all(
-                color: checked
-                    ? ReceiptSheetColors.gold
-                    : ReceiptSheetColors.checkboxBorder,
-                width: 2,
-              ),
-            ),
-            child: checked
-                ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
-                : null,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Opacity(
-              opacity: checked ? 1 : 0.4,
-              child: Text(
-                item.displayLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: balooText(
-                  15,
-                  FontWeight.w700,
-                  decoration: checked ? null : TextDecoration.lineThrough,
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: onToggle,
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: checked ? ReceiptSheetColors.gold : Colors.white,
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(
+                      color: checked
+                          ? ReceiptSheetColors.gold
+                          : ReceiptSheetColors.checkboxBorder,
+                      width: 2,
+                    ),
+                  ),
+                  child: checked
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 15,
+                          color: Colors.white,
+                        )
+                      : null,
                 ),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Opacity(
+                    opacity: checked ? 1 : 0.4,
+                    child: Text(
+                      item.displayLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: balooText(
+                        15,
+                        FontWeight.w700,
+                        decoration: checked ? null : TextDecoration.lineThrough,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 10),
-          Opacity(
-            opacity: checked ? 1 : 0.4,
-            child: Text(item.priceDisplay, style: balooText(15, FontWeight.w700)),
-          ),
-        ],
+        ),
+        const SizedBox(width: 10),
+        editing ? _priceField() : _priceLabel(),
+      ],
+    );
+  }
+
+  Widget _priceLabel() {
+    return GestureDetector(
+      onTap: onEditPrice,
+      behavior: HitTestBehavior.opaque,
+      child: Opacity(
+        opacity: checked ? 1 : 0.4,
+        child: Text(
+          'RM ${price.toStringAsFixed(2)}',
+          style: balooText(15, FontWeight.w700),
+        ),
+      ),
+    );
+  }
+
+  Widget _priceField() {
+    const goldUnderline = UnderlineInputBorder(
+      borderSide: BorderSide(color: ReceiptSheetColors.gold, width: 2),
+    );
+    return SizedBox(
+      width: 78,
+      child: TextField(
+        controller: priceController,
+        focusNode: priceFocus,
+        autofocus: true,
+        textAlign: TextAlign.right,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => priceFocus.unfocus(),
+        cursorColor: ReceiptSheetColors.gold,
+        style: balooText(15, FontWeight.w700),
+        decoration: const InputDecoration(
+          isDense: true,
+          filled: false,
+          prefixText: 'RM ',
+          contentPadding: EdgeInsets.only(bottom: 2),
+          border: goldUnderline,
+          enabledBorder: goldUnderline,
+          focusedBorder: goldUnderline,
+        ),
       ),
     );
   }

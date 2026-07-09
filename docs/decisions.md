@@ -4,6 +4,23 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Back to `google_maps_flutter`, replacing flutter_map + CARTO (2026-07-09)
+
+**Decision**: `spend_map_screen.dart` and `place_picker_screen.dart` moved from `flutter_map` + free CARTO Voyager tiles back to `google_maps_flutter`, reversing the 2026-07-06 entry below. `flutter_map`, `flutter_map_cancellable_tile_provider`, and `latlong2` are removed from `pubspec.yaml`; `google_maps_flutter`'s own `LatLng` is used everywhere.
+
+**Reason**: the original 2026-07-06 swap was driven purely by the Maps SDK rendering blank (the GCP project had the Maps API enabled but no billing account attached). Billing is now enabled, so that blocker is resolved, and the product wants real Google Maps rendering (base map, attribution, and eventual parity with Google Places data) rather than the CARTO free tier, which was already flagged as not production-safe at scale.
+
+**Key implementation choices**:
+- **Screen-coordinate overlay for custom pins**: `google_maps_flutter`'s native `Marker` only accepts a static `BitmapDescriptor`, not a widget child, so `spend_map_screen.dart`'s custom `SpendPlaceMarker`/`FriendMapMarker`/"you are here" widgets are kept as real Flutter widgets, positioned in a `Stack` above the `GoogleMap` and reprojected via `GoogleMapController.getScreenCoordinate`/`getLatLng` on camera move (coalesced to one batched platform-channel call per frame, not one per pin per tick) and whenever the underlying pin data changes. `place_picker_screen.dart`'s simpler pins use native `Marker`s with `BitmapDescriptor.defaultMarkerWithHue` instead, since they're plain colored pins with no custom widget content.
+- **Native API keys, not `.env`**: `google_maps_flutter` needs the key wired natively before Dart even runs. Android reads `MAPS_API_KEY` from `android/local.properties` (gitignored) via `build.gradle.kts` → `manifestPlaceholders`; iOS reads it from a new gitignored `ios/Flutter/Secrets.xcconfig` (`#include?`-ed from `Debug.xcconfig`/`Release.xcconfig`, template in `Secrets.xcconfig.example`) → `Info.plist`'s `GMSApiKey` → `AppDelegate.swift`'s `GMSServices.provideAPIKey(...)`. Both default to an empty/missing key building successfully with a blank map, rather than failing the build — same "degrade gracefully" shape as the original blank-map incident, just intentional this time.
+- **Pin-shift-on-tap math reimplemented client-side**: the "shift the tapped pin up 25% of the viewport" trick (so the place-detail panel doesn't cover it) previously used flutter_map's synchronous `MapCamera.projectAtZoom`/`unprojectAtZoom`. `google_maps_flutter` has no client-side projection helper, so the standard Web Mercator tile math is reimplemented directly (`_mercatorProject`/`_mercatorUnproject` in `spend_map_screen.dart`) rather than using the async `getScreenCoordinate`/`getLatLng` round trip — that pair is tied to the *current* camera/zoom, which would give a wrong answer when animating to a different target zoom.
+
+**Alternatives considered**: rasterizing custom pins to `BitmapDescriptor` bitmaps for true native `Marker`s — rejected for `spend_map_screen.dart`'s pins specifically, since it would need a new per-style rendering/caching layer for widgets that change per-cluster (amount, visit count) and per-friend (avatar config, mood); the screen-coordinate overlay keeps the existing widgets untouched.
+
+**Tradeoffs**: the overlay approach has no built-in platform-view hit-testing or occlusion — tap handling is each widget's own `GestureDetector`, and pin positions can show a brief single-frame lag relative to the base map during very fast drags before the next batched reprojection lands. `spend_map_screen.dart` has no widget test (constructing a real `GoogleMap` platform view in `flutter_test` isn't supported without a hand-rolled fake `GoogleMapsFlutterPlatform`, which has no precedent here and wasn't worth adding) — its correctness rests on manual device/emulator verification, not automated coverage. `place_picker_screen.dart`'s `@visibleForTesting TileProvider? tileProvider` seam was replaced with `Widget? mapOverride` so its existing test suite could keep running without a real platform view.
+
+---
+
 ## Receipt-flow design handoff: confirmation sheet + location picker restyle (2026-07-09)
 
 **Decision**: implemented the two high-fidelity screens from the design handoff bundle (checked in at `docs/design/design_handoff_receipt_flows/` — moved there from the untracked `# Budget App Room Backgrounds/` folder it arrived in):
