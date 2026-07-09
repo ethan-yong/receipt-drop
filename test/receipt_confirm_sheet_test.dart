@@ -200,10 +200,11 @@ void main() {
     );
   });
 
-  testWidgets('location pencil only shown when a share location is present',
+  testWidgets(
+      'location pencil is shown even without a share location (falls back to search)',
       (tester) async {
     await _openSheet(tester, _draft(), (_) {});
-    expect(find.byIcon(Icons.edit_location_outlined), findsNothing);
+    expect(find.byIcon(Icons.edit_location_outlined), findsOneWidget);
   });
 
   testWidgets('location pencil is shown when a share location is present',

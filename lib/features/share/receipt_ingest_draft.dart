@@ -53,7 +53,8 @@ class ReceiptIngestDraft {
   final double? ocrConfidence;
   final List<ReceiptLineItem> lineItems;
 
-  /// Raw OCR text, carried only when the parse failed or was low-confidence.
+  /// Raw OCR text (capped length), carried whenever OCR produced any text —
+  /// feeds the server-side LLM receipt-understanding step.
   final String? rawOcrText;
   final double? ocrServiceConfidence;
   final double? lineItemsConfidence;

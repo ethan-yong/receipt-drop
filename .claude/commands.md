@@ -40,9 +40,15 @@ supabase db reset              # replay all migrations in supabase/migrations/
 supabase status                # get local API URL, anon key, JWT secret
 ```
 
-Edge functions run automatically with `supabase start`; secrets for them go in `supabase/functions/.env` (copy from `.env.example` there — note `GOOGLE_PLACES_API_KEY` is required but **not** listed in that example file, see `docs/database.md`).
+Edge functions run automatically with `supabase start`; secrets for them go in `supabase/functions/.env` (copy from `.env.example` there — note `GOOGLE_PLACES_API_KEY` is required but **not** listed in that example file, see `docs/database.md`; `VLLM_BASE_URL`/`VLLM_MODEL_NAME` etc. for `enrich-transaction`'s LLM step **are** listed there).
 
 Deploy migrations/functions to a remote project: `supabase db push`, `supabase functions deploy <name>`.
+
+Edge function unit tests (pure logic only, no network/DB — Deno, no CI wiring yet):
+
+```powershell
+deno test supabase/functions/_shared/
+```
 
 ## Backend: OCR API (`services/ocr-api/`)
 

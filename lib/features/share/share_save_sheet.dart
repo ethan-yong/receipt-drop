@@ -9,6 +9,7 @@ import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/rm_amount_parser.dart';
 import '../../features/places/place_picker_screen.dart';
+import '../../features/places/places_search_screen.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
 import '../../widgets/receipt_strip.dart';
@@ -127,15 +128,28 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
   Future<void> _openPicker() async {
     final lat = widget.draft.shareLocationLat;
     final lng = widget.draft.shareLocationLng;
-    if (lat == null || lng == null) return;
-    final result = await PlacePickerScreen.push(
-      context,
-      lat: lat,
-      lng: lng,
-      candidates: widget.draft.merchantCandidates,
-      merchantName: widget.draft.merchantRaw,
-      category: widget.draft.categoryGuess,
-    );
+    // No share-time GPS fix (permission denied, location off, or no fix
+    // within the timeout) — fall back to text search instead of just
+    // hiding the button, mirroring transaction_detail_screen.dart's
+    // _pickPlace(). Pushed via the root navigator, same as
+    // PlacePickerScreen.push, since this runs inside a modal sheet where
+    // go_router's context.pushNamed doesn't reliably navigate.
+    final result = lat != null && lng != null
+        ? await PlacePickerScreen.push(
+            context,
+            lat: lat,
+            lng: lng,
+            candidates: widget.draft.merchantCandidates,
+            merchantName: widget.draft.merchantRaw,
+            category: widget.draft.categoryGuess,
+          )
+        : await Navigator.of(context, rootNavigator: true)
+            .push<PlaceResult?>(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => const PlacesSearchScreen(),
+          ),
+        );
     if (result != null && mounted) setState(() => _pickedPlace = result);
   }
 
@@ -228,20 +242,18 @@ class _ShareSaveSheetState extends State<ShareSaveSheet> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (widget.draft.shareLocationLat != null) ...[
-                const SizedBox(width: 2),
-                SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    iconSize: 16,
-                    icon: const Icon(Icons.edit_location_outlined),
-                    tooltip: 'Choose location',
-                    onPressed: _openPicker,
-                  ),
+              const SizedBox(width: 2),
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  iconSize: 16,
+                  icon: const Icon(Icons.edit_location_outlined),
+                  tooltip: 'Choose location',
+                  onPressed: _openPicker,
                 ),
-              ],
+              ),
             ],
           ),
           if (_pickedPlace != null) ...[

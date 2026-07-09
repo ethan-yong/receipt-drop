@@ -2,16 +2,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
   ALIAS_GEOHASH_PRECISION,
   ALIAS_SAVE_CONFIDENCE_THRESHOLD,
-  CATEGORY_TO_PLACE_TYPES,
-  DEFAULT_NEARBY_TYPES,
-  MerchantCandidateInput,
   SEARCH_RADIUS_METERS,
-  buildTextSearchQueries,
   geohashEncode,
   isUsableMerchantText,
   normalizeForCompare,
   scoreCandidate,
 } from "../_shared/place_matching.ts";
+import {
+  adjustScoreForTypeMatch,
+  buildLlmTextQueries,
+  callReceiptUnderstanding,
+  resolveIncludedTypes,
+} from "../_shared/receipt_understanding.ts";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -43,13 +45,13 @@ async function markPlacesFailure(
   client: ReturnType<typeof createClient>,
   transactionId: string,
   userId: string,
-  merchantRaw: string | null | undefined,
+  merchantNormalized: string | null,
 ): Promise<boolean> {
   const { error } = await client
     .from("transactions")
     .update({
       pipeline_status: "failed_enrichment",
-      merchant_normalized: normalizeMerchant(merchantRaw),
+      merchant_normalized: merchantNormalized,
     })
     .eq("id", transactionId)
     .eq("user_id", userId);
@@ -154,17 +156,18 @@ Deno.serve(async (req) => {
     });
   }
 
-  const searchText = (
-    (row.merchant_normalized as string | null | undefined) ??
-    merchantRaw ??
-    ""
-  ).trim();
+  // Full OCR body when the client kept it (always, as of the LLM-first
+  // enrichment flow), falling back to the always-synced header snippet for
+  // rows synced before that change or web-originated captures.
+  const rawOcrText = row.raw_ocr_text as string | null | undefined;
+  const ocrHeaderText = row.ocr_header_text as string | null | undefined;
+  const ocrText = (rawOcrText ?? ocrHeaderText ?? "").trim();
 
-  if (searchText.length === 0) {
+  if (ocrText.length === 0) {
     const { error: upErr } = await supabase
       .from("transactions")
       .update({
-        merchant_normalized: null,
+        merchant_normalized: normalizeMerchant(merchantRaw),
         pipeline_status: "failed_enrichment",
       })
       .eq("id", transactionId)
@@ -178,7 +181,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ ok: false, reason: "no_merchant_text" }),
+      JSON.stringify({ ok: false, reason: "no_ocr_text" }),
       {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -186,34 +189,143 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Ranked merchant guesses from lib/domain/logic/merchant_extractor.dart,
-  // synced onto the row alongside merchant_raw/merchant_normalized. Rows
-  // synced before this column existed (or a web-originated row with no
-  // candidates) fall back to searchText alone via buildTextSearchQueries.
-  const merchantCandidates =
-    (row.merchant_candidates as MerchantCandidateInput[] | null) ?? null;
-  // Extra top-of-receipt OCR context, always populated (unlike raw_ocr_text,
-  // which is review-only). Not used in matching yet — read here so it's
-  // available for a future scoring refinement without another migration.
-  const _ocrHeaderText = row.ocr_header_text as string | null | undefined;
+  // LLM RECEIPT UNDERSTANDING: every enrichment goes through the LLM (no
+  // heuristic fallback during this testing phase). Failure here fails the
+  // whole enrichment rather than falling back to the old merchant-candidate
+  // heuristic — see docs/decisions.md.
+  const vllmBaseUrl = Deno.env.get("VLLM_BASE_URL");
+  const vllmModelName = Deno.env.get("VLLM_MODEL_NAME");
+  const vllmApiKey = Deno.env.get("VLLM_API_KEY") ?? null;
+  const vllmReasoningEffort = Deno.env.get("VLLM_REASONING_EFFORT") ?? null;
+
+  if (!vllmBaseUrl || !vllmModelName) {
+    console.error(
+      `enrich-transaction[${transactionId}]: LLM gateway not configured ` +
+        `(VLLM_BASE_URL/VLLM_MODEL_NAME missing) — failing enrichment, no fallback`,
+    );
+    await supabase
+      .from("transactions")
+      .update({ pipeline_status: "failed_enrichment" })
+      .eq("id", transactionId)
+      .eq("user_id", user.id);
+
+    return new Response(JSON.stringify({ error: "server_misconfigured" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  console.log(
+    `enrich-transaction[${transactionId}]: calling LLM receipt-understanding ` +
+      `— model=${vllmModelName}, ocrTextChars=${ocrText.length}, ` +
+      `source=${rawOcrText ? "raw_ocr_text" : "ocr_header_text"}`,
+  );
+
+  const llmResult = await callReceiptUnderstanding(
+    {
+      baseUrl: vllmBaseUrl,
+      apiKey: vllmApiKey,
+      modelName: vllmModelName,
+      reasoningEffort: vllmReasoningEffort,
+    },
+    ocrText,
+  );
+
+  if (!llmResult.ok) {
+    console.error(
+      `enrich-transaction[${transactionId}]: LLM call failed after ` +
+        `${llmResult.latencyMs}ms — error=${llmResult.error}` +
+        (llmResult.raw ? `, raw=${JSON.stringify(llmResult.raw.slice(0, 300))}` : ""),
+    );
+    const { error: upErr } = await supabase
+      .from("transactions")
+      .update({
+        pipeline_status: "failed_enrichment",
+        merchant_normalized: normalizeMerchant(merchantRaw),
+        llm_understanding: {
+          _error: llmResult.error,
+          _raw: llmResult.raw,
+          _meta: { latency_ms: llmResult.latencyMs },
+        },
+      })
+      .eq("id", transactionId)
+      .eq("user_id", user.id);
+
+    if (upErr) {
+      return new Response(JSON.stringify({ error: "server_misconfigured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(
+      JSON.stringify({ ok: false, reason: "llm_error" }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
+  }
+
+  const understanding = llmResult.understanding;
+  const merchantNormalized = understanding.merchant_name ??
+    normalizeMerchant(merchantRaw);
+
+  console.log(
+    `enrich-transaction[${transactionId}]: LLM understanding ok in ` +
+      `${llmResult.latencyMs}ms (model=${llmResult.model}) — ` +
+      `merchant=${JSON.stringify(understanding.merchant_name)} ` +
+      `(confidence=${understanding.confidence.merchant}), ` +
+      `category=${JSON.stringify(understanding.vendor_category)} ` +
+      `(confidence=${understanding.confidence.category}), ` +
+      `queries=${understanding.merchant_search_queries.length}, ` +
+      `placeTypes=${understanding.google_place_types.length}`,
+  );
+
+  // Persist the LLM's structured output before touching Places, so it's
+  // debuggable even if the function dies further down.
+  {
+    const { error: persistErr } = await supabase
+      .from("transactions")
+      .update({
+        merchant_normalized: merchantNormalized,
+        llm_understanding: {
+          ...understanding,
+          _meta: {
+            model: llmResult.model,
+            latency_ms: llmResult.latencyMs,
+            prompt_source: rawOcrText ? "raw_ocr_text" : "ocr_header_text",
+          },
+        },
+      })
+      .eq("id", transactionId)
+      .eq("user_id", user.id);
+
+    if (persistErr) {
+      return new Response(JSON.stringify({ error: "server_misconfigured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
 
   const shareLat = row.share_location_lat;
   const shareLng = row.share_location_lng;
   const hasLocation =
     typeof shareLat === "number" && typeof shareLng === "number";
-  const topCandidateConfidence = merchantCandidates?.[0]?.confidence;
-  // Usable text requires both a long-enough string AND, when we have a
-  // candidate-level confidence signal, that the extractor itself trusted its
-  // top guess — tightens the existing length-only gate without discarding
-  // its already-tuned weights/caps below.
-  const hasUsableText = isUsableMerchantText(searchText) &&
-    (topCandidateConfidence === undefined || topCandidateConfidence >= 0.6);
+  // Usable text requires both a long-enough string AND that the LLM itself
+  // trusted its own extraction — tightens the length-only gate without
+  // discarding the already-tuned scoring weights/caps below.
+  const hasUsableText = understanding.merchant_name != null &&
+    isUsableMerchantText(understanding.merchant_name) &&
+    understanding.confidence.merchant >= 0.6;
 
-  // ALIAS FAST-PATH: skip Google Places entirely if this exact merchant text
-  // near this exact location has already been resolved before.
+  // ALIAS FAST-PATH: skip Google Places entirely if this exact LLM-canonical
+  // merchant name near this exact location has already been resolved
+  // before. Keyed on the LLM's corrected name (not the raw OCR guess) so
+  // OCR variants of the same merchant collapse onto one cache key.
   if (hasLocation && hasUsableText) {
-    const topCandidateText = merchantCandidates?.[0]?.text ?? searchText;
-    const aliasKey = normalizeForCompare(topCandidateText);
+    const aliasKey = normalizeForCompare(understanding.merchant_name!);
     const geohash = geohashEncode(shareLat, shareLng, ALIAS_GEOHASH_PRECISION);
     try {
       const { data: aliasRows } = await supabase.rpc(
@@ -225,7 +337,6 @@ Deno.serve(async (req) => {
         const { error: aliasUpErr } = await supabase
           .from("transactions")
           .update({
-            merchant_normalized: normalizeMerchant(merchantRaw),
             place_google_place_id: alias.place_id,
             place_name: alias.name,
             place_lat: alias.lat,
@@ -237,6 +348,11 @@ Deno.serve(async (req) => {
           .eq("id", transactionId)
           .eq("user_id", user.id);
         if (!aliasUpErr) {
+          console.log(
+            `enrich-transaction[${transactionId}]: resolved via alias cache ` +
+              `(key=${JSON.stringify(aliasKey)}) — skipped Places, place=` +
+              `${JSON.stringify(alias.name)}`,
+          );
           return new Response(
             JSON.stringify({ ok: true, resolved_via: "alias" }),
             {
@@ -267,18 +383,43 @@ Deno.serve(async (req) => {
     });
   }
 
-  const categoryGuess = row.category_guess as string | null | undefined;
-  const categoryConfidence =
-    (row.category_confidence as number | null | undefined) ?? 0;
-  const includedTypes =
-    categoryGuess && categoryConfidence >= 0.5 && CATEGORY_TO_PLACE_TYPES[categoryGuess]
-      ? CATEGORY_TO_PLACE_TYPES[categoryGuess]
-      : DEFAULT_NEARBY_TYPES;
+  const includedTypes = resolveIncludedTypes(understanding);
+  const textQueries = buildLlmTextQueries(understanding);
+
+  if (textQueries.length === 0 && !hasLocation) {
+    // No merchant text, no address-derived query, and no GPS to anchor a
+    // nearby search — nothing for Places to search against.
+    console.warn(
+      `enrich-transaction[${transactionId}]: no search signal — LLM produced ` +
+        `no usable queries (merchant=${JSON.stringify(understanding.merchant_name)}, ` +
+        `address=${JSON.stringify(understanding.address_text)}) and no share GPS`,
+    );
+    const updated = await markPlacesFailure(
+      supabase,
+      transactionId,
+      user.id,
+      merchantNormalized,
+    );
+    if (updated) {
+      return new Response(
+        JSON.stringify({ ok: false, reason: "no_search_signal" }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+    return new Response(JSON.stringify({ error: "server_misconfigured" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   type GooglePlace = {
     id?: string;
     displayName?: { text?: string } | string;
     location?: { latitude?: number; longitude?: number };
+    types?: string[];
   };
 
   type PlaceCandidate = {
@@ -286,10 +427,11 @@ Deno.serve(async (req) => {
     name: string | null;
     lat: number | null;
     lng: number | null;
+    types: string[] | null;
   };
 
   const placesFieldMask =
-    "places.id,places.displayName,places.formattedAddress,places.location";
+    "places.id,places.displayName,places.formattedAddress,places.location,places.types";
 
   async function fetchTextSearch(query: string): Promise<GooglePlace[] | null> {
     const body: Record<string, unknown> = {
@@ -362,22 +504,24 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Up to 2 distinct ranked candidates get their own Text Search query
-  // (falls back to the single searchText query when merchant_candidates is
-  // absent — e.g. rows synced before this column existed).
-  const textQueries = buildTextSearchQueries(merchantCandidates, searchText);
-
+  // Up to 3 distinct queries built from the LLM's merchant/location
+  // understanding get their own Text Search call, run concurrently with a
+  // single Nearby Search using the LLM's place types.
   const [textResults, nearbyResult] = await Promise.all([
     Promise.all(textQueries.map((q) => fetchTextSearch(q))),
     fetchNearbySearch(),
   ]);
 
   if (textResults.every((r) => r === null) && nearbyResult === null) {
+    console.warn(
+      `enrich-transaction[${transactionId}]: all Places calls failed — ` +
+        `queries=${JSON.stringify(textQueries)}, includedTypes=${JSON.stringify(includedTypes)}`,
+    );
     const updated = await markPlacesFailure(
       supabase,
       transactionId,
       user.id,
-      merchantRaw,
+      merchantNormalized,
     );
     if (updated) {
       return new Response(
@@ -402,6 +546,7 @@ Deno.serve(async (req) => {
         name: placeDisplayName(p),
         lat: p.location?.latitude ?? null,
         lng: p.location?.longitude ?? null,
+        types: Array.isArray(p.types) ? p.types : null,
       }));
   }
 
@@ -417,11 +562,16 @@ Deno.serve(async (req) => {
   }
 
   if (candidatesById.size === 0) {
+    console.warn(
+      `enrich-transaction[${transactionId}]: Places returned zero candidates ` +
+        `— queries=${JSON.stringify(textQueries)}, includedTypes=${JSON.stringify(includedTypes)}, ` +
+        `hasLocation=${hasLocation}`,
+    );
     const { error: upErr } = await supabase
       .from("transactions")
       .update({
         pipeline_status: "failed_enrichment",
-        merchant_normalized: normalizeMerchant(merchantRaw),
+        merchant_normalized: merchantNormalized,
       })
       .eq("id", transactionId)
       .eq("user_id", user.id);
@@ -442,11 +592,10 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Weights/cap shift by how much each signal can be trusted: usable OCR
-  // text pulls toward a text+location-confirmed match (cap 0.97); garbled
-  // text (e.g. "Mel") leans almost entirely on Nearby Search's distance
-  // ranking instead, capped lower (0.65) so it reads as a guess, not a
-  // confirmed match.
+  // Weights/cap shift by how much each signal can be trusted: usable LLM
+  // merchant text pulls toward a text+location-confirmed match (cap 0.97);
+  // low-confidence/garbled text leans almost entirely on Nearby Search's
+  // distance ranking instead, capped lower (0.65) so it reads as a guess.
   const weights = {
     textWeight: hasUsableText ? 0.6 : 0.15,
     distWeight: hasUsableText ? 0.4 : 0.85,
@@ -458,10 +607,16 @@ Deno.serve(async (req) => {
   let winnerConfidence = -1;
 
   for (const c of candidatesById.values()) {
-    // Scored against the best match across every queried text (not just the
-    // single top candidate), so a Places result matching a shorter/cleaner
-    // alternate candidate isn't penalized for not matching the noisiest one.
-    const confidence = scoreCandidate(c, textQueries, weights, location);
+    // Scored against the best match across every queried text, then
+    // penalized if the candidate's own Places types share nothing with the
+    // LLM's expected vendor category (keeps a same-block Nike Store from
+    // outscoring a lower-text-match food candidate on a food receipt).
+    const baseScore = scoreCandidate(c, textQueries, weights, location);
+    const confidence = adjustScoreForTypeMatch(
+      baseScore,
+      c.types,
+      understanding.google_place_types,
+    );
     if (confidence > winnerConfidence) {
       winnerConfidence = confidence;
       winner = c;
@@ -475,10 +630,16 @@ Deno.serve(async (req) => {
     });
   }
 
+  console.log(
+    `enrich-transaction[${transactionId}]: resolved via Places — ` +
+      `place=${JSON.stringify(winner.name)}, confidence=${winnerConfidence.toFixed(2)}, ` +
+      `hasUsableText=${hasUsableText}`,
+  );
+
   const { error: upErr } = await supabase
     .from("transactions")
     .update({
-      merchant_normalized: normalizeMerchant(merchantRaw),
+      merchant_normalized: merchantNormalized,
       place_google_place_id: winner.id,
       place_name: winner.name,
       place_lat: winner.lat,
@@ -507,9 +668,8 @@ Deno.serve(async (req) => {
     winnerConfidence >= ALIAS_SAVE_CONFIDENCE_THRESHOLD
   ) {
     try {
-      const topCandidateText = merchantCandidates?.[0]?.text ?? searchText;
       await supabase.rpc("upsert_merchant_alias", {
-        p_alias_text: normalizeForCompare(topCandidateText),
+        p_alias_text: normalizeForCompare(understanding.merchant_name!),
         p_geohash: geohashEncode(shareLat, shareLng, ALIAS_GEOHASH_PRECISION),
         p_place_id: winner.id,
         p_name: winner.name,

@@ -49,10 +49,9 @@ ReceiptIngestDraft draftFromParseResult({
     categoryGuess: parsed.categoryGuess,
     ocrConfidence: parsed.ocrConfidence,
     lineItems: parsed.lineItems,
-    rawOcrText: (parsed.needsAmount || parsed.lowConfidence) &&
-            parsed.ocrText.isNotEmpty
-        ? parsed.ocrText
-        : null,
+    // Mirrors ReceiptIngestService._buildDraft: always kept (uncapped here,
+    // since batch fixtures are short receipt scans, not user-facing sync).
+    rawOcrText: parsed.ocrText.isNotEmpty ? parsed.ocrText : null,
     ocrServiceConfidence: parsed.ocrServiceConfidence,
     lineItemsConfidence: parsed.lineItemsConfidence,
     parseFailureReason: parsed.parseFailureReason,

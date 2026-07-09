@@ -119,6 +119,21 @@ async def ocr(request: Request) -> OcrResponse:
     )
     if text:
         logger.info("extracted text:\n%s", text)
+        # This response body (text/lines) is what the client later persists
+        # as transactions.raw_ocr_text/ocr_header_text and hands to the
+        # server-side LLM receipt-understanding step in enrich-transaction —
+        # log the per-line breakdown at DEBUG so a bad LLM extraction can be
+        # traced back to what OCR actually saw (e.g. a merchant header line
+        # OCR split across two lines, or a height_ratio too low for the
+        # large-text merchant-candidate heuristic to have caught it either).
+        if logger.isEnabledFor(logging.DEBUG):
+            for i, line in enumerate(lines):
+                logger.debug(
+                    "  line %2d (height_ratio=%.2f): %r",
+                    i,
+                    line.height_ratio,
+                    line.text,
+                )
     else:
         logger.warning("no text recognized in the image")
     return OcrResponse(

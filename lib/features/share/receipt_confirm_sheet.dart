@@ -8,6 +8,7 @@ import '../../data/repositories/places_repository.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
 import '../places/place_picker_screen.dart';
+import '../places/places_search_screen.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_summary_view_model.dart';
 
@@ -218,15 +219,28 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   Future<void> _openPlacePicker() async {
     final lat = widget.draft.shareLocationLat;
     final lng = widget.draft.shareLocationLng;
-    if (lat == null || lng == null) return;
-    final result = await PlacePickerScreen.push(
-      context,
-      lat: lat,
-      lng: lng,
-      candidates: widget.draft.merchantCandidates,
-      merchantName: _vendorName,
-      category: widget.draft.categoryUser ?? widget.draft.categoryGuess,
-    );
+    // No share-time GPS fix (permission denied, location off, or no fix
+    // within the timeout) — fall back to text search instead of just
+    // hiding the button, mirroring transaction_detail_screen.dart's
+    // _pickPlace(). Pushed via the root navigator, same as
+    // PlacePickerScreen.push, since this sheet runs inside a modal sheet
+    // where go_router's context.pushNamed doesn't reliably navigate.
+    final result = lat != null && lng != null
+        ? await PlacePickerScreen.push(
+            context,
+            lat: lat,
+            lng: lng,
+            candidates: widget.draft.merchantCandidates,
+            merchantName: _vendorName,
+            category: widget.draft.categoryUser ?? widget.draft.categoryGuess,
+          )
+        : await Navigator.of(context, rootNavigator: true)
+            .push<PlaceResult?>(
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => const PlacesSearchScreen(),
+          ),
+        );
     if (result == null || !mounted) return;
     setState(() {
       _pickedPlace = result;
@@ -313,26 +327,24 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
             Expanded(
               child: _editingVendor ? _vendorField() : _vendorLabel(),
             ),
-            if (widget.draft.shareLocationLat != null) ...[
-              const SizedBox(width: 12),
-              Material(
-                color: ReceiptSheetColors.tile,
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: _openPlacePicker,
-                  child: const SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: Icon(
-                      Icons.edit_location_outlined,
-                      size: 15,
-                      color: ReceiptSheetColors.sub,
-                    ),
+            const SizedBox(width: 12),
+            Material(
+              color: ReceiptSheetColors.tile,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _openPlacePicker,
+                child: const SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: Icon(
+                    Icons.edit_location_outlined,
+                    size: 15,
+                    color: ReceiptSheetColors.sub,
                   ),
                 ),
               ),
-            ],
+            ),
           ],
         ),
         const SizedBox(height: 14),

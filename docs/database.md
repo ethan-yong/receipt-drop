@@ -45,12 +45,13 @@ Core receipt row. RLS: owner-only for all of select/insert/update/delete (`20260
 | `ocr_confidence` | float8 | **amount-extraction** confidence |
 | `pipeline_status` | text | `provisional\|enriched\|failed_enrichment\|needs_review` (4th value added `20260705000000`) |
 | `impact_user` | text | `low\|med\|high`, user override — added `20260626000000` |
-| `raw_ocr_text` | text | added `20260705000000` — kept **only** for failed/low-confidence parses, as labeled data for fixing parser rules |
+| `raw_ocr_text` | text | added `20260705000000` — since the LLM receipt-understanding step, always populated (client caps it ~8000 chars) rather than only for failed/low-confidence parses; still doubles as labeled data for fixing parser rules |
 | `ocr_service_confidence` | float8 | added `20260705000000` — **scan-quality** confidence from the OCR engine, distinct from `ocr_confidence` (amount-extraction). Don't conflate the two. |
 | `line_items_confidence` | float8 | added `20260705000000` |
 | `parse_failure_reason` | text | added `20260705000000` |
-| `merchant_candidates` | jsonb | added `20260708000000` — ranked `MerchantCandidate[]` (`{text, confidence, source}`) from `extractMerchantCandidates()`; `merchant_raw` is always the top entry's text |
-| `ocr_header_text` | text | added `20260708000000` — top-of-receipt OCR lines, always populated (unlike `raw_ocr_text`, which is review-only) |
+| `merchant_candidates` | jsonb | added `20260708000000` — ranked `MerchantCandidate[]` (`{text, confidence, source}`) from `extractMerchantCandidates()`; `merchant_raw` is always the top entry's text. No longer read by `enrich-transaction` (superseded by `llm_understanding`), kept for the alias-cache precedent and future heuristic comparisons |
+| `ocr_header_text` | text | added `20260708000000` — top-of-receipt OCR lines, always populated; used by `enrich-transaction` as a fallback when `raw_ocr_text` is empty |
+| `llm_understanding` | jsonb | added `20260709000000` — structured output of the LLM receipt-understanding step (`supabase/functions/_shared/receipt_understanding.ts`): `merchant_name`, `merchant_search_queries`, `address_text`, `location_clues`, `vendor_category`, `google_place_types`, `confidence`, plus a `_meta` (model/latency/prompt_source) or `_error`/`_raw` on failure |
 
 Index: `transactions_user_occurred_idx (user_id, occurred_at desc)`.
 

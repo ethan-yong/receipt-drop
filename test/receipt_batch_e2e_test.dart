@@ -81,4 +81,32 @@ TOTAL                      RM 20.40
     expect(e2e.pipelineStatus, 'needs_review');
     expect(e2e.transactionId, isNotEmpty);
   });
+
+  test('draftFromParseResult keeps rawOcrText even for a clean, confident parse',
+      () {
+    // A confident parse (needsAmount=false, lowConfidence=false) used to
+    // drop rawOcrText entirely. The server-side LLM receipt-understanding
+    // step needs the full OCR body regardless of parse confidence, so it
+    // must now be carried through unconditionally whenever OCR found text.
+    const ocrText = '''
+ROCK CAFE SDN BHD
+123 JALAN EXAMPLE
+Latte                      RM 12.50
+Croissant                  RM 7.90
+TOTAL                      RM 20.40
+''';
+    final parsed = parseReceiptOcrText(
+      filePath: '/tmp/rock_cafe_clean.png',
+      ocrText: ocrText,
+      categories: categories,
+    );
+
+    expect(parsed.needsAmount, isFalse);
+    expect(parsed.lowConfidence, isFalse);
+
+    final draft = draftFromParseResult(parsed: parsed, mimeType: 'image/png');
+
+    expect(draft.rawOcrText, isNotNull);
+    expect(draft.rawOcrText, contains('ROCK CAFE'));
+  });
 }
