@@ -186,13 +186,18 @@ SYSTEM_PROMPT = (
     '"line_items" (array of objects, one per distinct purchased item): '
     "reconstruct every legible item row, correcting obvious OCR damage "
     "(merged \"RM\"+digits, a comma misread for a decimal point, "
-    "dropped/swapped letters in the item name). Each object has "
-    '"name" (string — the item description, cleaned up), "price" '
-    "(number or null — the row's printed line total in MYR, never a "
-    "unit price, no currency prefix), and \"quantity\" (number or null "
-    "— only when a multiplier like \"2 x\" is printed). Skip summary "
-    "rows (subtotal, tax, service charge, rounding, change, cash/card "
-    "tendered). Empty array if no item rows are legible.\n\n"
+    "dropped/swapped letters in the item name). Transcribe each price's "
+    "digits exactly as printed — never invent or merge digits from a "
+    "neighboring line; a single item's price must not exceed the "
+    "receipt's total. Each object has \"name\" (string — the item "
+    "description, cleaned up), \"price\" (number or null — the row's "
+    "printed line total in MYR, never a unit price, no currency "
+    "prefix), and \"quantity\" (number or null — read from a leading "
+    "count column printed before the item name, e.g. \"3 Teh O Limau "
+    "Ais\" -> quantity 3, or a trailing multiplier like \"2 x\"; null "
+    "when no quantity is printed, not when the count is 1). Skip "
+    "summary rows (subtotal, tax, service charge, rounding, change, "
+    "cash/card tendered). Empty array if no item rows are legible.\n\n"
     '"confidence" (object): {"merchant": 0-1, "address": 0-1, '
     '"category": 0-1, "line_items": 0-1} — your confidence in each '
     "extraction.\n\n"

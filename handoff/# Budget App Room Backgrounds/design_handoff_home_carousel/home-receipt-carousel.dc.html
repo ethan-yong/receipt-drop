@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    html,body{margin:0;background:#EFE7D6;font-family:'Baloo 2',sans-serif;}
+    *{box-sizing:border-box;}
+    a{color:#B08900;text-decoration:none;} a:hover{color:#8C6A00;}
+  </style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px;">
+  <div style="position:relative;width:340px;height:770px;border-radius:44px;background:#FCF6EA;box-shadow:0 28px 64px rgba(60,50,20,.22),0 0 0 10px #23201A,0 0 0 12px #4a463c;overflow:hidden;display:flex;flex-direction:column;">
+
+    <!-- status bar -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 26px 2px;font-size:12.5px;font-weight:700;color:#23201A;flex:none;">
+      <span>3:24</span><span style="letter-spacing:2px;white-space:nowrap;">▂▄▆ 91 ⚡</span>
+    </div>
+
+    <!-- top bar: drops pill + settings -->
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:16px 22px 0;flex:none;">
+      <div style="display:flex;align-items:center;gap:6px;background:#fff;border:1.5px solid #EEE3CD;border-radius:999px;padding:8px 16px;font-size:13.5px;font-weight:700;color:#23201A;">✨ 8 drops</div>
+      <div style="width:38px;height:38px;border-radius:50%;background:#fff;border:1.5px solid #EEE3CD;display:flex;align-items:center;justify-content:center;font-size:15px;">⚙️</div>
+    </div>
+
+    <!-- section label -->
+    <div style="padding:22px 22px 14px;font-size:13px;font-weight:800;letter-spacing:1.4px;color:#8C857B;flex:none;">TODAY'S RECEIPTS</div>
+
+    <!-- carousel viewport: exactly one card visible at a time -->
+    <div ref="{{ setViewport }}" onPointerDown="{{ dragStart }}" onPointerMove="{{ dragMove }}" onPointerUp="{{ dragEnd }}" onPointerCancel="{{ dragEnd }}" style="position:relative;margin:0 22px;width:296px;height:420px;overflow:visible;touch-action:pan-y;cursor:grab;flex:none;perspective:1100px;">
+      <!-- subtle depth hint behind the active card (not a visible neighbor) -->
+      <div ref="{{ setDepth }}" style="position:absolute;top:16px;left:50%;transform:translateX(-50%) scale(.9);width:230px;height:386px;border-radius:22px;background:rgba(50,40,15,.16);filter:blur(14px);z-index:0;transition:transform .42s cubic-bezier(.22,.9,.3,1),opacity .42s ease-out;"></div>
+
+      <!-- RESTAURANT (real 0 · newest, highlighted) -->
+      <div data-card="0" data-real="0" data-accent="#B4483B" style="position:absolute;top:0;left:50%;margin-left:-129px;width:258px;z-index:2;">
+        <div style="position:relative;box-sizing:border-box;width:258px;border:3px solid #F6C64B;border-radius:27px;padding:3px;box-shadow:0 16px 34px rgba(70,40,25,.22),0 0 0 1px rgba(246,198,75,.35);">
+        <div style="width:100%;border-radius:22px;overflow:hidden;background:#F2DED6;">
+          <div style="height:9px;background:#B4483B;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;">
+            <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+              <div style="width:38px;height:38px;flex:none;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 7px rgba(0,0,0,.08);">🍽️</div>
+              <div style="display:flex;flex-direction:column;gap:1px;min-width:0;">
+                <span style="font-size:16px;font-weight:800;color:#3E241C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">The Copper Pot</span>
+                <span style="font-size:12px;font-weight:600;color:#9B7A6E;">Today, 7:28 PM</span>
+              </div>
+            </div>
+            <div style="flex:none;display:flex;align-items:center;gap:5px;background:#EDE6D6;border-radius:999px;padding:6px 11px;"><span style="font-size:11px;">📄</span><span style="font-size:11.5px;font-weight:700;color:#3B3527;white-space:nowrap;">#RANT</span></div>
+          </div>
+          <div style="height:180px;background:#D9A493;overflow:hidden;"><img src="uploads/restaurant.png" alt="" style="width:100%;height:100%;object-fit:cover;object-position:center 62%;display:block;"></div>
+          <div style="background:#C98D7B;padding:16px 16px 18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:11px;"><div style="width:30px;height:30px;border-radius:9px;background:#E8CFC4;display:flex;align-items:center;justify-content:center;font-size:14px;">🍽️</div><span style="font-size:14.5px;font-weight:700;color:#3E241C;">The Copper Pot</span></div>
+              <span style="font-size:14.5px;font-weight:700;color:#3E241C;">RM 59.50</span>
+            </div>
+            <div style="border-top:2px dashed rgba(62,36,28,.30);margin:14px 0 12px;"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.26);border-radius:14px;padding:11px 15px;">
+              <span style="font-size:14px;font-weight:800;color:#3E241C;">Total</span>
+              <span style="font-size:19px;font-weight:800;color:#3E241C;">RM 59.50</span>
+            </div>
+          </div>
+        </div>
+        <div data-badge="1" style="position:absolute;left:50%;bottom:0;transform:translate(-50%,50%) scale(1);opacity:0;transition:opacity .3s ease-out,transform .3s ease-out;display:flex;align-items:center;gap:6px;background:#F6C64B;border-radius:999px;padding:8px 15px;box-shadow:0 6px 14px rgba(220,170,40,.4);white-space:nowrap;z-index:3;">
+          <span style="font-size:13px;font-weight:800;color:#23201A;">✨ Latest Spending</span>
+        </div>
+        </div>
+      </div>
+
+      <!-- GROCERY (real 1) -->
+      <div data-card="1" data-real="1" data-accent="#5E9E51" style="position:absolute;top:0;left:50%;margin-left:-129px;width:258px;z-index:1;">
+        <div style="width:258px;border-radius:24px;overflow:hidden;background:#EAF1E2;box-shadow:0 16px 34px rgba(30,45,20,.2);">
+          <div style="height:9px;background:#5E9E51;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;">
+            <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+              <div style="width:38px;height:38px;flex:none;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 7px rgba(0,0,0,.08);">🛒</div>
+              <div style="display:flex;flex-direction:column;gap:1px;min-width:0;">
+                <span style="font-size:16px;font-weight:800;color:#36482C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">FreshMart</span>
+                <span style="font-size:12px;font-weight:600;color:#7E9070;">Yesterday, 5:14 PM</span>
+              </div>
+            </div>
+            <div style="flex:none;display:flex;align-items:center;gap:5px;background:#EDE6D6;border-radius:999px;padding:6px 11px;"><span style="font-size:11px;">📄</span><span style="font-size:11.5px;font-weight:700;color:#3B3527;white-space:nowrap;">#GROC</span></div>
+          </div>
+          <div style="height:180px;background:#DCE8CD;display:flex;align-items:center;justify-content:center;"><span style="font-size:52px;opacity:.55;">🛒</span></div>
+          <div style="background:#9FB98A;padding:16px 16px 18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:11px;"><div style="width:30px;height:30px;border-radius:9px;background:#DCE8CD;display:flex;align-items:center;justify-content:center;font-size:14px;">🛒</div><span style="font-size:14.5px;font-weight:700;color:#36482C;">FreshMart</span></div>
+              <span style="font-size:14.5px;font-weight:700;color:#36482C;">RM 34.50</span>
+            </div>
+            <div style="border-top:2px dashed rgba(54,72,44,.32);margin:14px 0 12px;"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.28);border-radius:14px;padding:11px 15px;">
+              <span style="font-size:14px;font-weight:800;color:#36482C;">Total</span>
+              <span style="font-size:19px;font-weight:800;color:#36482C;">RM 34.50</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CAFE (real 2) -->
+      <div data-card="2" data-real="2" data-accent="#E2885C" style="position:absolute;top:0;left:50%;margin-left:-129px;width:258px;z-index:1;">
+        <div style="width:258px;border-radius:24px;overflow:hidden;background:#F4E8D6;box-shadow:0 16px 34px rgba(60,40,20,.2);">
+          <div style="height:9px;background:#E2885C;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;">
+            <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+              <div style="width:38px;height:38px;flex:none;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 7px rgba(0,0,0,.08);">☕</div>
+              <div style="display:flex;flex-direction:column;gap:1px;min-width:0;">
+                <span style="font-size:16px;font-weight:800;color:#5A4632;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">Brew &amp; Co.</span>
+                <span style="font-size:12px;font-weight:600;color:#9C8A72;">Yesterday, 10:42 AM</span>
+              </div>
+            </div>
+            <div style="flex:none;display:flex;align-items:center;gap:5px;background:#EDE6D6;border-radius:999px;padding:6px 11px;"><span style="font-size:11px;">📄</span><span style="font-size:11.5px;font-weight:700;color:#3B3527;white-space:nowrap;">#CAFE</span></div>
+          </div>
+          <div style="height:180px;background:#EFDFC7;display:flex;align-items:center;justify-content:center;"><span style="font-size:52px;opacity:.55;">☕</span></div>
+          <div style="background:#C9A37C;padding:16px 16px 18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:11px;"><div style="width:30px;height:30px;border-radius:9px;background:#EFDFC7;display:flex;align-items:center;justify-content:center;font-size:14px;">☕</div><span style="font-size:14.5px;font-weight:700;color:#5A4632;">Brew &amp; Co.</span></div>
+              <span style="font-size:14.5px;font-weight:700;color:#5A4632;">RM 27.30</span>
+            </div>
+            <div style="border-top:2px dashed rgba(90,70,50,.30);margin:14px 0 12px;"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.24);border-radius:14px;padding:11px 15px;">
+              <span style="font-size:14px;font-weight:800;color:#5A4632;">Total</span>
+              <span style="font-size:19px;font-weight:800;color:#5A4632;">RM 27.30</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TECH (real 3) -->
+      <div data-card="3" data-real="3" data-accent="#4F86C6" style="position:absolute;top:0;left:50%;margin-left:-129px;width:258px;z-index:1;">
+        <div style="width:258px;border-radius:24px;overflow:hidden;background:#E8EEF6;box-shadow:0 16px 34px rgba(40,55,80,.2);">
+          <div style="height:9px;background:#4F86C6;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;">
+            <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+              <div style="width:38px;height:38px;flex:none;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 3px 7px rgba(0,0,0,.08);">💻</div>
+              <div style="display:flex;flex-direction:column;gap:1px;min-width:0;">
+                <span style="font-size:16px;font-weight:800;color:#2C3A4E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;">PixelTech</span>
+                <span style="font-size:12px;font-weight:600;color:#7E8EA5;">2 days ago</span>
+              </div>
+            </div>
+            <div style="flex:none;display:flex;align-items:center;gap:5px;background:#EDE6D6;border-radius:999px;padding:6px 11px;"><span style="font-size:11px;">📄</span><span style="font-size:11.5px;font-weight:700;color:#3B3527;white-space:nowrap;">#TECH</span></div>
+          </div>
+          <div style="height:180px;background:#D6E1F0;display:flex;align-items:center;justify-content:center;"><span style="font-size:52px;opacity:.55;">💻</span></div>
+          <div style="background:#9FB2CE;padding:16px 16px 18px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:11px;"><div style="width:30px;height:30px;border-radius:9px;background:#D6E1F0;display:flex;align-items:center;justify-content:center;font-size:14px;">💻</div><span style="font-size:14.5px;font-weight:700;color:#2C3A4E;">PixelTech</span></div>
+              <span style="font-size:14.5px;font-weight:700;color:#2C3A4E;">RM 223.00</span>
+            </div>
+            <div style="border-top:2px dashed rgba(44,58,78,.30);margin:14px 0 12px;"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.26);border-radius:14px;padding:11px 15px;">
+              <span style="font-size:14px;font-weight:800;color:#2C3A4E;">Total</span>
+              <span style="font-size:19px;font-weight:800;color:#2C3A4E;">RM 223.00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- pagination dots -->
+    <div ref="{{ setDots }}" style="display:flex;justify-content:center;gap:9px;margin-top:32px;flex:none;">
+      <div data-dot="0" onClick="{{ dotJump }}" style="cursor:pointer;padding:7px 0;width:22px;"><div style="width:100%;height:7px;border-radius:99px;background:#B4483B;transition:all .25s ease-in-out;"></div></div>
+      <div data-dot="1" onClick="{{ dotJump }}" style="cursor:pointer;padding:7px 0;width:7px;"><div style="width:100%;height:7px;border-radius:99px;background:#E2DAC6;transition:all .25s ease-in-out;"></div></div>
+      <div data-dot="2" onClick="{{ dotJump }}" style="cursor:pointer;padding:7px 0;width:7px;"><div style="width:100%;height:7px;border-radius:99px;background:#E2DAC6;transition:all .25s ease-in-out;"></div></div>
+      <div data-dot="3" onClick="{{ dotJump }}" style="cursor:pointer;padding:7px 0;width:7px;"><div style="width:100%;height:7px;border-radius:99px;background:#E2DAC6;transition:all .25s ease-in-out;"></div></div>
+    </div>
+
+    <div style="flex:1;"></div>
+
+    <!-- Drop Receipt CTA + FAB -->
+    <div style="position:relative;padding:0 22px 6px;flex:none;">
+      <div style="cursor:pointer;user-select:none;height:56px;border-radius:999px;background:#F6C64B;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 22px rgba(220,170,40,.35);transition:transform .15s ease-in-out;" style-active="transform:scale(.98);">
+        <span style="font-size:17px;font-weight:800;color:#23201A;letter-spacing:-.2px;">Drop Receipt</span>
+      </div>
+    </div>
+    <div style="position:relative;display:flex;justify-content:center;margin-top:-24px;flex:none;">
+      <div style="cursor:pointer;width:56px;height:56px;border-radius:18px;background:#F6C64B;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:#23201A;box-shadow:0 10px 22px rgba(220,170,40,.4);transition:transform .15s ease-in-out;" style-active="transform:scale(.94);">+</div>
+    </div>
+
+    <!-- bottom nav -->
+    <div style="display:flex;align-items:center;justify-content:space-around;padding:20px 12px 22px;border-top:1.5px solid #EEE3CD;margin-top:14px;flex:none;">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:19px;">🏠</span><span style="font-size:11px;font-weight:700;color:#F6C64B;">Home</span></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:19px;opacity:.55;">👥</span><span style="font-size:11px;font-weight:600;color:#B0A895;">Feed</span></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:19px;opacity:.55;">🗺️</span><span style="font-size:11px;font-weight:600;color:#B0A895;">Map</span></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><span style="font-size:19px;opacity:.55;">🏆</span><span style="font-size:11px;font-weight:600;color:#B0A895;">Ranks</span></div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 380, &quot;height&quot;: 810},
+  &quot;rotateSeconds&quot;: {&quot;editor&quot;: &quot;range&quot;, &quot;default&quot;: 5, &quot;min&quot;: 3, &quot;max&quot;: 10, &quot;step&quot;: 1, &quot;tsType&quot;: &quot;number&quot;, &quot;section&quot;: &quot;Carousel&quot;},
+  &quot;autoRotate&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Carousel&quot;},
+  &quot;showLatestBadge&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Carousel&quot;}
+}">
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.N = 4;
+    this.active = 0; // real index currently in front (0 = restaurant/newest)
+    this.drag = null;
+    this.timer = null;
+    this.busy = false; // mid-transition guard
+  }
+
+  renderVals() {
+    return {
+      setViewport: (el) => { this.viewportEl = el; if (el) this._boot(); },
+      setDepth: (el) => { this.depthEl = el; },
+      setDots: (el) => { this.dotsEl = el; },
+      dragStart: (e) => this._dragStart(e),
+      dragMove: (e) => this._dragMove(e),
+      dragEnd: (e) => this._dragEnd(e),
+      dotJump: (e) => this._dotJump(+e.currentTarget.dataset.dot),
+    };
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+    clearTimeout(this._resumeT);
+    clearTimeout(this._settleT);
+  }
+
+  componentDidUpdate() { this._applyBadgeToggle(); }
+
+  _cards() { return this.viewportEl ? [...this.viewportEl.querySelectorAll('[data-card]')] : []; }
+  _cardFor(real) { return this.viewportEl ? this.viewportEl.querySelector('[data-card="' + real + '"]') : null; }
+
+  _boot() {
+    this._cards().forEach((c) => { c.style.transition = 'none'; });
+    this._layout(this.active, true);
+    this._applyBadgeToggle();
+    this._startAutoRotate();
+  }
+
+  _applyBadgeToggle() {
+    if (!this.viewportEl) return;
+    const show = this.props.showLatestBadge ?? true;
+    this.viewportEl.querySelectorAll('[data-badge]').forEach((b) => { b.style.display = show ? '' : 'none'; });
+  }
+
+  _startAutoRotate() {
+    clearInterval(this.timer);
+    if ((this.props.autoRotate ?? true) === false) return;
+    const secs = this.props.rotateSeconds ?? 5;
+    this.timer = setInterval(() => {
+      if (this.drag || this.busy) return;
+      this._commit(1);
+    }, Math.max(2, secs) * 1000);
+  }
+
+  _pause() { clearInterval(this.timer); clearTimeout(this._resumeT); }
+  _resumeSoon() { clearTimeout(this._resumeT); this._resumeT = setTimeout(() => this._startAutoRotate(), 400); }
+
+  // resting state: only `real` fully visible/front; everyone else hidden (no visible neighbor)
+  _layout(real, immediate) {
+    this._cards().forEach((c) => {
+      const isActive = +c.dataset.real === real;
+      c.style.transition = immediate ? 'none' : c.style.transition;
+      c.style.opacity = isActive ? '1' : '0';
+      c.style.transform = isActive ? 'translateX(0) scale(1)' : 'scale(.92)';
+      c.style.zIndex = isActive ? '2' : '0';
+      c.style.pointerEvents = isActive ? 'auto' : 'none';
+    });
+    if (this.depthEl) {
+      this.depthEl.style.transition = 'none';
+      this.depthEl.style.transform = 'translateX(-50%) scale(.9)';
+      this.depthEl.style.opacity = '1';
+    }
+    this._updateDots(real);
+    this._updateBadges(real);
+  }
+
+  _updateDots(real) {
+    if (!this.dotsEl) return;
+    const card = this._cardFor(real);
+    const accent = card ? card.dataset.accent : '#B4483B';
+    const dots = this.dotsEl.children;
+    for (let i = 0; i < dots.length; i++) {
+      const on = i === real;
+      dots[i].style.width = on ? '22px' : '7px';
+      const pill = dots[i].firstElementChild;
+      if (pill) pill.style.background = on ? accent : '#E2DAC6';
+    }
+  }
+
+  _updateBadges(real) {
+    this._cards().forEach((c) => {
+      const badge = c.querySelector('[data-badge]');
+      if (!badge) return;
+      const on = +c.dataset.real === real;
+      badge.style.opacity = on ? '1' : '0';
+      badge.style.transform = 'translate(-50%,50%) scale(' + (on ? '1' : '.85') + ')';
+    });
+  }
+
+  // animate current card out + target card in, like flipping through a circular deck
+  _commit(dir) {
+    if (this.busy) return;
+    this.busy = true;
+    const from = this.active;
+    const to = ((this.active + dir) % this.N + this.N) % this.N;
+    const outEl = this._cardFor(from);
+    const inEl = this._cardFor(to);
+
+    if (inEl) {
+      inEl.style.transition = 'none';
+      inEl.style.zIndex = '2';
+      inEl.style.opacity = '0';
+      inEl.style.transform = 'translateX(' + (dir * 26) + 'px) scale(.92)';
+      inEl.style.pointerEvents = 'none';
+      // eslint-disable-next-line no-unused-expressions
+      inEl.offsetHeight; // force reflow before animating in
+    }
+    if (outEl) {
+      outEl.style.transition = 'none';
+      outEl.style.zIndex = '1';
+    }
+
+    requestAnimationFrame(() => {
+      const ease = 'transform .68s cubic-bezier(.22,.9,.3,1), opacity .6s ease-out';
+      if (outEl) {
+        outEl.style.transition = ease;
+        outEl.style.opacity = '0';
+        outEl.style.transform = 'translateX(' + (dir * -26) + 'px) scale(.92)';
+      }
+      if (inEl) {
+        inEl.style.transition = ease;
+        inEl.style.opacity = '1';
+        inEl.style.transform = 'translateX(0) scale(1)';
+      }
+    });
+
+    this._updateDots(to);
+    this._updateBadges(to);
+
+    clearTimeout(this._settleT);
+    this._settleT = setTimeout(() => {
+      this.active = to;
+      this._layout(this.active, true);
+      this.busy = false;
+    }, 690);
+  }
+
+  _dotJump(target) {
+    if (target === this.active || this.busy) { this._pause(); this._resumeSoon(); return; }
+    this._pause();
+    let diff = target - this.active;
+    if (diff > this.N / 2) diff -= this.N;
+    if (diff < -this.N / 2) diff += this.N;
+    this._commit(diff > 0 ? 1 : -1);
+    // if the jump spans more than one step, chain remaining steps quickly
+    let remaining = Math.abs(diff) - 1;
+    const dir = diff > 0 ? 1 : -1;
+    const chain = () => {
+      if (remaining <= 0) { this._resumeSoon(); return; }
+      remaining--;
+      setTimeout(() => { this._commit(dir); chain(); }, 700);
+    };
+    if (remaining > 0) chain(); else this._resumeSoon();
+  }
+
+  _dragStart(e) {
+    if (this.busy) return;
+    const el = this._cardFor(this.active);
+    if (!el) return;
+    this.drag = { startX: e.clientX, dx: 0, el, moved: false };
+    this._pause();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+    // immediate haptic-style press feedback, as if the card were tapped
+    el.style.transition = 'transform .1s cubic-bezier(.4,0,.2,1)';
+    el.style.transform = 'translateX(0) scale(.965)';
+  }
+
+  _dragMove(e) {
+    const d = this.drag;
+    if (!d) return;
+    d.dx = e.clientX - d.startX;
+    if (!d.moved && Math.abs(d.dx) > 4) d.moved = true;
+    if (!d.moved) return; // still within tap tolerance, keep the press-down look
+    d.el.style.transition = 'none';
+    const clamped = Math.max(-140, Math.min(140, d.dx));
+    const scale = 1 - Math.min(Math.abs(clamped) / 140, 1) * 0.08;
+    const fade = 1 - Math.min(Math.abs(clamped) / 260, 1) * 0.3;
+    d.el.style.transform = 'translateX(' + (clamped * 0.6) + 'px) scale(' + scale + ')';
+    d.el.style.opacity = String(fade);
+  }
+
+  _dragEnd() {
+    const d = this.drag;
+    if (!d) return;
+    this.drag = null;
+    if (d.moved && Math.abs(d.dx) > 56) {
+      this._commit(d.dx < 0 ? 1 : -1);
+    } else if (d.moved) {
+      d.el.style.transition = 'transform .3s cubic-bezier(.22,.9,.3,1), opacity .3s ease-out';
+      d.el.style.transform = 'translateX(0) scale(1)';
+      d.el.style.opacity = '1';
+    } else {
+      // plain tap: quick haptic release — spring slightly past rest then settle
+      d.el.style.transition = 'transform .16s cubic-bezier(.34,1.56,.64,1)';
+      d.el.style.transform = 'translateX(0) scale(1.02)';
+      clearTimeout(this._tapT);
+      this._tapT = setTimeout(() => {
+        d.el.style.transition = 'transform .18s ease-out';
+        d.el.style.transform = 'translateX(0) scale(1)';
+      }, 130);
+    }
+    this._resumeSoon();
+  }
+}
+
+</script>
+</body>
+</html>

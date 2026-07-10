@@ -210,7 +210,7 @@ ReceiptParseResult parseReceiptOcrText({
   // understanding call already completed synchronously with OCR, before this
   // function (and the first local save) ever runs, so there's no dedup/
   // insert-order conflict with the heuristic pass above.
-  final llmLineItems = _lineItemsFromUnderstanding(understanding);
+  final llmLineItems = _lineItemsFromUnderstanding(understanding, amount);
   final lineItemsResult = llmLineItems == null
       ? heuristicLineItems
       : reconcileWithTotal(llmLineItems, amount);
@@ -272,17 +272,23 @@ ReceiptParseResult parseReceiptOcrText({
 
 /// Converts the LLM's line items into a [ReceiptLineItemsResult] ready for
 /// [reconcileWithTotal], or `null` when there's nothing usable (no
-/// [understanding], or every item lacked a price). Entries without a price
-/// are dropped — [ReceiptLineItem.priceMyr] is required, and a nameless
-/// price row isn't useful to show the user either.
+/// [understanding], or every item lacked a usable price). Entries without a
+/// price are dropped — [ReceiptLineItem.priceMyr] is required, and a
+/// nameless price row isn't useful to show the user either. Entries priced
+/// above [amount] are also dropped: a single line item can never
+/// legitimately cost more than the receipt's own total, so this catches LLM
+/// digit-transcription hallucinations (e.g. a printed "3.00" misread as
+/// "93.00") without discarding the rest of an otherwise-good extraction —
+/// see docs/decisions.md.
 ReceiptLineItemsResult? _lineItemsFromUnderstanding(
   ReceiptUnderstanding? understanding,
+  double? amount,
 ) {
   if (understanding == null || understanding.lineItems.isEmpty) return null;
 
   final items = [
     for (final it in understanding.lineItems)
-      if (it.price != null)
+      if (it.price != null && (amount == null || it.price! <= amount))
         ReceiptLineItem(
           name: it.name,
           priceMyr: it.price!,
