@@ -99,6 +99,10 @@ String stripEdgeJunk(String text) => text
 /// hit from a weak positional fallback.
 ///
 /// [source] is one of:
+/// - `llm`: the LLM's cleaned merchant name from the synchronous
+///   receipt-understanding step (`receipt_parse_pipeline.dart`), prepended
+///   ahead of every candidate below when present — not produced by this
+///   function itself.
 /// - `header`: matched a known category-rule keyword (strongest signal).
 /// - `keyword`: matched a generic business/venue word (RESTORAN, SDN BHD, ...).
 /// - `largeText`: no keyword hit, but printed visibly larger than the rest

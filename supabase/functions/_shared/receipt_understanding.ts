@@ -9,6 +9,9 @@ export const UNDERSTAND_TIMEOUT_MS = 30_000;
 
 export const MAX_MERCHANT_SEARCH_QUERIES = 3;
 
+/** Mirrors ocr-api's MAX_LINE_ITEMS (app/receipt_understanding.py). */
+export const MAX_LINE_ITEMS = 40;
+
 /** Multiplier applied to a Places candidate whose types share nothing with
  * the LLM's expected place types — enough to sink a same-mall Nike Store
  * below any plausible food candidate without hard-filtering results whose
@@ -161,6 +164,15 @@ export interface ReceiptUnderstandingConfidence {
   merchant: number;
   address: number;
   category: number;
+  line_items: number;
+}
+
+/** One purchased item reconstructed from noisy OCR text — see ocr-api's
+ * ReceiptLineItemUnderstanding (app/receipt_understanding.py). */
+export interface ReceiptUnderstandingLineItem {
+  name: string;
+  price: number | null;
+  quantity: number | null;
 }
 
 /** The validated, structured interpretation of one receipt's OCR text, as
@@ -174,6 +186,7 @@ export interface ReceiptUnderstanding {
   location_clues: string[];
   vendor_category: string | null;
   google_place_types: string[];
+  line_items: ReceiptUnderstandingLineItem[];
   confidence: ReceiptUnderstandingConfidence;
 }
 
@@ -210,6 +223,36 @@ function clamp01(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(1, n));
+}
+
+function asPositiveNumberOrNull(v: unknown): number | null {
+  if (v === null || v === undefined || typeof v === "boolean") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+/** Coerces the LLM's raw `line_items` array, dropping any entry with no
+ * usable name — same "hint, not authority" stance as every other field
+ * here. Mirrors ocr-api's `_as_line_items` (app/receipt_understanding.py). */
+function asLineItems(v: unknown): ReceiptUnderstandingLineItem[] {
+  if (!Array.isArray(v)) return [];
+  const items: ReceiptUnderstandingLineItem[] = [];
+  for (const entry of v) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const obj = entry as Record<string, unknown>;
+    const name = asTrimmedStringOrNull(obj.name);
+    if (name === null) continue;
+    items.push({
+      name,
+      price: asPositiveNumberOrNull(obj.price),
+      quantity: asPositiveNumberOrNull(obj.quantity),
+    });
+    if (items.length >= MAX_LINE_ITEMS) break;
+  }
+  return items;
 }
 
 /**
@@ -271,6 +314,8 @@ export function parseReceiptUnderstanding(
       ? obj.confidence as Record<string, unknown>
       : {};
 
+  const lineItems = asLineItems(obj.line_items);
+
   const understanding: ReceiptUnderstanding = {
     merchant_name: merchantName,
     merchant_search_queries: queries,
@@ -278,17 +323,20 @@ export function parseReceiptUnderstanding(
     location_clues: asStringArray(obj.location_clues),
     vendor_category: vendorCategory,
     google_place_types: placeTypes,
+    line_items: lineItems,
     confidence: {
       merchant: clamp01(confidenceObj.merchant),
       address: clamp01(confidenceObj.address),
       category: clamp01(confidenceObj.category),
+      line_items: clamp01(confidenceObj.line_items),
     },
   };
 
   const actionable = understanding.merchant_name !== null ||
     understanding.merchant_search_queries.length > 0 ||
     understanding.address_text !== null ||
-    understanding.location_clues.length > 0;
+    understanding.location_clues.length > 0 ||
+    understanding.line_items.length > 0;
   return actionable ? understanding : null;
 }
 

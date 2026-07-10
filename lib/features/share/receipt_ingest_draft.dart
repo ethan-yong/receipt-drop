@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../../data/repositories/ingest_receipt_request.dart';
 import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/models/receipt_line_item.dart';
+import '../../domain/models/receipt_understanding.dart';
 
 /// Parsed receipt ready for the save sheet (before user confirms amount).
 class ReceiptIngestDraft {
@@ -28,6 +29,7 @@ class ReceiptIngestDraft {
     this.lowConfidence = false,
     this.merchantCandidates = const [],
     this.ocrHeaderText,
+    this.understanding,
     this.pickedPlaceName,
     this.pickedPlaceGooglePlaceId,
     this.pickedPlaceLat,
@@ -71,6 +73,12 @@ class ReceiptIngestDraft {
   /// Extra OCR context (top-of-receipt lines), carried through to enrichment.
   final String? ocrHeaderText;
 
+  /// LLM receipt understanding produced synchronously alongside OCR — see
+  /// `receipt_parse_pipeline.dart`. Carried through to the outbox row
+  /// (`llmUnderstandingJson`) so `SyncWorker` can upload it, letting
+  /// `enrich-transaction` skip its own LLM call.
+  final ReceiptUnderstanding? understanding;
+
   /// Place chosen by the user in the pre-save picker.
   final String? pickedPlaceName;
   final String? pickedPlaceGooglePlaceId;
@@ -113,6 +121,7 @@ class ReceiptIngestDraft {
       lowConfidence: lowConfidence,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      understanding: understanding,
       pickedPlaceName: pickedPlaceName ?? this.pickedPlaceName,
       pickedPlaceGooglePlaceId:
           pickedPlaceGooglePlaceId ?? this.pickedPlaceGooglePlaceId,
@@ -149,6 +158,7 @@ class ReceiptIngestDraft {
       parseFailureReason: parseFailureReason,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      understanding: understanding,
       pickedPlaceName: pickedPlaceName,
       pickedPlaceGooglePlaceId: pickedPlaceGooglePlaceId,
       pickedPlaceLat: pickedPlaceLat,
@@ -184,6 +194,7 @@ class ReceiptIngestDraft {
       needsReview: true,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      understanding: understanding,
       pickedPlaceName: pickedPlaceName,
       pickedPlaceGooglePlaceId: pickedPlaceGooglePlaceId,
       pickedPlaceLat: pickedPlaceLat,

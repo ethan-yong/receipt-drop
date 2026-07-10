@@ -119,6 +119,12 @@ async def health() -> dict[str, str]:
     dependencies=[Depends(verify_ocr_secret)],
 )
 async def ocr(request: Request) -> OcrResponse:
+    """Runs Tesseract OCR on the posted image, then — in the same request —
+    the LLM receipt-understanding step (see app/receipt_understanding.py) on
+    whatever text OCR found. The response already contains an interpreted
+    receipt (`understanding`), not just raw text: this is the single
+    synchronous OCR+LLM pipeline, not a two-stage capture-then-enrich flow.
+    """
     start = time.perf_counter()
     body = await request.body()
     if not body:
@@ -157,12 +163,11 @@ async def ocr(request: Request) -> OcrResponse:
     )
     if text:
         logger.info("extracted text:\n%s", text)
-        # This response body (text/lines) is what the client later persists
-        # as transactions.raw_ocr_text/ocr_header_text, and what a later
-        # POST /understand call for the same receipt hands to the LLM — log
-        # the per-line breakdown at DEBUG so a bad LLM extraction can be
-        # traced back to what OCR actually saw (e.g. a merchant header line
-        # OCR split across two lines, or a height_ratio too low for the
+        # This response body (text/lines) is what the client persists as
+        # transactions.raw_ocr_text/ocr_header_text — log the per-line
+        # breakdown at DEBUG so a bad LLM extraction (below) can be traced
+        # back to what OCR actually saw (e.g. a merchant header line OCR
+        # split across two lines, or a height_ratio too low for the
         # large-text merchant-candidate heuristic to have caught it either).
         if logger.isEnabledFor(logging.DEBUG):
             for i, line in enumerate(lines):
@@ -174,12 +179,36 @@ async def ocr(request: Request) -> OcrResponse:
                 )
     else:
         logger.warning("no text recognized in the image")
+
+    # LLM receipt understanding runs synchronously, in the same request, right
+    # after OCR — the whole point of merging these two steps is that the
+    # client gets an already-interpreted receipt back from one call, not raw
+    # text it has to wait on a later async enrichment step to make sense of.
+    # A failed/timed-out LLM call must never fail this response: OCR already
+    # succeeded and its output is usable on its own.
+    understanding = None
+    understanding_error = None
+    if text.strip():
+        try:
+            understanding = await call_receipt_understanding(
+                text, http_client=request.app.state.http_client
+            )
+        except ReceiptUnderstandingError as exc:
+            logger.warning(
+                "LLM understanding failed for this /ocr call (%s) — "
+                "returning raw OCR only",
+                exc.code,
+            )
+            understanding_error = exc.code
+
     return OcrResponse(
         text=text,
         confidence=confidence,
         lines=[
             OcrLine(text=line.text, height_ratio=line.height_ratio) for line in lines
         ],
+        understanding=understanding,
+        understanding_error=understanding_error,
     )
 
 
@@ -192,10 +221,13 @@ async def understand(
     request: Request, body: ReceiptUnderstandingRequest
 ) -> ReceiptUnderstandingResponse:
     """LLM receipt-understanding step: raw OCR text in, structured merchant
-    info out (see app/receipt_understanding.py). Called by enrich-transaction
-    after OCR text has already been persisted — not part of the /ocr
-    request/response cycle, since enrich-transaction runs later, async, on
-    the synced transaction row.
+    info out (see app/receipt_understanding.py). No longer the primary path —
+    POST /ocr now runs this same step synchronously right after Tesseract, so
+    a client's own /ocr call already gets an interpreted receipt back in one
+    round trip. This endpoint survives as: (a) enrich-transaction's fallback
+    for rows that reached it without a usable precomputed understanding
+    (legacy app version, or the client-side call above failed), and (b) a
+    manual entry point for reprocessing previously-stored raw_ocr_text.
 
     No fallback: any failure here (timeout, LLM gateway down, unparseable
     response) propagates as an error response (see

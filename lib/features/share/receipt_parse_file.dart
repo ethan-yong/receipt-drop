@@ -18,5 +18,7 @@ Future<ReceiptParseResult> parseReceiptFile({
     categories: categories,
     ocrServiceConfidence: ocr.serviceConfidence,
     ocrLines: ocr.lines,
+    understanding: ocr.understanding,
+    understandingError: ocr.understandingError,
   );
 }

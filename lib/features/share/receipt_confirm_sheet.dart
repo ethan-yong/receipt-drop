@@ -3,44 +3,88 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/platform/adaptive_sheet.dart';
+import '../../core/platform/platform_feedback.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/places_repository.dart';
+import '../../domain/logic/category_matcher.dart';
+import '../../domain/logic/impact_level.dart';
 import '../../domain/models/receipt_line_item.dart';
+import '../../widgets/amount_field.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
 import '../places/place_picker_screen.dart';
 import '../places/places_search_screen.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_summary_view_model.dart';
 
-/// Post-OCR receipt confirmation sheet (design handoff Screen 1,
-/// `docs/design/design_handoff_receipt_flows/`).
+/// Post-OCR receipt confirmation + save sheet (design handoff Screen 1,
+/// `docs/design/design_handoff_receipt_flows/`, extended to absorb what used
+/// to be a separate `ShareSaveSheet` step — see `docs/decisions.md`).
 ///
-/// Lets the user review vendor / total / itemized breakdown before saving:
-/// tapping an item's checkbox excludes it (the total recalculates and an
-/// Undo banner appears), tapping an item's price lets the user correct it
-/// (the total recalculates), tapping the vendor name renames it inline, and
-/// tapping the pencil opens the nearby-location picker to lock the vendor's
-/// place.
+/// Lets the user review vendor / category / total / itemized breakdown /
+/// impact before saving: tapping an item's checkbox excludes it (the total
+/// recalculates and an Undo banner appears), tapping an item's price lets
+/// the user correct it (the total recalculates), tapping the vendor name
+/// renames it inline, tapping the pencil opens the nearby-location picker to
+/// lock the vendor's place, and this is also where the receipt is actually
+/// persisted (Save / Save for later / Cancel).
 ///
-/// [show] returns the (possibly edited) draft when the user proceeds via
-/// either CTA, or `null` when they cancel or dismiss the sheet.
+/// [show] returns `true` only when the user completed a save; `false` for
+/// cancel or "save for later" (parked in the review queue, not a celebrated
+/// save).
 class ReceiptConfirmSheet extends StatefulWidget {
-  const ReceiptConfirmSheet({super.key, required this.draft});
+  const ReceiptConfirmSheet({
+    super.key,
+    required this.draft,
+    required this.categories,
+    required this.onSave,
+    required this.onCancel,
+    this.onSaveForLater,
+  });
 
   final ReceiptIngestDraft draft;
 
-  static Future<ReceiptIngestDraft?> show(
+  /// Category rules used to populate the inline category picker.
+  final CategoryConfig categories;
+
+  final Future<void> Function(
+    double? amount,
+    ReceiptIngestDraft draft,
+    ImpactLevel impact,
+  ) onSave;
+  final Future<void> Function(ReceiptIngestDraft draft) onCancel;
+
+  /// Parks the receipt in the review queue instead of confirming now.
+  /// Offered only for needs-amount / low-confidence drafts.
+  final Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater;
+
+  static Future<bool> show(
     BuildContext context, {
     required ReceiptIngestDraft draft,
-  }) {
-    return AdaptiveSheet.showForm<ReceiptIngestDraft>(
+    required CategoryConfig categories,
+    required Future<void> Function(
+      double? amount,
+      ReceiptIngestDraft draft,
+      ImpactLevel impact,
+    ) onSave,
+    required Future<void> Function(ReceiptIngestDraft draft) onCancel,
+    Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater,
+  }) async {
+    final result = await AdaptiveSheet.showForm<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: ReceiptSheetColors.surface,
       topRadius: kReceiptSheetRadius,
       showDragHandle: false,
-      child: ReceiptConfirmSheet(draft: draft),
+      child: ReceiptConfirmSheet(
+        draft: draft,
+        categories: categories,
+        onSave: onSave,
+        onCancel: onCancel,
+        onSaveForLater: onSaveForLater,
+      ),
     );
+    return result ?? false;
   }
 
   @override
@@ -63,8 +107,12 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   late final TextEditingController _priceController;
   final FocusNode _priceFocus = FocusNode();
   PlaceResult? _pickedPlace;
-  late final bool _hasParsedAmount;
+  late final bool _needsManualAmount;
   late final bool _lowConfidence;
+  late final TextEditingController _amountController;
+  String? _categoryOverride;
+  ImpactLevel? _impactOverride;
+  bool _saving = false;
 
   @override
   void initState() {
@@ -75,7 +123,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _prices = [for (final item in _items) item.priceMyr];
     _vendorName = vm.merchantDisplay;
     _vendorKnown = widget.draft.merchantRaw?.trim().isNotEmpty ?? false;
-    _hasParsedAmount = vm.hasAmount;
+    _needsManualAmount = widget.draft.needsAmount;
     _lowConfidence = vm.isLowConfidence;
     _vendorController = TextEditingController();
     _vendorFocus.addListener(() {
@@ -87,6 +135,8 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
         _commitPriceEdit();
       }
     });
+    _amountController = TextEditingController();
+    _amountController.addListener(() => setState(() {}));
   }
 
   @override
@@ -96,6 +146,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _vendorFocus.dispose();
     _priceController.dispose();
     _priceFocus.dispose();
+    _amountController.dispose();
     super.dispose();
   }
 
@@ -120,6 +171,23 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     }
     return total < 0 ? 0 : total;
   }
+
+  /// The amount actually used to save: the manual field for drafts OCR
+  /// couldn't find a total on, otherwise the item-adjusted OCR total above.
+  double? get _effectiveAmount {
+    if (_needsManualAmount) {
+      final raw = _amountController.text.trim().replaceAll(',', '');
+      return raw.isEmpty ? null : double.tryParse(raw);
+    }
+    return _total;
+  }
+
+  ImpactLevel get _effectiveImpact =>
+      _impactOverride ?? deriveImpactLevel(_effectiveAmount);
+
+  bool get _canSaveForLater =>
+      widget.onSaveForLater != null &&
+      (widget.draft.needsAmount || _lowConfidence);
 
   int get _includedCount => _checked.where((c) => c).length;
 
@@ -215,7 +283,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
 
   /// Opens the nearby-place picker (top ranked candidates within the
   /// enrichment search radius) so the user can lock the vendor's location,
-  /// mirroring `ShareSaveSheet._openPicker`.
+  /// mirroring `ShareSaveSheet._openPicker` (now merged into this sheet).
   Future<void> _openPlacePicker() async {
     final lat = widget.draft.shareLocationLat;
     final lng = widget.draft.shareLocationLng;
@@ -232,7 +300,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
             lng: lng,
             candidates: widget.draft.merchantCandidates,
             merchantName: _vendorName,
-            category: widget.draft.categoryUser ?? widget.draft.categoryGuess,
+            category: _categoryOverride ?? widget.draft.categoryGuess,
           )
         : await Navigator.of(context, rootNavigator: true)
             .push<PlaceResult?>(
@@ -249,15 +317,14 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     });
   }
 
-  /// The draft with the user's edits applied. Untouched fields pass through
-  /// unchanged so a plain "Looks good" behaves exactly like before.
+  /// The draft with the user's edits applied, passed to [widget.onSave] /
+  /// [widget.onSaveForLater] — the confirmed amount is passed separately to
+  /// [widget.onSave], not folded into this draft's `amountMyr`.
   ReceiptIngestDraft _editedDraft() {
-    final total = _total;
     final anyItemChange = _anyExcluded || _anyPriceEdited;
     return widget.draft.copyWith(
       merchantRaw: _vendorEdited ? _vendorName : null,
-      amountMyr: anyItemChange ? total : null,
-      needsAmount: anyItemChange && total != null ? false : null,
+      categoryUser: _categoryOverride,
       lineItems: anyItemChange
           ? [
               for (var i = 0; i < _items.length; i++)
@@ -272,13 +339,43 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     );
   }
 
-  void _proceed() {
+  Future<void> _save() async {
     if (_editingVendor) _commitVendor();
     if (_editingPriceIndex != null) _commitPriceEdit();
-    Navigator.pop(context, _editedDraft());
+    final amount = _effectiveAmount;
+    if (amount == null || amount <= 0) {
+      PlatformFeedback.showError(context, 'Enter a valid amount');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.onSave(amount, _editedDraft(), _effectiveImpact);
+      if (mounted) {
+        PlatformFeedback.mediumTap();
+        Navigator.pop(context, true);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
-  void _cancel() => Navigator.pop(context);
+  Future<void> _saveForLater() async {
+    setState(() => _saving = true);
+    try {
+      await widget.onSaveForLater!(_editedDraft());
+      if (mounted) {
+        PlatformFeedback.mediumTap();
+        Navigator.pop(context, false);
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _cancel() async {
+    await widget.onCancel(widget.draft);
+    if (mounted) Navigator.pop(context, false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -292,7 +389,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
         Row(
           children: [
             _CategoryChip(
-              category: widget.draft.categoryUser ?? widget.draft.categoryGuess,
+              category: _categoryOverride ?? widget.draft.categoryGuess,
             ),
             const Spacer(),
             if (_items.isNotEmpty)
@@ -348,16 +445,43 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           ],
         ),
         const SizedBox(height: 14),
-        Text(
-          total != null ? 'RM ${total.toStringAsFixed(2)}' : '–',
-          style: balooText(
-            38,
-            FontWeight.w800,
-            color: total != null
-                ? ReceiptSheetColors.ink
-                : ReceiptSheetColors.subLight,
-            letterSpacing: -0.6,
-          ),
+        Text('Category', style: balooText(13, FontWeight.w700, color: ReceiptSheetColors.subLight)),
+        const SizedBox(height: 6),
+        _CategoryDropdown(
+          value: _categoryOverride ?? widget.draft.categoryGuess,
+          categories: widget.categories,
+          onChanged: (v) => setState(() => _categoryOverride = v),
+        ),
+        const SizedBox(height: 14),
+        _needsManualAmount
+            ? AmountField(controller: _amountController)
+            : Text(
+                total != null ? 'RM ${total.toStringAsFixed(2)}' : '–',
+                style: balooText(
+                  38,
+                  FontWeight.w800,
+                  color: total != null
+                      ? ReceiptSheetColors.ink
+                      : ReceiptSheetColors.subLight,
+                  letterSpacing: -0.6,
+                ),
+              ),
+        const SizedBox(height: 14),
+        Text('Impact', style: balooText(13, FontWeight.w700, color: ReceiptSheetColors.subLight)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (final level in ImpactLevel.values) ...[
+              if (level != ImpactLevel.values.first) const SizedBox(width: 8),
+              Expanded(
+                child: _ImpactChip(
+                  level: level,
+                  selected: _effectiveImpact == level,
+                  onTap: () => setState(() => _impactOverride = level),
+                ),
+              ),
+            ],
+          ],
         ),
         if (_items.isNotEmpty) ...[
           const SizedBox(height: 18),
@@ -381,7 +505,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           const SizedBox(height: 14),
           _NoticeBanner(
             text: widget.draft.needsAmount
-                ? "We couldn't read the amount — you can enter it next."
+                ? "We couldn't read the amount — enter it above."
                 : "Double-check this amount — we're not fully sure.",
           ),
         ],
@@ -400,20 +524,20 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           const SizedBox(height: 14),
         ],
         ReceiptSheetCta(
-          label: _hasParsedAmount ? 'Looks good' : 'Edit details',
-          onPressed: _proceed,
+          label: 'Save',
+          onPressed: _saving ? null : _save,
         ),
         const SizedBox(height: 8),
-        if (_hasParsedAmount)
+        if (_canSaveForLater)
           ReceiptSheetLink(
-            label: 'Edit details',
+            label: 'Save for later',
             color: ReceiptSheetColors.link,
-            onTap: _proceed,
+            onTap: _saving ? null : _saveForLater,
           ),
         ReceiptSheetLink(
           label: 'Cancel',
           color: ReceiptSheetColors.subLight,
-          onTap: _cancel,
+          onTap: _saving ? null : _cancel,
         ),
       ],
     );
@@ -489,6 +613,45 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   }
 }
 
+/// Category dropdown, ported from the now-removed `ShareSaveSheet`. Deliberately
+/// Material-styled (not `balooText`/`ReceiptSheetColors`), same as [AmountField]
+/// below — both are reused as-is rather than re-skinned for this sheet.
+class _CategoryDropdown extends StatelessWidget {
+  const _CategoryDropdown({
+    required this.value,
+    required this.categories,
+    required this.onChanged,
+  });
+
+  final String value;
+  final CategoryConfig categories;
+  final ValueChanged<String?> onChanged;
+
+  List<String> get _items => {
+        ...categories.rules.map((r) => r.category),
+        categories.defaultCategory,
+      }.toList();
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _items;
+    final safeValue = items.contains(value) ? value : items.first;
+    return DropdownButtonFormField<String>(
+      initialValue: safeValue,
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.sm,
+        ),
+        isDense: true,
+      ),
+      items: items.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+      onChanged: onChanged,
+    );
+  }
+}
+
 class _CategoryChip extends StatelessWidget {
   const _CategoryChip({required this.category});
 
@@ -504,6 +667,10 @@ class _CategoryChip extends StatelessWidget {
         return '🛍️';
       case 'Transport':
         return '🚌';
+      case 'Travel':
+        return '✈️';
+      case 'Health & Beauty':
+        return '💊';
       default:
         return '🧾';
     }
@@ -511,10 +678,15 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Ties this bubble's color into the same per-category coding used
+    // app-wide (CategoryChip, transaction_list_tile.dart/ritual_screen.dart)
+    // instead of a flat sheet-local color, so a receipt's category reads
+    // consistently wherever it's shown.
+    final color = AppColors.categoryColor(category);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: ReceiptSheetColors.tile,
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -524,13 +696,61 @@ class _CategoryChip extends StatelessWidget {
           const SizedBox(width: 7),
           Text(
             category,
-            style: balooText(
-              13,
-              FontWeight.w700,
-              color: ReceiptSheetColors.sub,
-            ),
+            style: balooText(13, FontWeight.w700, color: color),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Impact chip, ported unchanged from the now-removed `ShareSaveSheet` —
+/// same visual format the request asked for, reused verbatim.
+class _ImpactChip extends StatelessWidget {
+  const _ImpactChip({
+    required this.level,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ImpactLevel level;
+  final bool selected;
+  final VoidCallback onTap;
+
+  Color get _color {
+    switch (level) {
+      case ImpactLevel.low:
+        return AppColors.impactLow;
+      case ImpactLevel.med:
+        return AppColors.impactMed;
+      case ImpactLevel.high:
+        return AppColors.impactHigh;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppSpacing.chipBorderRadius,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? _color : AppColors.cardSurface,
+          borderRadius: AppSpacing.chipBorderRadius,
+          border: Border.all(
+            color: selected ? _color : AppColors.divider,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Text(
+          level.label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+              ),
+        ),
       ),
     );
   }
@@ -594,7 +814,7 @@ class _ItemRow extends StatelessWidget {
                   child: Opacity(
                     opacity: checked ? 1 : 0.4,
                     child: Text(
-                      item.displayLabel,
+                      item.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: balooText(
@@ -606,6 +826,18 @@ class _ItemRow extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Opacity(
+          opacity: checked ? 1 : 0.4,
+          child: Text(
+            '×${item.quantity ?? 1}',
+            style: balooText(
+              13,
+              FontWeight.w600,
+              color: ReceiptSheetColors.subLight,
             ),
           ),
         ),

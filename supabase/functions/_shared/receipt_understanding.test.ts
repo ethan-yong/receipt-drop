@@ -243,7 +243,12 @@ Deno.test("out-of-range confidences are clamped", () => {
     google_place_types: [],
     confidence: { merchant: 1.7, address: -0.4, category: "high" },
   }))!;
-  assertEquals(u.confidence, { merchant: 1, address: 0, category: 0 });
+  assertEquals(u.confidence, {
+    merchant: 1,
+    address: 0,
+    category: 0,
+    line_items: 0,
+  });
 });
 
 Deno.test("non-array merchant_search_queries coerces to empty", () => {
@@ -292,6 +297,91 @@ Deno.test("more than 3 queries are capped", () => {
   }))!;
   assertEquals(u.merchant_search_queries.length, MAX_MERCHANT_SEARCH_QUERIES);
   assert(buildLlmTextQueries(u).length <= MAX_MERCHANT_SEARCH_QUERIES);
+});
+
+// ---------------------------------------------------------------------------
+// line_items
+// ---------------------------------------------------------------------------
+
+Deno.test("line_items parsed and coerced", () => {
+  const u = parseReceiptUnderstanding(JSON.stringify({
+    merchant_name: "Sample Store",
+    merchant_search_queries: ["Sample Store"],
+    address_text: null,
+    location_clues: [],
+    vendor_category: "groceries",
+    google_place_types: [],
+    line_items: [
+      { name: "Milk", price: 4.5, quantity: 1 },
+      { name: "Bread", price: "3.20", quantity: null },
+      { name: "Eggs", price: null, quantity: 2 },
+    ],
+    confidence: { merchant: 0.9, address: 0.1, category: 0.9, line_items: 0.8 },
+  }))!;
+  assertEquals(u.line_items.length, 3);
+  assertEquals(u.line_items[0], { name: "Milk", price: 4.5, quantity: 1 });
+  assertEquals(u.line_items[1].price, 3.2);
+  assertEquals(u.line_items[2].price, null);
+  assertEquals(u.line_items[2].quantity, 2);
+  assertEquals(u.confidence.line_items, 0.8);
+});
+
+Deno.test("line_items malformed entries dropped", () => {
+  const u = parseReceiptUnderstanding(JSON.stringify({
+    merchant_name: "Sample Store",
+    merchant_search_queries: [],
+    address_text: null,
+    location_clues: [],
+    vendor_category: "groceries",
+    google_place_types: [],
+    line_items: [
+      { name: "Milk", price: 4.5 },
+      { name: null, price: 9.9 }, // no name -> dropped
+      "not an object", // dropped
+      { name: "Bad Price", price: "free" }, // unparseable price kept as null
+      { name: "Negative", price: -5 }, // negative price coerced to null
+    ],
+    confidence: {},
+  }))!;
+  assertEquals(u.line_items.map((it) => it.name), [
+    "Milk",
+    "Bad Price",
+    "Negative",
+  ]);
+  assertEquals(u.line_items[1].price, null);
+  assertEquals(u.line_items[2].price, null);
+});
+
+Deno.test("line_items capped at MAX_LINE_ITEMS", () => {
+  const u = parseReceiptUnderstanding(JSON.stringify({
+    merchant_name: "Big Receipt",
+    merchant_search_queries: [],
+    address_text: null,
+    location_clues: [],
+    vendor_category: "groceries",
+    google_place_types: [],
+    line_items: Array.from({ length: 60 }, (_, i) => ({
+      name: `Item ${i}`,
+      price: 1,
+    })),
+    confidence: {},
+  }))!;
+  assertEquals(u.line_items.length, MAX_LINE_ITEMS);
+});
+
+Deno.test("actionable via line_items only", () => {
+  const u = parseReceiptUnderstanding(JSON.stringify({
+    merchant_name: null,
+    merchant_search_queries: [],
+    address_text: null,
+    location_clues: [],
+    vendor_category: null,
+    google_place_types: [],
+    line_items: [{ name: "Mystery Item", price: 5 }],
+    confidence: {},
+  }));
+  assert(u !== null);
+  assertEquals(u!.line_items.length, 1);
 });
 
 // ---------------------------------------------------------------------------

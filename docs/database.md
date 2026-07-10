@@ -51,7 +51,7 @@ Core receipt row. RLS: owner-only for all of select/insert/update/delete (`20260
 | `parse_failure_reason` | text | added `20260705000000` |
 | `merchant_candidates` | jsonb | added `20260708000000` — ranked `MerchantCandidate[]` (`{text, confidence, source}`) from `extractMerchantCandidates()`; `merchant_raw` is always the top entry's text. No longer read by `enrich-transaction` (superseded by `llm_understanding`), kept for the alias-cache precedent and future heuristic comparisons |
 | `ocr_header_text` | text | added `20260708000000` — top-of-receipt OCR lines, always populated; used by `enrich-transaction` as a fallback when `raw_ocr_text` is empty |
-| `llm_understanding` | jsonb | added `20260709000000` — structured output of the LLM receipt-understanding step. `enrich-transaction` calls `services/ocr-api`'s `POST /understand` (which is what actually talks to the LLM gateway — see `docs/decisions.md`) and persists its response verbatim: `merchant_name`, `merchant_search_queries`, `address_text`, `location_clues`, `vendor_category`, `google_place_types`, `confidence`, plus a `_meta` (latency/prompt_source) or `_error`/`_raw` on failure |
+| `llm_understanding` | jsonb | added `20260709000000` — structured output of the LLM receipt-understanding step: `merchant_name`, `merchant_search_queries`, `address_text`, `location_clues`, `vendor_category`, `google_place_types`, `line_items`, `confidence`, plus a `_meta` (latency/prompt_source) or `_error`/`_raw` on failure. As of the client-synchronous OCR+LLM pipeline (`docs/decisions.md`), this is normally populated by the **client** at sync time (`SyncWorker`, from the local `llmUnderstandingJson` Drift column produced alongside OCR at capture) — `enrich-transaction` only writes it itself when it had to fall back to calling `services/ocr-api`'s `POST /understand` (missing/invalid precomputed value) |
 
 Index: `transactions_user_occurred_idx (user_id, occurred_at desc)`.
 
@@ -61,7 +61,7 @@ Index: `transactions_user_occurred_idx (user_id, occurred_at desc)`.
 Metadata row for a file in the `receipts` storage bucket. `id`, `user_id` FK, `transaction_id` FK (cascade), `storage_path`, `mime_type`, `created_at`. RLS: select/insert/delete own; **no update** (immutable). Unchanged since `20260511000000`.
 
 ### `receipt_line_items`
-Added `20260703000000_receipt_line_items.sql`. `id`, `user_id` FK, `transaction_id` FK (cascade), `name`, `price_myr`, `quantity`, `confidence`, `sort_order`, `created_at`. Index `(transaction_id, sort_order)`. RLS: select/insert/delete own; no update (immutable, mirrors `receipt_artifacts`).
+Added `20260703000000_receipt_line_items.sql`. `id`, `user_id` FK, `transaction_id` FK (cascade), `name`, `price_myr`, `quantity`, `confidence`, `sort_order`, `created_at`. Index `(transaction_id, sort_order)`. RLS: select/insert/delete own; no update (immutable, mirrors `receipt_artifacts`). Rows can originate from either the heuristic Dart extractor or the LLM's `line_items` (the client prefers the LLM's whenever it returned any — see `docs/decisions.md`); there's no `source` column to distinguish them, since the choice is made once client-side before the first insert, not reconciled after the fact.
 
 ### `user_badges`
 Added `20260626000001_badges.sql`. `id`, `user_id` FK (cascade), `badge_id text` (references the **client-bundled** `assets/config/badges-v1.json` catalog, not a DB table), `progress numeric`, `earned boolean`, `earned_at`, `updated_at`. `unique(user_id, badge_id)`. RLS: select/insert/update own; no delete.
@@ -132,11 +132,11 @@ Not competing — layered. **Friend leaderboard** = Postgres-native, RLS-backed 
 
 ## Local-only tables (Drift/SQLite, on-device — see `lib/data/local/tables.dart`)
 
-Not part of Postgres; the outbox mirrors the cloud schema plus sync bookkeeping. Schema is versioned (`schemaVersion = 6` in `app_database.dart`) with incremental `onUpgrade` migrations.
+Not part of Postgres; the outbox mirrors the cloud schema plus sync bookkeeping. Schema is versioned (`schemaVersion = 7` in `app_database.dart`) with incremental `onUpgrade` migrations.
 
 | Table | Mirrors | Extra fields |
 |---|---|---|
-| `OutboxTransactions` | `transactions` | `syncStatus` (`pending\|syncing\|synced\|stuck`), `lastError`, `retryCount`, `ritualledAt` (v3), `impactUser` (v2), `rawOcrText`/`ocrServiceConfidence`/`lineItemsConfidence`/`parseFailureReason` (v5, mirrors the Postgres v3 columns), `merchantCandidatesJson`/`ocrHeaderText` (v6, mirrors `transactions.merchant_candidates`/`ocr_header_text`) |
+| `OutboxTransactions` | `transactions` | `syncStatus` (`pending\|syncing\|synced\|stuck`), `lastError`, `retryCount`, `ritualledAt` (v3), `impactUser` (v2), `rawOcrText`/`ocrServiceConfidence`/`lineItemsConfidence`/`parseFailureReason` (v5, mirrors the Postgres v3 columns), `merchantCandidatesJson`/`ocrHeaderText` (v6, mirrors `transactions.merchant_candidates`/`ocr_header_text`), `llmUnderstandingJson` (v7, mirrors `transactions.llm_understanding` — populated at capture time by the synchronous OCR+LLM call, see `docs/decisions.md`) |
 | `OutboxArtifacts` | `receipt_artifacts` | `localFilePath` |
 | `OutboxLineItems` (v4) | `receipt_line_items` | — |
 | `CategoryConfigCache` | remote categories JSON | etag/version — **scaffolded but not actively fetched at runtime**; categories are loaded only from the bundled asset (`assets/config/categories-v1.json`). Don't assume remote refresh works. |

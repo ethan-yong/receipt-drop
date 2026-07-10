@@ -26,13 +26,33 @@ def test_port_in_use_probes_loopback_for_wildcard_host() -> None:
         assert cli._port_in_use("0.0.0.0", port) is True
 
 
-def test_main_exits_when_port_already_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OCR_SHARED_SECRET", "test-secret")
-    monkeypatch.setattr(cli, "_load_root_dotenv", lambda: None)
-    monkeypatch.setattr(cli, "_maybe_set_tesseract_cmd", lambda: None)
+def test_ensure_port_available_frees_busy_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+    state = {"busy": True}
+
+    def fake_port_in_use(host: str, port: int) -> bool:
+        return state["busy"]
+
+    def fake_free_port(port: int) -> None:
+        calls.append(port)
+        state["busy"] = False
+
+    monkeypatch.setattr(cli, "_port_in_use", fake_port_in_use)
+    monkeypatch.setattr(cli, "_free_port", fake_free_port)
+
+    cli._ensure_port_available("0.0.0.0", 8081)
+    assert calls == [8081]
+
+
+def test_ensure_port_available_exits_when_still_busy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(cli, "_port_in_use", lambda host, port: True)
+    monkeypatch.setattr(cli, "_free_port", lambda port: None)
 
     with pytest.raises(SystemExit) as exc_info:
-        cli.main()
+        cli._ensure_port_available("0.0.0.0", 8081)
 
     assert exc_info.value.code == 1

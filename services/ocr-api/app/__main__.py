@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import signal
 import socket
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -26,6 +29,91 @@ def _load_root_dotenv() -> None:
         value = value.strip().strip('"').strip("'")
         if key and key not in os.environ:
             os.environ[key] = value
+
+
+def _free_port(port: int) -> None:
+    """Stop whatever is listening on *port* (including uvicorn --reload children)."""
+    if sys.platform == "win32":
+        script = _repo_root() / "scripts" / "stop_ocr_api.ps1"
+        if script.is_file():
+            subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script),
+                    "-Port",
+                    str(port),
+                ],
+                check=False,
+            )
+            return
+        # Fallback when the script isn't present (e.g. installed wheel only).
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                (
+                    f"Get-NetTCPConnection -LocalPort {port} -State Listen "
+                    "-ErrorAction SilentlyContinue | "
+                    "Select-Object -ExpandProperty OwningProcess -Unique | "
+                    "ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }"
+                ),
+            ],
+            check=False,
+        )
+        if result.returncode != 0:
+            print(
+                f"WARNING: could not run port cleanup for {port} on Windows.",
+                file=sys.stderr,
+            )
+        return
+
+    # macOS / Linux dev: kill listeners reported by lsof, then fuser as fallback.
+    for cmd in (
+        ["lsof", "-ti", f":{port}"],
+        ["fuser", f"{port}/tcp"],
+    ):
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        except FileNotFoundError:
+            continue
+        if cmd[0] == "lsof" and result.stdout.strip():
+            for pid_str in result.stdout.strip().split():
+                try:
+                    os.kill(int(pid_str), signal.SIGTERM)
+                except (ProcessLookupError, ValueError):
+                    pass
+        elif cmd[0] == "fuser" and result.returncode == 0:
+            subprocess.run(["fuser", "-k", f"{port}/tcp"], check=False)
+        break
+
+
+def _ensure_port_available(host: str, port: int) -> None:
+    if not _port_in_use(host, port):
+        return
+
+    print(
+        f"Port {port} is in use (leftover OCR API instance?) — stopping it...",
+        file=sys.stderr,
+    )
+    _free_port(port)
+
+    for _ in range(20):
+        if not _port_in_use(host, port):
+            print(f"Port {port} is clear.", file=sys.stderr)
+            return
+        time.sleep(0.25)
+
+    print(
+        f"ERROR: port {port} is still in use after cleanup.\n"
+        f"Try manually: .\\scripts\\stop_ocr_api.ps1 -Port {port}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def _port_in_use(host: str, port: int) -> bool:
@@ -69,22 +157,9 @@ def main() -> None:
     host = os.environ.get("OCR_API_HOST", "0.0.0.0")
     port = int(os.environ.get("OCR_API_PORT", "8081"))
 
-    # A leftover instance from an earlier terminal keeps answering requests
-    # with its own (possibly stale) config, and a new instance on top of it
-    # looks like it started fine — the confusing failure mode this guards
-    # against. Killing the old one is the fix, not starting another.
-    if _port_in_use(host, port):
-        print(
-            f"ERROR: something is already listening on port {port}.\n"
-            "That's usually a leftover instance from an earlier terminal —\n"
-            "with reload mode on, its worker child survives even after you\n"
-            "stop what looked like the main process. Stop the whole tree:\n"
-            f"  .\\scripts\\stop_ocr_api.ps1 -Port {port}\n"
-            "or, next time, prefer Ctrl+C in the terminal it's running in\n"
-            "(not closing the window) so reload can shut down cleanly.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    # A leftover instance (often a uvicorn --reload worker child) keeps
+    # answering with stale config; free the port before we bind.
+    _ensure_port_available(host, port)
 
     import uvicorn
 

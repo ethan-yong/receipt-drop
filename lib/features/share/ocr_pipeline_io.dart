@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/env.dart';
 import '../../domain/models/ocr_line.dart';
+import '../../domain/models/receipt_understanding.dart';
 import 'ocr_api_client.dart';
 
 const _ocrProxyTimeout = Duration(seconds: 30);
@@ -39,12 +40,17 @@ void _defaultOcrLog(
 }
 
 /// OCR text plus the engine's scan-quality confidence (null for PDF text
-/// extraction when no OCR service ran) and, when available, per-line
-/// visual-prominence data for merchant candidate ranking.
+/// extraction when no OCR service ran), per-line visual-prominence data for
+/// merchant candidate ranking when available, and the LLM receipt
+/// understanding the OCR service now returns synchronously in the same call
+/// (null for PDFs — the LLM only ever runs inside the OCR service's /ocr,
+/// which PDFs never hit; pdfrx already yields clean text).
 typedef OcrFileResult = ({
   String text,
   double? serviceConfidence,
   List<OcrLine>? lines,
+  ReceiptUnderstanding? understanding,
+  String? understandingError,
 });
 
 /// Runs OCR on receipt images via the self-hosted OCR API, or extracts text
@@ -60,6 +66,8 @@ Future<OcrFileResult> runOcrOnReceiptFile({
       text: await _extractPdfText(filePath),
       serviceConfidence: null,
       lines: null,
+      understanding: null,
+      understandingError: null,
     );
   }
   return _ocrImageFile(filePath, mimeType);
@@ -93,9 +101,17 @@ Future<String> _extractPdfText(String pdfPath) async {
 }
 
 Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
+  const empty = (
+    text: '',
+    serviceConfidence: null,
+    lines: null,
+    understanding: null,
+    understandingError: null,
+  );
+
   if (!_ocrImageMimeTypes.contains(mimeType.toLowerCase())) {
     ocrLogger('Unsupported MIME for OCR: $mimeType', level: 800);
-    return (text: '', serviceConfidence: null, lines: null);
+    return empty;
   }
 
   if (Env.hasOcrApiConfig) {
@@ -110,13 +126,15 @@ Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
         text: direct.text,
         serviceConfidence: direct.confidence,
         lines: direct.lines,
+        understanding: direct.understanding,
+        understandingError: direct.understandingError,
       );
     }
     ocrLogger(
       'Direct OCR API returned no text: $imagePath',
       level: 800,
     );
-    return (text: '', serviceConfidence: null, lines: null);
+    return empty;
   }
 
   if (Env.hasSupabaseConfig) {
@@ -129,13 +147,15 @@ Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
         text: proxied.text,
         serviceConfidence: proxied.confidence,
         lines: proxied.lines,
+        understanding: proxied.understanding,
+        understandingError: proxied.understandingError,
       );
     }
     ocrLogger(
       'OCR proxy returned no text: $imagePath',
       level: 800,
     );
-    return (text: '', serviceConfidence: null, lines: null);
+    return empty;
   }
 
   ocrLogger(
@@ -143,13 +163,19 @@ Future<OcrFileResult> _ocrImageFile(String imagePath, String mimeType) async {
     'or configure Supabase and sign in for ocr-proxy',
     level: 1000,
   );
-  return (text: '', serviceConfidence: null, lines: null);
+  return empty;
 }
 
 /// Calls the self-hosted OCR service via the `ocr-proxy` Supabase Edge
 /// Function. Returns `null` on any failure — never throws.
-Future<({String text, double? confidence, List<OcrLine>? lines})?>
-    _ocrViaSupabaseProxy({
+Future<
+    ({
+      String text,
+      double? confidence,
+      List<OcrLine>? lines,
+      ReceiptUnderstanding? understanding,
+      String? understandingError,
+    })?> _ocrViaSupabaseProxy({
   required String imagePath,
   required String mimeType,
 }) async {
@@ -195,10 +221,14 @@ Future<({String text, double? confidence, List<OcrLine>? lines})?>
             .whereType<OcrLine>()
             .toList()
         : null;
+    final understandingError = decoded['understanding_error'];
     return (
       text: text,
       confidence: confidence is num ? confidence.toDouble() : null,
       lines: lines,
+      understanding: ReceiptUnderstanding.tryFromJson(decoded['understanding']),
+      understandingError:
+          understandingError is String ? understandingError : null,
     );
   } catch (e, st) {
     ocrLogger(

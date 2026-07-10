@@ -298,10 +298,21 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
 
     final here = LatLng(widget.lat, widget.lng);
     final selected = _selectedIndex;
+    // GoogleMap renders full-bleed behind the pull-up sheet (up to 60% of
+    // screen height, see _buildSheet) and the top search bar — without
+    // `padding`, the SDK centers markers/camera targets on the *whole*
+    // widget, which puts them right under the sheet, out of view. `padding`
+    // tells the SDK how much of the widget is actually occluded so it
+    // re-centers within the remaining visible strip instead.
+    final mapPadding = EdgeInsets.only(
+      top: 90 + MediaQuery.paddingOf(context).top,
+      bottom: MediaQuery.sizeOf(context).height * 0.6,
+    );
     return GoogleMap(
       initialCameraPosition: CameraPosition(target: here, zoom: 16),
       onMapCreated: _onMapCreated,
       onTap: (_) {},
+      padding: mapPadding,
       rotateGesturesEnabled: false,
       tiltGesturesEnabled: false,
       myLocationButtonEnabled: false,

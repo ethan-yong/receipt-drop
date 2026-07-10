@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/models/receipt_line_item.dart';
+import '../../domain/models/receipt_understanding.dart';
 
 /// Parameters for saving a confirmed receipt to the local outbox.
 class IngestReceiptRequest {
@@ -29,6 +30,7 @@ class IngestReceiptRequest {
     this.needsReview = false,
     this.merchantCandidates = const [],
     this.ocrHeaderText,
+    this.understanding,
     this.pickedPlaceName,
     this.pickedPlaceGooglePlaceId,
     this.pickedPlaceLat,
@@ -69,6 +71,11 @@ class IngestReceiptRequest {
 
   /// Extra OCR context (top-of-receipt lines) synced for enrichment.
   final String? ocrHeaderText;
+
+  /// LLM receipt understanding produced synchronously alongside OCR (see
+  /// `receipt_parse_pipeline.dart`), persisted to the outbox row and synced
+  /// so `enrich-transaction` can skip its own LLM call.
+  final ReceiptUnderstanding? understanding;
 
   /// Place selected by the user in the pre-save picker.
   final String? pickedPlaceName;

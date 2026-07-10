@@ -82,6 +82,7 @@ class ReceiptIngestService {
       lowConfidence: parsed.lowConfidence,
       merchantCandidates: parsed.merchantCandidates,
       ocrHeaderText: parsed.ocrHeaderText,
+      understanding: parsed.understanding,
     );
   }
 

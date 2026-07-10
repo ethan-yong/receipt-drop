@@ -12,7 +12,9 @@ import {
   adjustScoreForTypeMatch,
   buildLlmTextQueries,
   callReceiptUnderstanding,
+  parseReceiptUnderstanding,
   resolveIncludedTypes,
+  type ReceiptUnderstanding,
 } from "../_shared/receipt_understanding.ts";
 
 const corsHeaders: Record<string, string> = {
@@ -156,134 +158,164 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Full OCR body when the client kept it (always, as of the LLM-first
-  // enrichment flow), falling back to the always-synced header snippet for
-  // rows synced before that change or web-originated captures.
-  const rawOcrText = row.raw_ocr_text as string | null | undefined;
-  const ocrHeaderText = row.ocr_header_text as string | null | undefined;
-  const ocrText = (rawOcrText ?? ocrHeaderText ?? "").trim();
+  // PRECOMPUTED UNDERSTANDING: as of the client-synchronous OCR+LLM pipeline
+  // (see docs/decisions.md), the client already ran ocr-api's LLM
+  // receipt-understanding step at capture time and synced the result as
+  // transactions.llm_understanding. Prefer it — re-validated through the
+  // same parseReceiptUnderstanding() used server-side, as a defense-in-depth
+  // check against a version-skew or malformed sync — and only fall back to
+  // calling ocr-api's POST /understand ourselves (the old flow) when it's
+  // missing, is itself a stored failure record (`_error`), or fails to
+  // re-validate. This keeps legacy app versions and transiently-failed
+  // captures enrichable without a client redeploy.
+  const precomputedRaw = row.llm_understanding as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  let understanding: ReceiptUnderstanding | null = null;
 
-  if (ocrText.length === 0) {
-    const { error: upErr } = await supabase
-      .from("transactions")
-      .update({
-        merchant_normalized: normalizeMerchant(merchantRaw),
-        pipeline_status: "failed_enrichment",
-      })
-      .eq("id", transactionId)
-      .eq("user_id", user.id);
-
-    if (upErr) {
-      return new Response(JSON.stringify({ error: "server_misconfigured" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(
-      JSON.stringify({ ok: false, reason: "no_ocr_text" }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+  if (
+    precomputedRaw && typeof precomputedRaw === "object" &&
+    !("_error" in precomputedRaw)
+  ) {
+    understanding = parseReceiptUnderstanding(JSON.stringify(precomputedRaw));
   }
 
-  // LLM RECEIPT UNDERSTANDING: delegates to services/ocr-api's POST
-  // /understand (which itself calls the LLM gateway — see
-  // app/receipt_understanding.py and docs/decisions.md). Every enrichment
-  // goes through it, no heuristic fallback during this testing phase.
-  // Failure here fails the whole enrichment rather than falling back to the
-  // old merchant-candidate heuristic.
-  const ocrServiceUrl = Deno.env.get("OCR_SERVICE_URL");
-  const ocrServiceSecret = Deno.env.get("OCR_SERVICE_SECRET");
-
-  if (!ocrServiceUrl || !ocrServiceSecret) {
-    console.error(
-      `enrich-transaction[${transactionId}]: OCR API not configured ` +
-        `(OCR_SERVICE_URL/OCR_SERVICE_SECRET missing) — failing enrichment, no fallback`,
+  if (understanding) {
+    console.log(
+      `enrich-transaction[${transactionId}]: using precomputed ` +
+        `llm_understanding synced by the client — ` +
+        `merchant=${JSON.stringify(understanding.merchant_name)}, ` +
+        `category=${JSON.stringify(understanding.vendor_category)}`,
     );
-    await supabase
-      .from("transactions")
-      .update({ pipeline_status: "failed_enrichment" })
-      .eq("id", transactionId)
-      .eq("user_id", user.id);
+  } else {
+    // FALLBACK: no usable precomputed understanding — call ocr-api's LLM
+    // step ourselves, exactly as before OCR+LLM became client-synchronous.
+    // Full OCR body when the client kept it, falling back to the
+    // always-synced header snippet for rows synced before the LLM-first
+    // enrichment flow or web-originated captures.
+    const rawOcrText = row.raw_ocr_text as string | null | undefined;
+    const ocrHeaderText = row.ocr_header_text as string | null | undefined;
+    const ocrText = (rawOcrText ?? ocrHeaderText ?? "").trim();
 
-    return new Response(JSON.stringify({ error: "server_misconfigured" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+    if (ocrText.length === 0) {
+      const { error: upErr } = await supabase
+        .from("transactions")
+        .update({
+          merchant_normalized: normalizeMerchant(merchantRaw),
+          pipeline_status: "failed_enrichment",
+        })
+        .eq("id", transactionId)
+        .eq("user_id", user.id);
 
-  console.log(
-    `enrich-transaction[${transactionId}]: calling ocr-api /understand ` +
-      `— ocrTextChars=${ocrText.length}, ` +
-      `source=${rawOcrText ? "raw_ocr_text" : "ocr_header_text"}`,
-  );
+      if (upErr) {
+        return new Response(JSON.stringify({ error: "server_misconfigured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
-  const llmResult = await callReceiptUnderstanding(
-    { ocrServiceUrl, ocrServiceSecret },
-    ocrText,
-  );
-
-  if (!llmResult.ok) {
-    console.error(
-      `enrich-transaction[${transactionId}]: LLM call failed after ` +
-        `${llmResult.latencyMs}ms — error=${llmResult.error}` +
-        (llmResult.raw ? `, raw=${JSON.stringify(llmResult.raw.slice(0, 300))}` : ""),
-    );
-    const { error: upErr } = await supabase
-      .from("transactions")
-      .update({
-        pipeline_status: "failed_enrichment",
-        merchant_normalized: normalizeMerchant(merchantRaw),
-        llm_understanding: {
-          _error: llmResult.error,
-          _raw: llmResult.raw,
-          _meta: { latency_ms: llmResult.latencyMs },
+      return new Response(
+        JSON.stringify({ ok: false, reason: "no_ocr_text" }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
-      })
-      .eq("id", transactionId)
-      .eq("user_id", user.id);
+      );
+    }
 
-    if (upErr) {
+    // No heuristic fallback beyond this point during this testing phase —
+    // a failed LLM call fails the whole enrichment.
+    const ocrServiceUrl = Deno.env.get("OCR_SERVICE_URL");
+    const ocrServiceSecret = Deno.env.get("OCR_SERVICE_SECRET");
+
+    if (!ocrServiceUrl || !ocrServiceSecret) {
+      console.error(
+        `enrich-transaction[${transactionId}]: OCR API not configured ` +
+          `(OCR_SERVICE_URL/OCR_SERVICE_SECRET missing) — failing enrichment, no fallback`,
+      );
+      await supabase
+        .from("transactions")
+        .update({ pipeline_status: "failed_enrichment" })
+        .eq("id", transactionId)
+        .eq("user_id", user.id);
+
       return new Response(JSON.stringify({ error: "server_misconfigured" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    return new Response(
-      JSON.stringify({ ok: false, reason: "llm_error" }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
+    console.log(
+      `enrich-transaction[${transactionId}]: no usable precomputed ` +
+        `understanding — calling ocr-api /understand (fallback) — ` +
+        `ocrTextChars=${ocrText.length}, ` +
+        `source=${rawOcrText ? "raw_ocr_text" : "ocr_header_text"}`,
     );
-  }
 
-  const understanding = llmResult.understanding;
-  const merchantNormalized = understanding.merchant_name ??
-    normalizeMerchant(merchantRaw);
+    const llmResult = await callReceiptUnderstanding(
+      { ocrServiceUrl, ocrServiceSecret },
+      ocrText,
+    );
 
-  console.log(
-    `enrich-transaction[${transactionId}]: LLM understanding ok in ` +
-      `${llmResult.latencyMs}ms — ` +
-      `merchant=${JSON.stringify(understanding.merchant_name)} ` +
-      `(confidence=${understanding.confidence.merchant}), ` +
-      `category=${JSON.stringify(understanding.vendor_category)} ` +
-      `(confidence=${understanding.confidence.category}), ` +
-      `queries=${understanding.merchant_search_queries.length}, ` +
-      `placeTypes=${understanding.google_place_types.length}`,
-  );
+    if (!llmResult.ok) {
+      console.error(
+        `enrich-transaction[${transactionId}]: LLM call failed after ` +
+          `${llmResult.latencyMs}ms — error=${llmResult.error}` +
+          (llmResult.raw ? `, raw=${JSON.stringify(llmResult.raw.slice(0, 300))}` : ""),
+      );
+      const { error: upErr } = await supabase
+        .from("transactions")
+        .update({
+          pipeline_status: "failed_enrichment",
+          merchant_normalized: normalizeMerchant(merchantRaw),
+          llm_understanding: {
+            _error: llmResult.error,
+            _raw: llmResult.raw,
+            _meta: { latency_ms: llmResult.latencyMs },
+          },
+        })
+        .eq("id", transactionId)
+        .eq("user_id", user.id);
 
-  // Persist the LLM's structured output before touching Places, so it's
-  // debuggable even if the function dies further down.
-  {
+      if (upErr) {
+        return new Response(JSON.stringify({ error: "server_misconfigured" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({ ok: false, reason: "llm_error" }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    understanding = llmResult.understanding;
+
+    console.log(
+      `enrich-transaction[${transactionId}]: LLM understanding ok in ` +
+        `${llmResult.latencyMs}ms (fallback call) — ` +
+        `merchant=${JSON.stringify(understanding.merchant_name)} ` +
+        `(confidence=${understanding.confidence.merchant}), ` +
+        `category=${JSON.stringify(understanding.vendor_category)} ` +
+        `(confidence=${understanding.confidence.category}), ` +
+        `queries=${understanding.merchant_search_queries.length}, ` +
+        `placeTypes=${understanding.google_place_types.length}`,
+    );
+
+    // Persist the LLM's structured output before touching Places, so it's
+    // debuggable even if the function dies further down. Not needed on the
+    // precomputed path above — the client already synced this field.
+    const fallbackMerchantNormalized = understanding.merchant_name ??
+      normalizeMerchant(merchantRaw);
     const { error: persistErr } = await supabase
       .from("transactions")
       .update({
-        merchant_normalized: merchantNormalized,
+        merchant_normalized: fallbackMerchantNormalized,
         llm_understanding: {
           ...understanding,
           _meta: {
@@ -302,6 +334,9 @@ Deno.serve(async (req) => {
       });
     }
   }
+
+  const merchantNormalized = understanding.merchant_name ??
+    normalizeMerchant(merchantRaw);
 
   const shareLat = row.share_location_lat;
   const shareLng = row.share_location_lng;

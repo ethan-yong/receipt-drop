@@ -149,6 +149,92 @@ def test_off_vocabulary_category_is_nulled() -> None:
     assert u.vendor_category is None
 
 
+def test_line_items_parsed_and_coerced() -> None:
+    payload = {
+        "merchant_name": "Sample Store",
+        "merchant_search_queries": ["Sample Store"],
+        "address_text": None,
+        "location_clues": [],
+        "vendor_category": "groceries",
+        "google_place_types": [],
+        "line_items": [
+            {"name": "Milk", "price": 4.5, "quantity": 1},
+            {"name": "Bread", "price": "3.20", "quantity": None},
+            {"name": "Eggs", "price": None, "quantity": 2},
+        ],
+        "confidence": {"merchant": 0.9, "address": 0.1, "category": 0.9,
+                        "line_items": 0.8},
+    }
+    u = parse_receipt_understanding(json.dumps(payload))
+    assert u is not None
+    assert len(u.line_items) == 3
+    assert u.line_items[0].name == "Milk"
+    assert u.line_items[0].price == pytest.approx(4.5)
+    assert u.line_items[1].price == pytest.approx(3.2)
+    assert u.line_items[2].price is None
+    assert u.line_items[2].quantity == pytest.approx(2)
+    assert u.confidence.line_items == pytest.approx(0.8)
+
+
+def test_line_items_malformed_entries_dropped() -> None:
+    payload = {
+        "merchant_name": "Sample Store",
+        "merchant_search_queries": [],
+        "address_text": None,
+        "location_clues": [],
+        "vendor_category": "groceries",
+        "google_place_types": [],
+        "line_items": [
+            {"name": "Milk", "price": 4.5},
+            {"name": None, "price": 9.9},  # no name -> dropped
+            "not a dict",  # dropped
+            {"name": "Bad Price", "price": "free"},  # unparseable price kept, price None
+            {"name": "Negative", "price": -5},  # negative price coerced to None
+        ],
+        "confidence": {},
+    }
+    u = parse_receipt_understanding(json.dumps(payload))
+    assert u is not None
+    names = [it.name for it in u.line_items]
+    assert names == ["Milk", "Bad Price", "Negative"]
+    assert u.line_items[1].price is None
+    assert u.line_items[2].price is None
+
+
+def test_line_items_capped_at_max() -> None:
+    payload = {
+        "merchant_name": "Big Receipt",
+        "merchant_search_queries": [],
+        "address_text": None,
+        "location_clues": [],
+        "vendor_category": "groceries",
+        "google_place_types": [],
+        "line_items": [
+            {"name": f"Item {i}", "price": 1.0} for i in range(60)
+        ],
+        "confidence": {},
+    }
+    u = parse_receipt_understanding(json.dumps(payload))
+    assert u is not None
+    assert len(u.line_items) == 40
+
+
+def test_actionable_via_line_items_only() -> None:
+    payload = {
+        "merchant_name": None,
+        "merchant_search_queries": [],
+        "address_text": None,
+        "location_clues": [],
+        "vendor_category": None,
+        "google_place_types": [],
+        "line_items": [{"name": "Mystery Item", "price": 5.0}],
+        "confidence": {},
+    }
+    u = parse_receipt_understanding(json.dumps(payload))
+    assert u is not None
+    assert len(u.line_items) == 1
+
+
 def test_more_than_three_queries_capped() -> None:
     payload = {
         "merchant_name": "Restoran Lima Nama",

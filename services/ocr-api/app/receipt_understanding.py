@@ -1,6 +1,10 @@
 """LLM receipt-understanding step: turns raw OCR text into structured
 merchant info (corrected name, search queries, address clues, category,
-Google Places types, confidences) for `enrich-transaction`'s Places matching.
+Google Places types, line items, confidences). Called synchronously from
+`POST /ocr` (see app/main.py) so the OCR response is already interpreted by
+the time it reaches the client — `enrich-transaction` only calls this
+directly (via `POST /understand`) as a fallback for rows that reached it
+without a usable precomputed understanding.
 
 Calls a self-hosted OpenAI-compatible gateway (LiteLLM/vLLM), same one probed
 by scripts/inspect_llm_endpoint.py — VLLM_BASE_URL/VLLM_API_KEY/
@@ -31,8 +35,11 @@ logger = logging.getLogger("ocr_api.receipt_understanding")
 
 LLM_TIMEOUT_SECONDS = 25.0
 MAX_OCR_PROMPT_CHARS = 6_000
-LLM_MAX_TOKENS = 700
+# Bumped from 700 now that a response also carries the itemized line_items
+# array — a long mamak/supermarket receipt easily has 20-30 rows.
+LLM_MAX_TOKENS = 1200
 MAX_MERCHANT_SEARCH_QUERIES = 3
+MAX_LINE_ITEMS = 40
 
 VENDOR_CATEGORIES = {
     "food_and_drink",
@@ -176,8 +183,19 @@ SYSTEM_PROMPT = (
     "meal_takeaway, fast_food_restaurant, coffee_shop, supermarket, "
     "convenience_store, pharmacy, gas_station, clothing_store, "
     "hair_salon, gym.\n\n"
+    '"line_items" (array of objects, one per distinct purchased item): '
+    "reconstruct every legible item row, correcting obvious OCR damage "
+    "(merged \"RM\"+digits, a comma misread for a decimal point, "
+    "dropped/swapped letters in the item name). Each object has "
+    '"name" (string — the item description, cleaned up), "price" '
+    "(number or null — the row's printed line total in MYR, never a "
+    "unit price, no currency prefix), and \"quantity\" (number or null "
+    "— only when a multiplier like \"2 x\" is printed). Skip summary "
+    "rows (subtotal, tax, service charge, rounding, change, cash/card "
+    "tendered). Empty array if no item rows are legible.\n\n"
     '"confidence" (object): {"merchant": 0-1, "address": 0-1, '
-    '"category": 0-1} — your confidence in each extraction.\n\n'
+    '"category": 0-1, "line_items": 0-1} — your confidence in each '
+    "extraction.\n\n"
     "If the merchant name is unreadable but an address or line items "
     "are present, set merchant_name to null with a low merchant "
     "confidence and still fill in the address, location clues, and "
@@ -189,10 +207,17 @@ class ReceiptUnderstandingConfidence(BaseModel):
     merchant: float
     address: float
     category: float
+    line_items: float = 0.0
 
 
 class ReceiptUnderstandingRequest(BaseModel):
     ocr_text: str
+
+
+class ReceiptLineItemUnderstanding(BaseModel):
+    name: str
+    price: float | None
+    quantity: float | None
 
 
 class ReceiptUnderstandingResponse(BaseModel):
@@ -202,6 +227,7 @@ class ReceiptUnderstandingResponse(BaseModel):
     location_clues: list[str]
     vendor_category: str | None
     google_place_types: list[str]
+    line_items: list[ReceiptLineItemUnderstanding] = []
     confidence: ReceiptUnderstandingConfidence
 
 
@@ -261,6 +287,41 @@ def _as_str_list(v: object) -> list[str]:
     return [s.strip() for s in v if isinstance(s, str) and s.strip()]
 
 
+def _as_positive_float_or_none(v: object) -> float | None:
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        n = float(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if n != n or n < 0:  # NaN or negative
+        return None
+    return n
+
+
+def _as_line_items(v: object) -> list[ReceiptLineItemUnderstanding]:
+    """Coerces the LLM's raw `line_items` array, dropping any entry with
+    neither a usable name nor a price — same "hint, not authority" stance as
+    every other field here."""
+    if not isinstance(v, list):
+        return []
+    items: list[ReceiptLineItemUnderstanding] = []
+    for entry in v:
+        if not isinstance(entry, dict):
+            continue
+        name = _as_str_or_none(entry.get("name"))
+        if name is None:
+            continue
+        price = _as_positive_float_or_none(entry.get("price"))
+        quantity = _as_positive_float_or_none(entry.get("quantity"))
+        items.append(
+            ReceiptLineItemUnderstanding(name=name, price=price, quantity=quantity)
+        )
+        if len(items) >= MAX_LINE_ITEMS:
+            break
+    return items
+
+
 def parse_receipt_understanding(raw: str) -> ReceiptUnderstandingResponse | None:
     """Parses + validates a raw LLM completion. Every field is coerced
     defensively (wrong types dropped, confidences clamped, off-vocabulary
@@ -310,8 +371,11 @@ def parse_receipt_understanding(raw: str) -> ReceiptUnderstandingResponse | None
 
     address_text = _as_str_or_none(obj.get("address_text"))
     location_clues = _as_str_list(obj.get("location_clues"))
+    line_items = _as_line_items(obj.get("line_items"))
 
-    actionable = bool(merchant_name or queries or address_text or location_clues)
+    actionable = bool(
+        merchant_name or queries or address_text or location_clues or line_items
+    )
     if not actionable:
         return None
 
@@ -322,10 +386,12 @@ def parse_receipt_understanding(raw: str) -> ReceiptUnderstandingResponse | None
         location_clues=location_clues,
         vendor_category=vendor_category,
         google_place_types=place_types,
+        line_items=line_items,
         confidence=ReceiptUnderstandingConfidence(
             merchant=_clamp01(confidence_obj.get("merchant")),
             address=_clamp01(confidence_obj.get("address")),
             category=_clamp01(confidence_obj.get("category")),
+            line_items=_clamp01(confidence_obj.get("line_items")),
         ),
     )
 
@@ -441,7 +507,8 @@ async def call_receipt_understanding(
 
     logger.info(
         "LLM understanding ok in %.2fs (model=%s) — merchant=%r "
-        "(confidence=%.2f), category=%r (confidence=%.2f), queries=%d, placeTypes=%d",
+        "(confidence=%.2f), category=%r (confidence=%.2f), queries=%d, "
+        "placeTypes=%d, lineItems=%d",
         elapsed,
         model_used,
         understanding.merchant_name,
@@ -450,5 +517,6 @@ async def call_receipt_understanding(
         understanding.confidence.category,
         len(understanding.merchant_search_queries),
         len(understanding.google_place_types),
+        len(understanding.line_items),
     )
     return understanding

@@ -22,7 +22,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.memory() : super(NativeDatabase.memory());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -50,6 +50,10 @@ class AppDatabase extends _$AppDatabase {
                 outboxTransactions, outboxTransactions.merchantCandidatesJson);
             await m.addColumn(
                 outboxTransactions, outboxTransactions.ocrHeaderText);
+          }
+          if (from < 7) {
+            await m.addColumn(
+                outboxTransactions, outboxTransactions.llmUnderstandingJson);
           }
         },
         // sqlite disables FK enforcement by default; needed for cascade
