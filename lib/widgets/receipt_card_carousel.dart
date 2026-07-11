@@ -28,7 +28,9 @@ class ReceiptCardCarousel extends StatefulWidget {
 
 class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     with TickerProviderStateMixin {
-  static const _viewportHeight = 480.0;
+  // Card height plus the newest-card gold border wrapper (3px border + 3px
+  // padding on each side).
+  static const _viewportHeight = kReceiptCardHeight + 12;
   static const _rotateInterval = Duration(seconds: 5);
   static const _resumeDelay = Duration(milliseconds: 400);
   static const _dotChainDelay = Duration(milliseconds: 700);
@@ -70,14 +72,13 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
   @override
   void initState() {
     super.initState();
-    _transitionController = AnimationController(
-      vsync: this,
-      duration: _transformDuration,
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          setState(() => _previous = null);
-        }
-      });
+    _transitionController =
+        AnimationController(vsync: this, duration: _transformDuration)
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.completed) {
+              setState(() => _previous = null);
+            }
+          });
     _startAutoRotate();
   }
 
@@ -86,10 +87,14 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     super.didUpdateWidget(old);
     final n = widget.transactions.length;
     if (n != old.transactions.length) {
-      if (_current >= n) {
+      final grew = n > old.transactions.length;
+      if (grew || _current >= n) {
         _transitionController.stop();
         setState(() {
-          _current = n == 0 ? 0 : n - 1;
+          // A longer list means a receipt was just captured (the list is
+          // sorted newest-first), so snap to it at index 0; otherwise clamp
+          // after removals.
+          _current = grew || n == 0 ? 0 : n - 1;
           _previous = null;
           _resetLiveTransform();
         });
@@ -178,6 +183,7 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
         chain();
       });
     }
+
     if (remaining > 0) {
       chain();
     } else {
@@ -189,7 +195,7 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     context.pushNamed('tx-detail', pathParameters: {'id': tx.id});
   }
 
-  void _onPanDown(DragDownDetails details) {
+  void _onDragDown(DragDownDetails details) {
     if (_busy) return;
     _pauseAutoRotate();
     _dragStartX = details.globalPosition.dx;
@@ -204,7 +210,7 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     });
   }
 
-  void _onPanUpdate(DragUpdateDetails details) {
+  void _onDragUpdate(DragUpdateDetails details) {
     final startX = _dragStartX;
     if (startX == null || _busy) return;
     _dragRawDx = details.globalPosition.dx - startX;
@@ -226,13 +232,13 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     });
   }
 
-  void _onPanEnd(DragEndDetails details, TransactionView activeTx) {
+  void _onDragEnd(DragEndDetails details) {
     if (_dragStartX == null || _busy) return;
     _dragStartX = null;
 
     if (_dragMoved && _dragRawDx.abs() > _dragCommitThreshold) {
       _commit(_dragRawDx < 0 ? 1 : -1);
-    } else if (_dragMoved) {
+    } else {
       setState(() {
         _liveDuration = const Duration(milliseconds: 300);
         _liveCurve = Curves.easeOut;
@@ -240,30 +246,15 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
         _scale = 1;
         _opacity = 1;
       });
-    } else {
-      // Plain tap: haptic-style bounce, then open the receipt.
-      setState(() {
-        _liveDuration = const Duration(milliseconds: 160);
-        _liveCurve = _overshootCurve;
-        _dx = 0;
-        _opacity = 1;
-        _scale = 1.02;
-      });
-      _tapSettleTimer?.cancel();
-      _tapSettleTimer = Timer(const Duration(milliseconds: 130), () {
-        if (!mounted) return;
-        setState(() {
-          _liveDuration = const Duration(milliseconds: 180);
-          _liveCurve = Curves.easeOut;
-          _scale = 1;
-        });
-      });
-      _openDetail(activeTx);
     }
     _resumeAutoRotateSoon();
   }
 
-  void _onPanCancel() {
+  // Fires when the horizontal-drag recognizer loses the arena — to the
+  // card's inner items scroller, the page's vertical scroll, or the tap
+  // recognizer. _onCardTap nulls _dragStartX first, so the tap path skips
+  // the spring-back here and keeps its bounce.
+  void _onDragCancel() {
     if (_dragStartX == null || _busy) return;
     _dragStartX = null;
     setState(() {
@@ -273,6 +264,33 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
       _scale = 1;
       _opacity = 1;
     });
+    _resumeAutoRotateSoon();
+  }
+
+  /// Haptic-style bounce, then open the receipt. Wired both to the viewport
+  /// tap recognizer and (via [ReceiptCard.onTap]) to the item rows inside
+  /// the card's scroller, which would otherwise swallow taps.
+  void _onCardTap(TransactionView tx) {
+    if (_busy) return;
+    _dragStartX = null;
+    _pauseAutoRotate();
+    setState(() {
+      _liveDuration = const Duration(milliseconds: 160);
+      _liveCurve = _overshootCurve;
+      _dx = 0;
+      _opacity = 1;
+      _scale = 1.02;
+    });
+    _tapSettleTimer?.cancel();
+    _tapSettleTimer = Timer(const Duration(milliseconds: 130), () {
+      if (!mounted) return;
+      setState(() {
+        _liveDuration = const Duration(milliseconds: 180);
+        _liveCurve = Curves.easeOut;
+        _scale = 1;
+      });
+    });
+    _openDetail(tx);
     _resumeAutoRotateSoon();
   }
 
@@ -286,9 +304,9 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
         child: Center(
           child: Text(
             'No receipts today yet',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.textMuted,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppColors.textMuted),
           ),
         ),
       );
@@ -305,11 +323,14 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
           height: _viewportHeight,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onPanDown: n > 1 ? _onPanDown : null,
-            onPanUpdate: n > 1 ? _onPanUpdate : null,
-            onPanEnd: n > 1 ? (d) => _onPanEnd(d, activeTx) : null,
-            onPanCancel: n > 1 ? _onPanCancel : null,
-            onTap: n == 1 ? () => _openDetail(activeTx) : null,
+            // Horizontal-only recognizers (the handlers only ever use dx) so
+            // vertical drags reach the items scroller inside the card and
+            // the page's own scroll view.
+            onHorizontalDragDown: n > 1 ? _onDragDown : null,
+            onHorizontalDragUpdate: n > 1 ? _onDragUpdate : null,
+            onHorizontalDragEnd: n > 1 ? _onDragEnd : null,
+            onHorizontalDragCancel: n > 1 ? _onDragCancel : null,
+            onTap: () => _onCardTap(activeTx),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final width = constraints.maxWidth;
@@ -336,8 +357,9 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
           _DotIndicator(
             count: n,
             current: current,
-            palettes:
-                txs.map((t) => receiptPaletteForCategory(t.effectiveCategory)).toList(),
+            palettes: txs
+                .map((t) => receiptPaletteForCategory(t.effectiveCategory))
+                .toList(),
             onTap: _dotJump,
           ),
         ],
@@ -357,7 +379,8 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     if (_busy && (isCurrent || isPrevious)) {
       final transformT = _transformCurve.transform(_transitionController.value);
       final opacityRaw =
-          (_transitionController.value * _transformDuration.inMilliseconds /
+          (_transitionController.value *
+                  _transformDuration.inMilliseconds /
                   _opacityDuration.inMilliseconds)
               .clamp(0.0, 1.0)
               .toDouble();
@@ -408,7 +431,11 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
               duration: duration,
               curve: curve,
               opacity: opacity.clamp(0.0, 1.0).toDouble(),
-              child: _CardVisual(tx: tx, isNewest: i == 0),
+              child: _CardVisual(
+                tx: tx,
+                isNewest: i == 0,
+                onTap: () => _onCardTap(tx),
+              ),
             ),
           ),
         ),
@@ -453,16 +480,21 @@ class _DepthBlob extends StatelessWidget {
 /// wrapped in the newest-receipt gold border + "Latest Spending" badge when
 /// [isNewest].
 class _CardVisual extends StatelessWidget {
-  const _CardVisual({required this.tx, required this.isNewest});
+  const _CardVisual({
+    required this.tx,
+    required this.isNewest,
+    required this.onTap,
+  });
 
   final TransactionView tx;
   final bool isNewest;
+  final VoidCallback onTap;
 
   static const _gold = Color(0xFFF6C64B);
 
   @override
   Widget build(BuildContext context) {
-    final card = ReceiptCard(tx: tx);
+    final card = ReceiptCard(tx: tx, onTap: onTap);
     if (!isNewest) return card;
 
     return Stack(

@@ -22,10 +22,12 @@ class TransactionRepository {
   static const _uuid = Uuid();
 
   Stream<List<TransactionView>> watchAll() {
-    return (_db.select(_db.outboxTransactions)
-          ..orderBy([
-            (t) => OrderingTerm.desc(t.occurredAt),
-          ]))
+    return (_db.select(_db.outboxTransactions)..orderBy([
+          (t) => OrderingTerm.desc(t.occurredAt),
+          // Tie-break same-timestamp rows latest-captured-first, so a
+          // fresh scan always leads the home carousel.
+          (t) => OrderingTerm.desc(t.createdAt),
+        ]))
         .watch()
         .asyncMap(_rowsToViews);
   }
@@ -43,9 +45,9 @@ class TransactionRepository {
   }
 
   Future<TransactionView?> getById(String id) async {
-    final row = await (_db.select(_db.outboxTransactions)
-          ..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.outboxTransactions,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
     if (row == null) return null;
     final path = await _artifactPathFor(id);
     final items = await _lineItemsFor(id);
@@ -55,9 +57,7 @@ class TransactionRepository {
   Stream<List<TransactionView>> watchUnritualled() {
     return (_db.select(_db.outboxTransactions)
           ..where((t) => t.ritualledAt.isNull())
-          ..orderBy([
-            (t) => OrderingTerm.asc(t.occurredAt),
-          ]))
+          ..orderBy([(t) => OrderingTerm.asc(t.occurredAt)]))
         .watch()
         .asyncMap(_rowsToViews);
   }
@@ -76,10 +76,11 @@ class TransactionRepository {
     final artifactId = _uuid.v4();
     final now = DateTime.now();
     final amountSource = request.needsAmount ? null : 'ocr';
-    final pipelineStatus =
-        request.needsReview ? 'needs_review' : 'provisional';
+    final pipelineStatus = request.needsReview ? 'needs_review' : 'provisional';
 
-    await _db.into(_db.outboxTransactions).insert(
+    await _db
+        .into(_db.outboxTransactions)
+        .insert(
           OutboxTransactionsCompanion.insert(
             id: id,
             userId: request.userId,
@@ -137,7 +138,9 @@ class TransactionRepository {
           ),
         );
 
-    await _db.into(_db.outboxArtifacts).insert(
+    await _db
+        .into(_db.outboxArtifacts)
+        .insert(
           OutboxArtifactsCompanion.insert(
             id: artifactId,
             userId: request.userId,
@@ -176,18 +179,15 @@ class TransactionRepository {
       categoryGuess: request.categoryGuess,
       categoryUser: null,
       placeName: request.pickedPlaceLocked ? request.pickedPlaceName : null,
-      placeGooglePlaceId:
-          request.pickedPlaceLocked
-              ? request.pickedPlaceGooglePlaceId
-              : null,
-      placeLat:
-          request.pickedPlaceLocked
-              ? request.pickedPlaceLat
-              : request.shareLocationLat,
-      placeLng:
-          request.pickedPlaceLocked
-              ? request.pickedPlaceLng
-              : request.shareLocationLng,
+      placeGooglePlaceId: request.pickedPlaceLocked
+          ? request.pickedPlaceGooglePlaceId
+          : null,
+      placeLat: request.pickedPlaceLocked
+          ? request.pickedPlaceLat
+          : request.shareLocationLat,
+      placeLng: request.pickedPlaceLocked
+          ? request.pickedPlaceLng
+          : request.shareLocationLng,
       syncStatus: 'pending',
       pipelineStatus: pipelineStatus,
       localThumbnailPath: request.localFilePath,
@@ -206,9 +206,7 @@ class TransactionRepository {
   Stream<List<TransactionView>> watchNeedsReview() {
     return (_db.select(_db.outboxTransactions)
           ..where((t) => t.pipelineStatus.equals('needs_review'))
-          ..orderBy([
-            (t) => OrderingTerm.desc(t.occurredAt),
-          ]))
+          ..orderBy([(t) => OrderingTerm.desc(t.occurredAt)]))
         .watch()
         .asyncMap(_rowsToViews);
   }
@@ -221,8 +219,9 @@ class TransactionRepository {
     double amountMyr, {
     String? impactUser,
   }) async {
-    await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(id)))
-        .write(
+    await (_db.update(
+      _db.outboxTransactions,
+    )..where((t) => t.id.equals(id))).write(
       OutboxTransactionsCompanion(
         amountMyr: Value(amountMyr),
         needsAmount: const Value(false),
@@ -230,17 +229,18 @@ class TransactionRepository {
         pipelineStatus: const Value('provisional'),
         syncStatus: const Value('pending'),
         retryCount: const Value(0),
-        impactUser:
-            impactUser != null ? Value(impactUser) : const Value.absent(),
+        impactUser: impactUser != null
+            ? Value(impactUser)
+            : const Value.absent(),
       ),
     );
     unawaited(SyncWorker.run(_db, id));
   }
 
   Future<void> updateTransaction(TransactionView view) async {
-    await (_db.update(_db.outboxTransactions)
-          ..where((t) => t.id.equals(view.id)))
-        .write(
+    await (_db.update(
+      _db.outboxTransactions,
+    )..where((t) => t.id.equals(view.id))).write(
       OutboxTransactionsCompanion(
         amountMyr: Value(view.amountMyr),
         needsAmount: Value(view.needsAmount),
@@ -256,8 +256,9 @@ class TransactionRepository {
   }
 
   Future<void> updateTransactionPlace(String id, PlaceResult place) async {
-    await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(id)))
-        .write(
+    await (_db.update(
+      _db.outboxTransactions,
+    )..where((t) => t.id.equals(id))).write(
       OutboxTransactionsCompanion(
         placeName: Value(place.name),
         placeGooglePlaceId: Value(place.id),
@@ -272,12 +273,13 @@ class TransactionRepository {
   }
 
   Future<void> retryStuckSync() async {
-    final stuck = await (_db.select(_db.outboxTransactions)
-          ..where((t) => t.syncStatus.equals('stuck')))
-        .get();
+    final stuck = await (_db.select(
+      _db.outboxTransactions,
+    )..where((t) => t.syncStatus.equals('stuck'))).get();
     for (final row in stuck) {
-      await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(row.id)))
-          .write(
+      await (_db.update(
+        _db.outboxTransactions,
+      )..where((t) => t.id.equals(row.id))).write(
         const OutboxTransactionsCompanion(
           syncStatus: Value('pending'),
           retryCount: Value(0),
@@ -285,18 +287,18 @@ class TransactionRepository {
       );
     }
 
-    final pending = await (_db.select(_db.outboxTransactions)
-          ..where((t) => t.syncStatus.equals('pending')))
-        .get();
+    final pending = await (_db.select(
+      _db.outboxTransactions,
+    )..where((t) => t.syncStatus.equals('pending'))).get();
     for (final row in pending) {
       unawaited(SyncWorker.run(_db, row.id));
     }
   }
 
   Future<void> deleteTransaction(String id) async {
-    await (_db.delete(_db.outboxTransactions)
-          ..where((t) => t.id.equals(id)))
-        .go();
+    await (_db.delete(
+      _db.outboxTransactions,
+    )..where((t) => t.id.equals(id))).go();
   }
 
   Future<void> clearAll() async {
@@ -315,7 +317,9 @@ class TransactionRepository {
     if (count > 0) return;
 
     for (final view in demoTransactions(userId: userId)) {
-      await _db.into(_db.outboxTransactions).insert(
+      await _db
+          .into(_db.outboxTransactions)
+          .insert(
             OutboxTransactionsCompanion.insert(
               id: view.id,
               userId: userId,
@@ -343,7 +347,9 @@ class TransactionRepository {
     if (hasFullReceiptShowcase(today)) return;
 
     for (final view in receiptShowcaseTransactions(userId: userId)) {
-      await _db.into(_db.outboxTransactions).insert(
+      await _db
+          .into(_db.outboxTransactions)
+          .insert(
             OutboxTransactionsCompanion.insert(
               id: view.id,
               userId: userId,
@@ -364,24 +370,27 @@ class TransactionRepository {
   }
 
   Future<String?> _artifactPathFor(String transactionId) async {
-    final artifact = await (_db.select(_db.outboxArtifacts)
-          ..where((a) => a.transactionId.equals(transactionId)))
-        .getSingleOrNull();
+    final artifact = await (_db.select(
+      _db.outboxArtifacts,
+    )..where((a) => a.transactionId.equals(transactionId))).getSingleOrNull();
     return artifact?.localFilePath;
   }
 
   Future<List<ReceiptLineItem>> _lineItemsFor(String transactionId) async {
-    final rows = await (_db.select(_db.outboxLineItems)
-          ..where((li) => li.transactionId.equals(transactionId))
-          ..orderBy([(li) => OrderingTerm.asc(li.sortOrder)]))
-        .get();
+    final rows =
+        await (_db.select(_db.outboxLineItems)
+              ..where((li) => li.transactionId.equals(transactionId))
+              ..orderBy([(li) => OrderingTerm.asc(li.sortOrder)]))
+            .get();
     return rows
-        .map((r) => ReceiptLineItem(
-              name: r.name,
-              priceMyr: r.priceMyr,
-              quantity: r.quantity,
-              confidence: r.confidence,
-            ))
+        .map(
+          (r) => ReceiptLineItem(
+            name: r.name,
+            priceMyr: r.priceMyr,
+            quantity: r.quantity,
+            confidence: r.confidence,
+          ),
+        )
         .toList();
   }
 
