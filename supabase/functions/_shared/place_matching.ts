@@ -11,12 +11,15 @@ export const ALIAS_GEOHASH_PRECISION = 7;
 export const ALIAS_SAVE_CONFIDENCE_THRESHOLD = 0.85;
 
 /** Normalizes text for both alias-key comparison and Dice-coefficient
- * scoring: lowercase, strip punctuation, collapse whitespace. */
+ * scoring: lowercase, then collapses every run of punctuation/whitespace
+ * (spaces, tabs, hyphens, punctuation, ...) into a single space, so
+ * separators are treated as word boundaries rather than deleted outright
+ * (deleting them would fuse "anwar-maju" into "anwarmaju" instead of
+ * "anwar maju"). */
 export function normalizeForCompare(s: string): string {
   return s
     .toLowerCase()
-    .replace(/[^a-z0-9 ]+/g, "")
-    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 

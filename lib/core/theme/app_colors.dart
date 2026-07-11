@@ -30,6 +30,8 @@ abstract final class AppColors {
   static const chartShopping = Color(0xFFE67E22);
   static const chartTransport = Color(0xFF7D6B9D);
   static const chartGroceries = Color(0xFF6AAF6E);
+  static const chartTravel = Color(0xFF4E7FE0);
+  static const chartHealthBeauty = Color(0xFFE0729A);
   static const chartOthers = Color(0xFFB8B0A4);
   static const chartUnclassified = Color(0xFFD4CFC6);
 
@@ -54,6 +56,10 @@ abstract final class AppColors {
         return chartTransport;
       case 'Groceries':
         return chartGroceries;
+      case 'Travel':
+        return chartTravel;
+      case 'Health & Beauty':
+        return chartHealthBeauty;
       case 'Unclassified':
         return chartUnclassified;
       default:

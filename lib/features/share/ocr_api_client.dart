@@ -4,10 +4,19 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../../domain/models/ocr_line.dart';
+import '../../domain/models/receipt_understanding.dart';
 
-/// OCR text + mean word confidence from the self-hosted Tesseract OCR API.
+/// OCR text + mean word confidence from the self-hosted Tesseract OCR API,
+/// plus the LLM receipt-understanding the same `/ocr` call now returns
+/// synchronously (see `services/ocr-api/app/main.py`).
 class OcrApiResult {
-  const OcrApiResult({required this.text, required this.confidence, this.lines});
+  const OcrApiResult({
+    required this.text,
+    required this.confidence,
+    this.lines,
+    this.understanding,
+    this.understandingError,
+  });
 
   final String text;
   final double confidence;
@@ -17,6 +26,15 @@ class OcrApiResult {
   /// instance) or omitted it for any other reason — callers must treat
   /// absence as "no large-text signal available", not an error.
   final List<OcrLine>? lines;
+
+  /// The interpreted receipt, or `null` when OCR found no text or the LLM
+  /// call itself failed (see [understandingError]) — the raw [text]/[lines]
+  /// above are always usable on their own regardless.
+  final ReceiptUnderstanding? understanding;
+
+  /// Machine-readable failure code (e.g. `llm_timeout`, `llm_http_503`) when
+  /// [understanding] is `null` but OCR itself succeeded.
+  final String? understandingError;
 }
 
 const ocrApiAllowedMimeTypes = {'image/jpeg', 'image/png', 'image/webp'};
@@ -70,10 +88,15 @@ Future<OcrApiResult?> runOcrApi({
             .toList()
         : null;
 
+    final understandingError = decoded['understanding_error'];
+
     return OcrApiResult(
       text: text,
       confidence: confidence.toDouble(),
       lines: lines,
+      understanding: ReceiptUnderstanding.tryFromJson(decoded['understanding']),
+      understandingError:
+          understandingError is String ? understandingError : null,
     );
   } catch (_) {
     return null;

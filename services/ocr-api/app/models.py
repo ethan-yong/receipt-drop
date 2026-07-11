@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.receipt_understanding import ReceiptUnderstandingResponse
+
 
 class OcrLine(BaseModel):
     text: str
@@ -14,3 +16,10 @@ class OcrResponse(BaseModel):
     # in principle (the route always populates it); optional so an older
     # client reading just text/confidence is unaffected.
     lines: list[OcrLine] | None = None
+    # LLM receipt-understanding, run synchronously in the same /ocr request
+    # (see app/main.py) — None when OCR produced no text, or when the LLM
+    # call itself failed (see understanding_error). A failed/missing
+    # understanding never fails the /ocr request: raw OCR fields above are
+    # always usable on their own.
+    understanding: ReceiptUnderstandingResponse | None = None
+    understanding_error: str | None = None

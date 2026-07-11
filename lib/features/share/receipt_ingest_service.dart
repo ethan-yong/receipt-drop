@@ -70,11 +70,11 @@ class ReceiptIngestService {
       shareLocationCapturedAt: location != null ? DateTime.now().toUtc() : null,
       ocrConfidence: parsed.ocrConfidence,
       lineItems: parsed.lineItems,
-      // Failed/shaky parses keep their raw OCR text as evidence for fixing
-      // parser rules later; clean parses don't need the payload.
-      rawOcrText: (parsed.needsAmount || parsed.lowConfidence) &&
-              parsed.ocrText.isNotEmpty
-          ? parsed.ocrText
+      // Always kept now (capped): the server-side LLM receipt-understanding
+      // step (enrich-transaction) needs the full receipt body, not just the
+      // merchant header, to infer category from line items.
+      rawOcrText: parsed.ocrText.isNotEmpty
+          ? _capOcrText(parsed.ocrText)
           : null,
       ocrServiceConfidence: parsed.ocrServiceConfidence,
       lineItemsConfidence: parsed.lineItemsConfidence,
@@ -82,8 +82,15 @@ class ReceiptIngestService {
       lowConfidence: parsed.lowConfidence,
       merchantCandidates: parsed.merchantCandidates,
       ocrHeaderText: parsed.ocrHeaderText,
+      understanding: parsed.understanding,
     );
   }
+
+  static const int _maxRawOcrTextChars = 8000;
+
+  static String _capOcrText(String text) => text.length > _maxRawOcrTextChars
+      ? text.substring(0, _maxRawOcrTextChars)
+      : text;
 
   static Future<void> discardDraft(ReceiptIngestDraft draft) async {
     if (!draft.localFilePath.startsWith('web:')) {

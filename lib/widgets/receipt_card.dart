@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../domain/models/transaction_view.dart';
-import 'receipt_thumbnail_file.dart'
-    if (dart.library.html) 'receipt_thumbnail_file_web.dart' as file_image;
 
 class ReceiptCardPalette {
   const ReceiptCardPalette({
@@ -227,6 +225,36 @@ String? receiptIllustrationAssetForCategory(String category) {
       c.contains('burger') ||
       c.contains('takeaway')) {
     return 'category_images/restaurant.png';
+  }
+
+  if (c.contains('transport') ||
+      c.contains('petrol') ||
+      c.contains('fuel') ||
+      c.contains('gas') ||
+      c.contains('grab') ||
+      c.contains('taxi') ||
+      c.contains('transit') ||
+      c.contains('train') ||
+      c.contains('bus') ||
+      c.contains('mrt')) {
+    return 'category_images/transport.png';
+  }
+
+  if (c.contains('travel') ||
+      c.contains('flight') ||
+      c.contains('hotel') ||
+      c.contains('resort')) {
+    return 'category_images/travel.png';
+  }
+
+  if (c.contains('beauty') ||
+      c.contains('health') ||
+      c.contains('cosmetics') ||
+      c.contains('skincare') ||
+      c.contains('makeup') ||
+      c.contains('salon') ||
+      c.contains('pharmacy')) {
+    return 'category_images/health_and_beauty.png';
   }
 
   return null;
@@ -524,6 +552,12 @@ class _ReceiptIllustration extends StatelessWidget {
     final assetPath =
         receiptIllustrationAssetForCategory(tx.effectiveCategory);
 
+    // Category art always wins here — the user's captured photo (
+    // tx.thumbnailBytes / tx.localThumbnailPath) must never appear on this
+    // card in its place, even when there's no bundled asset for the
+    // category yet (falls to the color+emoji placeholder below instead).
+    // The photo is still shown elsewhere (receipt_thumbnail.dart,
+    // transaction_list_tile.dart, receipt_review_screen.dart).
     if (assetPath != null) {
       return Image.asset(
         assetPath,
@@ -532,30 +566,6 @@ class _ReceiptIllustration extends StatelessWidget {
         fit: BoxFit.cover,
         alignment: Alignment.center,
         errorBuilder: (context, error, stackTrace) => _placeholder(),
-      );
-    }
-
-    final bytes = tx.thumbnailBytes;
-    if (bytes != null && bytes.isNotEmpty) {
-      return Image.memory(
-        bytes,
-        width: double.infinity,
-        height: _illustrationHeight,
-        fit: BoxFit.cover,
-        alignment: Alignment.center,
-        errorBuilder: (context, error, stackTrace) => _placeholder(),
-      );
-    }
-
-    final thumbPath = tx.localThumbnailPath;
-    if (thumbPath != null && thumbPath.isNotEmpty) {
-      return SizedBox(
-        width: double.infinity,
-        height: _illustrationHeight,
-        child: file_image.buildLocalFileImage(
-          thumbPath,
-          placeholder: _placeholder(),
-        ),
       );
     }
 

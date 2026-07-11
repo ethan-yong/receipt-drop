@@ -2,7 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/domain/logic/category_matcher.dart';
 import 'package:receipt_drop/domain/logic/category_matcher_bundled.dart';
 import 'package:receipt_drop/domain/models/ocr_line.dart';
+import 'package:receipt_drop/domain/models/receipt_understanding.dart';
 import 'package:receipt_drop/features/share/receipt_parse_pipeline.dart';
+
+const _fixtureConfidence = ReceiptUnderstandingConfidence(
+  merchant: 0,
+  address: 0,
+  category: 0,
+  lineItems: 0.9,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -375,5 +383,94 @@ TOTAL RM 21.70
     );
     expect(withHeights.merchantRaw, 'QUIRKENDALE');
     expect(withHeights.merchantCandidates.first.source, 'largeText');
+  });
+
+  group('LLM understanding line items', () {
+    // Real regression fixture: RESTORAN ANWAR MAJU receipt where the LLM
+    // read "1 Limau Ais Bungkus 3.00 -Z" as RM 93.00 — a digit-transcription
+    // hallucination no prompt wording alone can fully prevent.
+    const ocrText = '''
+RESTORAN ANWAR MAJU
+1 Rsb Biasa 7.00 -Z
+3 Teh O Limau Ais 8.70 -Z
+1 Limau Ais Bungkus 3.00 -Z
+TOTAL : RM 18.70
+''';
+
+    test('drops an LLM item priced above the receipt total', () {
+      final understanding = ReceiptUnderstanding(
+        merchantName: 'Restoran Anwar Maju',
+        merchantSearchQueries: const ['Restoran Anwar Maju'],
+        addressText: null,
+        locationClues: const [],
+        vendorCategory: 'food_and_drink',
+        googlePlaceTypes: const ['restaurant'],
+        lineItems: const [
+          ReceiptUnderstandingLineItem(
+            name: 'Rsb Biasa',
+            price: 7.00,
+            quantity: 1,
+          ),
+          ReceiptUnderstandingLineItem(
+            name: 'Teh O Limau Ais',
+            price: 8.70,
+            quantity: 3,
+          ),
+          // Hallucinated: printed price is RM 3.00, not RM 93.00.
+          ReceiptUnderstandingLineItem(
+            name: 'Limau Ais Bungkus',
+            price: 93.00,
+            quantity: 1,
+          ),
+        ],
+        confidence: _fixtureConfidence,
+      );
+
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/anwar_maju.png',
+        ocrText: ocrText,
+        categories: categories,
+        understanding: understanding,
+      );
+
+      expect(
+        result.lineItems.map((it) => it.name),
+        ['Rsb Biasa', 'Teh O Limau Ais'],
+      );
+      expect(
+        result.lineItems.any((it) => it.name == 'Limau Ais Bungkus'),
+        isFalse,
+      );
+    });
+
+    test('surfaces a leading-column quantity the LLM read correctly', () {
+      final understanding = ReceiptUnderstanding(
+        merchantName: 'Restoran Anwar Maju',
+        merchantSearchQueries: const ['Restoran Anwar Maju'],
+        addressText: null,
+        locationClues: const [],
+        vendorCategory: 'food_and_drink',
+        googlePlaceTypes: const ['restaurant'],
+        lineItems: const [
+          ReceiptUnderstandingLineItem(
+            name: 'Teh O Limau Ais',
+            price: 8.70,
+            quantity: 3,
+          ),
+        ],
+        confidence: _fixtureConfidence,
+      );
+
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/anwar_maju2.png',
+        ocrText: ocrText,
+        categories: categories,
+        understanding: understanding,
+      );
+
+      final tehO =
+          result.lineItems.firstWhere((it) => it.name == 'Teh O Limau Ais');
+      expect(tehO.quantity, 3);
+    });
   });
 }

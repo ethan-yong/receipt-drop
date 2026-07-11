@@ -112,6 +112,12 @@ class SyncWorker {
             ? null
             : jsonDecode(row.merchantCandidatesJson!),
         'ocr_header_text': row.ocrHeaderText,
+        // Lets enrich-transaction skip its own LLM call — the client already
+        // ran OCR + LLM understanding synchronously at capture time (see
+        // docs/decisions.md).
+        'llm_understanding': row.llmUnderstandingJson == null
+            ? null
+            : jsonDecode(row.llmUnderstandingJson!),
       });
 
       await Supabase.instance.client.from('receipt_artifacts').upsert({

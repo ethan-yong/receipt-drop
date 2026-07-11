@@ -7,6 +7,22 @@ import '../../domain/logic/receipt_line_item_extractor.dart';
 import '../../domain/logic/rm_amount_parser.dart';
 import '../../domain/models/ocr_line.dart';
 import '../../domain/models/receipt_line_item.dart';
+import '../../domain/models/receipt_understanding.dart';
+
+/// Maps the LLM's closed `vendor_category` vocabulary (see
+/// `services/ocr-api/app/receipt_understanding.py`'s `VENDOR_CATEGORIES`) to
+/// this app's display-category strings (`assets/config/categories-v1.json`).
+/// `entertainment`/`services`/`other` and anything unrecognized have no
+/// display-category equivalent today and fall back to
+/// [CategoryConfig.defaultCategory].
+const vendorCategoryToDisplayCategory = {
+  'food_and_drink': 'Food & Drink',
+  'groceries': 'Groceries',
+  'transport': 'Transport',
+  'travel': 'Travel',
+  'shopping': 'Shopping',
+  'health_beauty': 'Health & Beauty',
+};
 
 /// Weights for blending extraction confidence with scan quality in
 /// [ReceiptParseResult.combinedConfidence]. The OCR service already sigmoid-
@@ -41,6 +57,8 @@ class ReceiptParseResult {
     this.parseFailureReason,
     this.merchantCandidates = const [],
     this.ocrHeaderText,
+    this.understanding,
+    this.understandingError,
   });
 
   final String filePath;
@@ -84,6 +102,19 @@ class ReceiptParseResult {
   /// Extra OCR context (top-of-receipt lines) synced alongside
   /// [merchantCandidates] so Places enrichment can try more than one query.
   final String? ocrHeaderText;
+
+  /// The LLM's structured interpretation of this receipt, produced
+  /// synchronously alongside OCR (see `ocr_pipeline_io.dart`). `null` when
+  /// OCR found no text or the LLM call itself failed — see
+  /// [understandingError]. [merchantRaw]/[categoryGuess]/[lineItems] above
+  /// already prefer this over the heuristic extraction when present; it's
+  /// also kept here for downstream use (place-picker prefill from
+  /// `addressText`/`locationClues`/`googlePlaceTypes`).
+  final ReceiptUnderstanding? understanding;
+
+  /// Machine-readable LLM failure code (e.g. `llm_timeout`) when
+  /// [understanding] is `null` but OCR itself succeeded.
+  final String? understandingError;
 
   /// Blend of extraction confidence and scan quality, min-gated so a bad scan
   /// caps the ceiling regardless of how clean the parse looked.
@@ -130,6 +161,8 @@ class ReceiptParseResult {
       'merchantCandidates':
           merchantCandidates.map((c) => c.toJson()).toList(),
       if (ocrHeaderText != null) 'ocrHeaderText': ocrHeaderText,
+      if (understanding != null) 'understanding': understanding!.toJson(),
+      if (understandingError != null) 'understandingError': understandingError,
     };
   }
 
@@ -140,17 +173,23 @@ class ReceiptParseResult {
   }
 }
 
-/// Applies amount, merchant, and category heuristics to raw OCR text.
+/// Applies amount, merchant, and category heuristics to raw OCR text, then
+/// lets the synchronous LLM [understanding] (if any) override the
+/// merchant/category/line-items it's confident about — see
+/// `docs/decisions.md` for why this now runs in the same request as OCR
+/// instead of as a later async enrichment step.
 ReceiptParseResult parseReceiptOcrText({
   required String filePath,
   required String ocrText,
   required CategoryConfig categories,
   double? ocrServiceConfidence,
   List<OcrLine>? ocrLines,
+  ReceiptUnderstanding? understanding,
+  String? understandingError,
 }) {
-  // Items are extracted before the amount so their subtotal can vote on
-  // which amount candidate is the real paid total (semantic cross-check),
-  // then reconciled against whichever total won.
+  // The heuristic pass always runs first: its line-item subtotal feeds the
+  // amount-parsing cross-check below regardless of the LLM's own extraction,
+  // and it's the fallback whenever the LLM found nothing or failed outright.
   final extracted = extractReceiptLineItems(ocrText);
   final largestItemPrice = extracted.items.isEmpty
       ? null
@@ -165,17 +204,47 @@ ReceiptParseResult parseReceiptOcrText({
     lineItemCount: extracted.items.length,
   );
   final amount = parseResult.amount;
-  final lineItemsResult = reconcileWithTotal(extracted, amount);
+  final heuristicLineItems = reconcileWithTotal(extracted, amount);
 
-  final merchantCandidates =
+  // LLM items are the source of truth whenever the LLM extracted any — the
+  // understanding call already completed synchronously with OCR, before this
+  // function (and the first local save) ever runs, so there's no dedup/
+  // insert-order conflict with the heuristic pass above.
+  final llmLineItems = _lineItemsFromUnderstanding(understanding, amount);
+  final lineItemsResult = llmLineItems == null
+      ? heuristicLineItems
+      : reconcileWithTotal(llmLineItems, amount);
+
+  final heuristicMerchantCandidates =
       extractMerchantCandidates(ocrText, categories, ocrLines: ocrLines);
+  final llmMerchantName = understanding?.merchantName;
+  final merchantCandidates = llmMerchantName == null
+      ? heuristicMerchantCandidates
+      : [
+          MerchantCandidate(
+            text: llmMerchantName,
+            confidence: understanding!.confidence.merchant,
+            source: 'llm',
+          ),
+          ...heuristicMerchantCandidates,
+        ];
   final merchantRaw =
       merchantCandidates.isEmpty ? null : merchantCandidates.first.text;
   final headerText = extractOcrHeaderText(ocrText);
-  final (:category, :confidence) =
-      categories.guessWithConfidence(merchantRaw ?? '', ocrText);
-  final categoryGuess = category;
-  final categoryConfidence = confidence;
+
+  final llmCategory = understanding?.vendorCategory;
+  final String categoryGuess;
+  final double categoryConfidence;
+  if (llmCategory != null) {
+    categoryGuess =
+        vendorCategoryToDisplayCategory[llmCategory] ?? categories.defaultCategory;
+    categoryConfidence = understanding!.confidence.category;
+  } else {
+    final (:category, :confidence) =
+        categories.guessWithConfidence(merchantRaw ?? '', ocrText);
+    categoryGuess = category;
+    categoryConfidence = confidence;
+  }
 
   return ReceiptParseResult(
     filePath: filePath,
@@ -196,6 +265,46 @@ ReceiptParseResult parseReceiptOcrText({
     parseFailureReason: parseResult.failureReason,
     merchantCandidates: merchantCandidates,
     ocrHeaderText: headerText.isEmpty ? null : headerText,
+    understanding: understanding,
+    understandingError: understandingError,
+  );
+}
+
+/// Converts the LLM's line items into a [ReceiptLineItemsResult] ready for
+/// [reconcileWithTotal], or `null` when there's nothing usable (no
+/// [understanding], or every item lacked a usable price). Entries without a
+/// price are dropped — [ReceiptLineItem.priceMyr] is required, and a
+/// nameless price row isn't useful to show the user either. Entries priced
+/// above [amount] are also dropped: a single line item can never
+/// legitimately cost more than the receipt's own total, so this catches LLM
+/// digit-transcription hallucinations (e.g. a printed "3.00" misread as
+/// "93.00") without discarding the rest of an otherwise-good extraction —
+/// see docs/decisions.md.
+ReceiptLineItemsResult? _lineItemsFromUnderstanding(
+  ReceiptUnderstanding? understanding,
+  double? amount,
+) {
+  if (understanding == null || understanding.lineItems.isEmpty) return null;
+
+  final items = [
+    for (final it in understanding.lineItems)
+      if (it.price != null && (amount == null || it.price! <= amount))
+        ReceiptLineItem(
+          name: it.name,
+          priceMyr: it.price!,
+          quantity: it.quantity?.round(),
+          confidence: understanding.confidence.lineItems,
+        ),
+  ].take(maxExtractedLineItems).toList();
+
+  if (items.isEmpty) return null;
+
+  final subtotal = items.fold<double>(0, (sum, it) => sum + it.priceMyr);
+  return ReceiptLineItemsResult(
+    items: items,
+    confidence: understanding.confidence.lineItems,
+    itemsSubtotalMyr: subtotal,
+    itemsMatchTotal: false,
   );
 }
 

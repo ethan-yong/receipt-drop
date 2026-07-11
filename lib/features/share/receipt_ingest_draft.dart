@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../../data/repositories/ingest_receipt_request.dart';
 import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/models/receipt_line_item.dart';
+import '../../domain/models/receipt_understanding.dart';
 
 /// Parsed receipt ready for the save sheet (before user confirms amount).
 class ReceiptIngestDraft {
@@ -28,6 +29,7 @@ class ReceiptIngestDraft {
     this.lowConfidence = false,
     this.merchantCandidates = const [],
     this.ocrHeaderText,
+    this.understanding,
     this.pickedPlaceName,
     this.pickedPlaceGooglePlaceId,
     this.pickedPlaceLat,
@@ -53,7 +55,8 @@ class ReceiptIngestDraft {
   final double? ocrConfidence;
   final List<ReceiptLineItem> lineItems;
 
-  /// Raw OCR text, carried only when the parse failed or was low-confidence.
+  /// Raw OCR text (capped length), carried whenever OCR produced any text —
+  /// feeds the server-side LLM receipt-understanding step.
   final String? rawOcrText;
   final double? ocrServiceConfidence;
   final double? lineItemsConfidence;
@@ -69,6 +72,12 @@ class ReceiptIngestDraft {
 
   /// Extra OCR context (top-of-receipt lines), carried through to enrichment.
   final String? ocrHeaderText;
+
+  /// LLM receipt understanding produced synchronously alongside OCR — see
+  /// `receipt_parse_pipeline.dart`. Carried through to the outbox row
+  /// (`llmUnderstandingJson`) so `SyncWorker` can upload it, letting
+  /// `enrich-transaction` skip its own LLM call.
+  final ReceiptUnderstanding? understanding;
 
   /// Place chosen by the user in the pre-save picker.
   final String? pickedPlaceName;
@@ -112,6 +121,7 @@ class ReceiptIngestDraft {
       lowConfidence: lowConfidence,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      understanding: understanding,
       pickedPlaceName: pickedPlaceName ?? this.pickedPlaceName,
       pickedPlaceGooglePlaceId:
           pickedPlaceGooglePlaceId ?? this.pickedPlaceGooglePlaceId,
@@ -148,6 +158,7 @@ class ReceiptIngestDraft {
       parseFailureReason: parseFailureReason,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      understanding: understanding,
       pickedPlaceName: pickedPlaceName,
       pickedPlaceGooglePlaceId: pickedPlaceGooglePlaceId,
       pickedPlaceLat: pickedPlaceLat,
@@ -183,6 +194,7 @@ class ReceiptIngestDraft {
       needsReview: true,
       merchantCandidates: merchantCandidates,
       ocrHeaderText: ocrHeaderText,
+      understanding: understanding,
       pickedPlaceName: pickedPlaceName,
       pickedPlaceGooglePlaceId: pickedPlaceGooglePlaceId,
       pickedPlaceLat: pickedPlaceLat,

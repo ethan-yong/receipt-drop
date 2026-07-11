@@ -14,7 +14,6 @@ import 'receipt_capture_menu.dart';
 import 'receipt_confirm_sheet.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_ingest_service.dart';
-import 'share_save_sheet.dart';
 
 /// Picks a receipt, runs ingest, and shows the save sheet.
 class ReceiptCaptureFlow {
@@ -129,23 +128,17 @@ class ReceiptCaptureFlow {
     final categories = await loadBundledCategoryConfig();
     if (!context.mounted) return;
 
-    // The confirm sheet may hand back an edited draft (renamed vendor,
-    // excluded line items with an adjusted total); null means cancelled.
-    final confirmedDraft = await ReceiptConfirmSheet.show(context, draft: draft);
-    if (!context.mounted) return;
-    if (confirmedDraft == null) {
-      await ReceiptIngestService.discardDraft(draft);
-      return;
-    }
-
-    final saved = await ShareSaveSheet.show(
+    // ReceiptConfirmSheet reviews and saves in one step now (no separate
+    // "edit details" sheet) — true only on a completed save; cancel and
+    // "save for later" both return false.
+    final saved = await ReceiptConfirmSheet.show(
       context,
-      draft: confirmedDraft,
+      draft: draft,
       categories: categories,
-      onSave: (amount, draft, impact) async {
+      onSave: (amount, editedDraft, impact) async {
         if (amount == null) return;
         savedTx = await AppServices.transactions.ingestReceipt(
-          draft.toIngestRequest(
+          editedDraft.toIngestRequest(
             confirmedAmount: amount,
             impactUser: impact.name,
           ),
@@ -155,9 +148,9 @@ class ReceiptCaptureFlow {
       },
       // Parks the receipt in the review queue (no ritual, no feed post) —
       // closing the "cancel = receipt lost" hole for unreadable receipts.
-      onSaveForLater: (draft) async {
+      onSaveForLater: (editedDraft) async {
         await AppServices.transactions.ingestReceipt(
-          draft.toNeedsReviewRequest(),
+          editedDraft.toNeedsReviewRequest(),
         );
       },
       onCancel: ReceiptIngestService.discardDraft,

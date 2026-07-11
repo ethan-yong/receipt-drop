@@ -96,6 +96,12 @@ class OutboxTransactions extends Table {
   /// is review-only) — extra context for merchant/place enrichment.
   TextColumn get ocrHeaderText => text().nullable()();
 
+  /// LLM receipt-understanding step's structured output (JSON-encoded
+  /// `ReceiptUnderstanding`), produced synchronously alongside OCR at
+  /// capture time and synced to `transactions.llm_understanding` (jsonb) so
+  /// `enrich-transaction` can skip calling the LLM itself.
+  TextColumn get llmUnderstandingJson => text().nullable()();
+
   @override
   Set<Column<Object>>? get primaryKey => {id};
 }

@@ -112,6 +112,11 @@ class TransactionRepository {
                     ),
             ),
             ocrHeaderText: Value(request.ocrHeaderText),
+            llmUnderstandingJson: Value(
+              request.understanding == null
+                  ? null
+                  : jsonEncode(request.understanding!.toJson()),
+            ),
             placeName: Value(
               request.pickedPlaceLocked ? request.pickedPlaceName : null,
             ),
