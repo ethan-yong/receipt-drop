@@ -21,6 +21,10 @@ class AppDatabase extends _$AppDatabase {
   /// In-memory database for widget/unit tests (no path_provider).
   AppDatabase.memory() : super(NativeDatabase.memory());
 
+  /// File-backed database for tests that need to close and reopen the same
+  /// file (e.g. exercising migration retries after a partial upgrade).
+  AppDatabase.forTesting(super.executor);
+
   @override
   int get schemaVersion => 7;
 
