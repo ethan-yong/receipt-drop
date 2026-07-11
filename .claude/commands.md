@@ -40,7 +40,7 @@ supabase db reset              # replay all migrations in supabase/migrations/
 supabase status                # get local API URL, anon key, JWT secret
 ```
 
-Edge functions run automatically with `supabase start`; secrets for them go in `supabase/functions/.env` (copy from `.env.example` there — note `GOOGLE_PLACES_API_KEY` is required but **not** listed in that example file, see `docs/database.md`). `enrich-transaction`'s LLM step needs `OCR_SERVICE_URL`/`OCR_SERVICE_SECRET` (already required for `ocr-proxy`, no extra config) — the LLM-specific `VLLM_*` vars go on the `services/ocr-api` side instead (root `.env`, see below), not here.
+Edge functions run automatically with `supabase start`; secrets for them go in `supabase/functions/.env` (copy from `.env.example` there — note `GOOGLE_PLACES_API_KEY` is required but **not** listed in that example file, see `docs/database.md`). `enrich-transaction`'s LLM step needs `OCR_SERVICE_URL`/`OCR_SERVICE_SECRET` (already required for `ocr-proxy`, no extra config) — the LLM-specific `LLM_PROVIDER` + `VLLM_*` / `DEEPSEEK_*` vars go on the `services/ocr-api` side instead (root `.env`, see below), not here.
 
 Deploy migrations/functions to a remote project: `supabase db push`, `supabase functions deploy <name>`.
 
@@ -58,7 +58,7 @@ uv run ocr-api                     # or: .\scripts\run_ocr_api.ps1 from repo roo
 .\scripts\stop_ocr_api.ps1 -Port 8081   # force-stop (kills uvicorn --reload child too)
 ```
 
-Requires `OCR_SHARED_SECRET` set (root `.env` or environment) — startup aborts otherwise, and it refuses to start a second instance on an already-listening port. `POST /understand` (the LLM receipt-understanding step, called by `enrich-transaction`) additionally requires `VLLM_BASE_URL`/`VLLM_MODEL_NAME` (+ optional `VLLM_API_KEY`/`VLLM_REASONING_EFFORT`) in root `.env` — commented-out template already there; `/ocr` itself doesn't need these.
+Requires `OCR_SHARED_SECRET` set (root `.env` or environment) — startup aborts otherwise, and it refuses to start a second instance on an already-listening port. LLM receipt-understanding (`POST /ocr` + `POST /understand`) needs `LLM_PROVIDER=vllm|deepseek` (default `vllm`) plus the matching block: `VLLM_BASE_URL`/`VLLM_MODEL_NAME` (+ optional `VLLM_API_KEY`/`VLLM_REASONING_EFFORT`) or `DEEPSEEK_MODEL_NAME` (+ `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`). Flip `LLM_PROVIDER` and restart ocr-api to switch.
 
 Batch/fixture processing against local receipt images:
 
@@ -98,7 +98,7 @@ Tests: `cd services/leaderboard-api && pip install -e ".[dev]" && pytest`.
 
 ## CI
 
-`.github/workflows/python-ci.yml` — runs `ruff check` + `ruff format --check` + `pytest` for both `ocr-api` and `leaderboard-api`, triggered only on changes under `services/**`. No Flutter/Dart CI workflow exists yet — Flutter tests are run manually via the scripts above.
+`.github/workflows/python-ci.yml` — runs `ruff check` + `ruff format --check` + `pytest` for both `ocr-api` and `leaderboard-api` on every push/PR that touches `services/**` (any branch). No Flutter/Dart CI workflow exists yet — Flutter tests are run manually via the scripts above.
 
 ## Debugging
 

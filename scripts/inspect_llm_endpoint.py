@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Probe an OpenAI-compatible LLM gateway (LiteLLM / vLLM): models + chat.
+"""Probe an OpenAI-compatible LLM gateway (LiteLLM / vLLM / DeepSeek): models + chat.
 
 Reads from repo root `.env` (same loader as ocr-api):
+  LLM_PROVIDER=vllm|deepseek  (default vllm)
   VLLM_BASE_URL, VLLM_API_KEY, VLLM_MODEL_NAME, VLLM_REASONING_EFFORT
-  (falls back to LLM_BASE_URL / LLM_API_KEY)
+  DEEPSEEK_BASE_URL, DEEPSEEK_API_KEY, DEEPSEEK_MODEL_NAME
 
 Requires: pip install requests
 
@@ -25,6 +26,7 @@ from pathlib import Path
 import requests
 
 DEFAULT_ROOT_URL = "http://192.168.2.134:31180"
+DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class EndpointConfig:
     api_key: str
     model_name: str | None
     reasoning_effort: str | None
+    provider: str
 
 
 def _repo_root() -> Path:
@@ -69,50 +72,88 @@ def _resolve_config(
     model_name: str | None,
     reasoning_effort: str | None,
 ) -> EndpointConfig:
-    raw_base = (
-        base_url
-        or os.environ.get("VLLM_BASE_URL")
-        or os.environ.get("LLM_BASE_URL")
-        or DEFAULT_ROOT_URL
-    )
+    provider = (os.environ.get("LLM_PROVIDER") or "vllm").strip().lower()
+    if provider in ("vllm", "litellm", "local"):
+        provider = "vllm"
+    elif provider != "deepseek":
+        print(
+            f"Unknown LLM_PROVIDER={provider!r} (expected vllm or deepseek).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if provider == "deepseek":
+        raw_base = (
+            base_url
+            or os.environ.get("DEEPSEEK_BASE_URL")
+            or DEFAULT_DEEPSEEK_BASE_URL
+        )
+        key = (
+            api_key
+            or os.environ.get("DEEPSEEK_API_KEY")
+            or os.environ.get("LLM_API_KEY")
+        )
+        model = model_name or os.environ.get("DEEPSEEK_MODEL_NAME")
+        effort = None
+    else:
+        raw_base = (
+            base_url
+            or os.environ.get("VLLM_BASE_URL")
+            or os.environ.get("LLM_BASE_URL")
+            or DEFAULT_ROOT_URL
+        )
+        key = api_key or os.environ.get("VLLM_API_KEY") or os.environ.get("LLM_API_KEY")
+        model = model_name or os.environ.get("VLLM_MODEL_NAME")
+        effort = reasoning_effort or os.environ.get("VLLM_REASONING_EFFORT")
+
     api_base, root_url = _normalize_urls(raw_base)
-    key = api_key or os.environ.get("VLLM_API_KEY") or os.environ.get("LLM_API_KEY")
     if not key:
         key = input("API key: ").strip()
     if not key:
         print("An API key is required.", file=sys.stderr)
         sys.exit(1)
 
-    model = model_name or os.environ.get("VLLM_MODEL_NAME")
-    effort = reasoning_effort or os.environ.get("VLLM_REASONING_EFFORT")
     return EndpointConfig(
         api_base=api_base,
         root_url=root_url,
         api_key=key,
         model_name=model or None,
         reasoning_effort=effort or None,
+        provider=provider,
     )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Inspect an OpenAI-compatible LLM endpoint")
-    parser.add_argument("--base-url", default=None, help="Override VLLM_BASE_URL / LLM_BASE_URL")
-    parser.add_argument("--api-key", default=None, help="Override VLLM_API_KEY / LLM_API_KEY")
-    parser.add_argument("--model", default=None, help="Override VLLM_MODEL_NAME")
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help="Override active provider base URL (VLLM_BASE_URL / DEEPSEEK_BASE_URL)",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        help="Override active provider API key",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Override active provider model name",
+    )
     parser.add_argument(
         "--reasoning-effort",
         default=None,
-        help="Override VLLM_REASONING_EFFORT (e.g. low, medium, high)",
+        help="Override VLLM_REASONING_EFFORT (vllm provider only; e.g. low, medium, high)",
     )
     parser.add_argument(
         "--all-models",
         action="store_true",
-        help="Chat-test every listed model (default: only VLLM_MODEL_NAME when set)",
+        help="Chat-test every listed model (default: only the configured model when set)",
     )
     parser.add_argument(
         "--embeddings",
         action="store_true",
-        help="Also probe embedding endpoints (off by default when VLLM_MODEL_NAME is set)",
+        help="Also probe embedding endpoints (off by default when a model name is set)",
     )
     parser.add_argument(
         "--skip-embeddings",
@@ -262,6 +303,7 @@ def main() -> None:
 
     print("LLM Endpoint Inspector")
     print("----------------------")
+    print(f"provider: {cfg.provider}")
     print(f"api_base: {cfg.api_base}")
     if cfg.model_name:
         print(f"configured model: {cfg.model_name}")
@@ -293,7 +335,7 @@ def main() -> None:
     elif cfg.model_name:
         test_chat(cfg, cfg.model_name)
     else:
-        print("\nCould not list models and no VLLM_MODEL_NAME set.")
+        print("\nCould not list models and no model name configured for the active provider.")
         manual = input("Try a manual model name? [y/N]: ").strip()
         if manual.lower() == "y":
             name = input("Model name: ").strip()

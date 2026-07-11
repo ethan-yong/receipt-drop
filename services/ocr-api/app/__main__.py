@@ -60,7 +60,9 @@ def _free_port(port: int) -> None:
                     f"Get-NetTCPConnection -LocalPort {port} -State Listen "
                     "-ErrorAction SilentlyContinue | "
                     "Select-Object -ExpandProperty OwningProcess -Unique | "
-                    "ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }"
+                    "ForEach-Object { "
+                    "Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue "
+                    "}"
                 ),
             ],
             check=False,

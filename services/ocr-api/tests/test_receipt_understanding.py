@@ -9,6 +9,7 @@ from app.receipt_understanding import (
     ReceiptUnderstandingError,
     call_receipt_understanding,
     parse_receipt_understanding,
+    resolve_llm_config,
 )
 
 SECRET = "test-secret"
@@ -188,7 +189,8 @@ def test_line_items_malformed_entries_dropped() -> None:
             {"name": "Milk", "price": 4.5},
             {"name": None, "price": 9.9},  # no name -> dropped
             "not a dict",  # dropped
-            {"name": "Bad Price", "price": "free"},  # unparseable price kept, price None
+            # unparseable price kept, price None
+            {"name": "Bad Price", "price": "free"},
             {"name": "Negative", "price": -5},  # negative price coerced to None
         ],
         "confidence": {},
@@ -257,10 +259,14 @@ def test_more_than_three_queries_capped() -> None:
 
 @pytest.fixture(autouse=True)
 def _set_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "vllm")
     monkeypatch.setenv("VLLM_BASE_URL", "http://gateway.local:31180")
     monkeypatch.setenv("VLLM_MODEL_NAME", "test-model")
     monkeypatch.setenv("VLLM_API_KEY", "sk-test")
     monkeypatch.delenv("VLLM_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("DEEPSEEK_BASE_URL", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL_NAME", raising=False)
 
 
 async def test_call_returns_validated_understanding() -> None:
@@ -324,6 +330,37 @@ async def test_call_missing_config_raises_server_misconfigured(
         with pytest.raises(ReceiptUnderstandingError) as exc_info:
             await call_receipt_understanding("receipt text", http_client=client)
     assert exc_info.value.code == "server_misconfigured"
+
+
+async def test_call_uses_deepseek_when_provider_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+    monkeypatch.setenv("DEEPSEEK_MODEL_NAME", "deepseek-chat")
+    # Leave DEEPSEEK_BASE_URL unset → default api.deepseek.com/v1
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://api.deepseek.com/v1/chat/completions"
+        assert request.headers["Authorization"] == "Bearer sk-deepseek"
+        body = json.loads(request.content)
+        assert body["model"] == "deepseek-chat"
+        assert "reasoning_effort" not in body
+        return httpx.Response(200, content=_chat_content(json.dumps(MCD_JSON)))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await call_receipt_understanding("MCDONALD'S...", http_client=client)
+    assert result.merchant_name == "McDonald's Pavilion KL"
+
+
+def test_resolve_llm_config_unknown_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    with pytest.raises(ReceiptUnderstandingError) as exc_info:
+        resolve_llm_config()
+    assert exc_info.value.code == "server_misconfigured"
+    assert "unknown LLM_PROVIDER" in exc_info.value.detail
 
 
 # ---------------------------------------------------------------------------

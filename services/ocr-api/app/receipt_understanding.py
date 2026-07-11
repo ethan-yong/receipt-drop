@@ -6,10 +6,11 @@ the time it reaches the client — `enrich-transaction` only calls this
 directly (via `POST /understand`) as a fallback for rows that reached it
 without a usable precomputed understanding.
 
-Calls a self-hosted OpenAI-compatible gateway (LiteLLM/vLLM), same one probed
-by scripts/inspect_llm_endpoint.py — VLLM_BASE_URL/VLLM_API_KEY/
-VLLM_MODEL_NAME/VLLM_REASONING_EFFORT, read from the root .env via
-app/__main__.py's _load_root_dotenv().
+Calls an OpenAI-compatible chat endpoint — either the self-hosted
+LiteLLM/vLLM gateway (`LLM_PROVIDER=vllm`, the default) or DeepSeek
+(`LLM_PROVIDER=deepseek`). Same vars probed by
+scripts/inspect_llm_endpoint.py; read from the root .env via
+app/__main__.py's _load_root_dotenv(). Flip `LLM_PROVIDER` to switch.
 
 Field/vocabulary definitions here (VENDOR_CATEGORIES, ALLOWED_PLACE_TYPES,
 the system prompt) must stay in sync with
@@ -27,6 +28,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 
 import httpx
 from pydantic import BaseModel
@@ -409,6 +411,70 @@ def _build_messages(ocr_text: str) -> list[dict[str, str]]:
     ]
 
 
+# Flip via root `.env` `LLM_PROVIDER=vllm|deepseek`. Keep both provider
+# blocks filled in so switching is a one-line change + ocr-api restart.
+_DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
+
+
+@dataclass(frozen=True)
+class LlmEndpointConfig:
+    provider: str
+    base_url: str
+    model_name: str
+    api_key: str | None
+    reasoning_effort: str | None
+
+
+def resolve_llm_config() -> LlmEndpointConfig:
+    """Pick active LLM endpoint from `LLM_PROVIDER` + the matching env block.
+
+    Raises [ReceiptUnderstandingError] with code `server_misconfigured` when
+    the active provider's required vars are missing, or the provider name is
+    unknown.
+    """
+    provider = (os.environ.get("LLM_PROVIDER") or "vllm").strip().lower()
+    if provider in ("vllm", "litellm", "local"):
+        provider = "vllm"
+        base_url = os.environ.get("VLLM_BASE_URL", "").strip()
+        model_name = os.environ.get("VLLM_MODEL_NAME", "").strip()
+        api_key = os.environ.get("VLLM_API_KEY", "").strip() or None
+        reasoning_effort = (
+            os.environ.get("VLLM_REASONING_EFFORT", "").strip() or None
+        )
+        missing_hint = "VLLM_BASE_URL/VLLM_MODEL_NAME not set"
+    elif provider == "deepseek":
+        base_url = (
+            os.environ.get("DEEPSEEK_BASE_URL", "").strip()
+            or _DEFAULT_DEEPSEEK_BASE_URL
+        )
+        model_name = os.environ.get("DEEPSEEK_MODEL_NAME", "").strip()
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip() or None
+        # DeepSeek has no reasoning_effort param (use deepseek-reasoner model
+        # instead); ignore VLLM_REASONING_EFFORT so a leftover value doesn't
+        # get sent to an API that rejects unknown fields.
+        reasoning_effort = None
+        missing_hint = "DEEPSEEK_MODEL_NAME not set (and DEEPSEEK_API_KEY recommended)"
+    else:
+        raise ReceiptUnderstandingError(
+            "server_misconfigured",
+            f"unknown LLM_PROVIDER={provider!r} (expected vllm or deepseek)",
+        )
+
+    if not base_url or not model_name:
+        raise ReceiptUnderstandingError(
+            "server_misconfigured",
+            f"LLM_PROVIDER={provider}: {missing_hint}",
+        )
+
+    return LlmEndpointConfig(
+        provider=provider,
+        base_url=base_url,
+        model_name=model_name,
+        api_key=api_key,
+        reasoning_effort=reasoning_effort,
+    )
+
+
 async def call_receipt_understanding(
     ocr_text: str, *, http_client: httpx.AsyncClient
 ) -> ReceiptUnderstandingResponse:
@@ -417,39 +483,33 @@ async def call_receipt_understanding(
     fallback on HTTP 400 — every other failure propagates immediately so the
     caller (enrich-transaction) fails the enrichment rather than falling
     back to weaker heuristics."""
-    base_url = os.environ.get("VLLM_BASE_URL", "").strip()
-    model_name = os.environ.get("VLLM_MODEL_NAME", "").strip()
-    api_key = os.environ.get("VLLM_API_KEY", "").strip() or None
-    reasoning_effort = os.environ.get("VLLM_REASONING_EFFORT", "").strip() or None
+    cfg = resolve_llm_config()
 
-    if not base_url or not model_name:
-        raise ReceiptUnderstandingError(
-            "server_misconfigured",
-            "VLLM_BASE_URL/VLLM_MODEL_NAME not set",
-        )
-
-    url = _chat_completions_url(base_url)
+    url = _chat_completions_url(cfg.base_url)
     headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
+    if cfg.api_key:
+        headers["Authorization"] = f"Bearer {cfg.api_key}"
     messages = _build_messages(ocr_text)
 
     def _body(with_response_format: bool) -> dict[str, object]:
         body: dict[str, object] = {
-            "model": model_name,
+            "model": cfg.model_name,
             "messages": messages,
             "temperature": 0,
             "max_tokens": LLM_MAX_TOKENS,
         }
         if with_response_format:
             body["response_format"] = {"type": "json_object"}
-        if reasoning_effort:
-            body["reasoning_effort"] = reasoning_effort
+        if cfg.reasoning_effort:
+            body["reasoning_effort"] = cfg.reasoning_effort
         return body
 
     start = time.perf_counter()
     logger.info(
-        "calling LLM gateway model=%s ocrTextChars=%d", model_name, len(ocr_text)
+        "calling LLM gateway provider=%s model=%s ocrTextChars=%d",
+        cfg.provider,
+        cfg.model_name,
+        len(ocr_text),
     )
     try:
         resp = await http_client.post(
@@ -493,7 +553,7 @@ async def call_receipt_understanding(
     try:
         payload = resp.json()
         content = payload["choices"][0]["message"]["content"]
-        model_used = payload.get("model", model_name)
+        model_used = payload.get("model", cfg.model_name)
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         logger.error("LLM gateway returned an unexpected response shape: %s", exc)
         raise ReceiptUnderstandingError("llm_invalid_response_json", str(exc)) from exc
