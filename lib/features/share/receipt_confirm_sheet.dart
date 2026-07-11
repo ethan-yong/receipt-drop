@@ -91,8 +91,19 @@ class ReceiptConfirmSheet extends StatefulWidget {
   State<ReceiptConfirmSheet> createState() => _ReceiptConfirmSheetState();
 }
 
+/// Cap on the internal items scroll box (~5.5 rows), so vendor / category /
+/// amount / impact and the pinned Save button stay on screen no matter how
+/// many line items a receipt has.
+const _itemsMaxHeight = 215.0;
+
+/// Estimated per-row height (row ~24px + 14px separator) used to decide
+/// whether the items list can overflow [_itemsMaxHeight] and therefore
+/// whether the scrollbar thumb should be shown at all.
+const _itemRowExtentEstimate = 38.0;
+
 class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   late final List<ReceiptLineItem> _items;
+  final ScrollController _itemsScrollController = ScrollController();
   late final List<bool> _checked;
   late List<double> _prices;
   late String _vendorName;
@@ -142,6 +153,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   @override
   void dispose() {
     _undoTimer?.cancel();
+    _itemsScrollController.dispose();
     _vendorController.dispose();
     _vendorFocus.dispose();
     _priceController.dispose();
@@ -487,19 +499,37 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           const SizedBox(height: 18),
           const _DashedDivider(),
           const SizedBox(height: 14),
-          for (var i = 0; i < _items.length; i++) ...[
-            if (i > 0) const SizedBox(height: 14),
-            _ItemRow(
-              item: _items[i],
-              price: _prices[i],
-              checked: _checked[i],
-              editing: _editingPriceIndex == i,
-              priceController: _priceController,
-              priceFocus: _priceFocus,
-              onToggle: () => _toggleItem(i),
-              onEditPrice: () => _startPriceEdit(i),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: _itemsMaxHeight),
+            child: RawScrollbar(
+              controller: _itemsScrollController,
+              thumbVisibility:
+                  _items.length * _itemRowExtentEstimate - 14 >
+                      _itemsMaxHeight,
+              thickness: 3,
+              radius: const Radius.circular(3),
+              thumbColor: ReceiptSheetColors.subLight,
+              child: ListView.separated(
+                controller: _itemsScrollController,
+                shrinkWrap: true,
+                physics: const ClampingScrollPhysics(),
+                // Right gutter keeps the scrollbar clear of the prices.
+                padding: const EdgeInsets.only(right: 12),
+                itemCount: _items.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 14),
+                itemBuilder: (context, i) => _ItemRow(
+                  item: _items[i],
+                  price: _prices[i],
+                  checked: _checked[i],
+                  editing: _editingPriceIndex == i,
+                  priceController: _priceController,
+                  priceFocus: _priceFocus,
+                  onToggle: () => _toggleItem(i),
+                  onEditPrice: () => _startPriceEdit(i),
+                ),
+              ),
             ),
-          ],
+          ),
         ],
         if (_lowConfidence) ...[
           const SizedBox(height: 14),
