@@ -163,8 +163,12 @@ def test_line_items_parsed_and_coerced() -> None:
             {"name": "Bread", "price": "3.20", "quantity": None},
             {"name": "Eggs", "price": None, "quantity": 2},
         ],
-        "confidence": {"merchant": 0.9, "address": 0.1, "category": 0.9,
-                        "line_items": 0.8},
+        "confidence": {
+            "merchant": 0.9,
+            "address": 0.1,
+            "category": 0.9,
+            "line_items": 0.8,
+        },
     }
     u = parse_receipt_understanding(json.dumps(payload))
     assert u is not None
@@ -211,9 +215,7 @@ def test_line_items_capped_at_max() -> None:
         "location_clues": [],
         "vendor_category": "groceries",
         "google_place_types": [],
-        "line_items": [
-            {"name": f"Item {i}", "price": 1.0} for i in range(60)
-        ],
+        "line_items": [{"name": f"Item {i}", "price": 1.0} for i in range(60)],
         "confidence": {},
     }
     u = parse_receipt_understanding(json.dumps(payload))

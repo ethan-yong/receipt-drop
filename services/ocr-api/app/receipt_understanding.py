@@ -187,16 +187,16 @@ SYSTEM_PROMPT = (
     "hair_salon, gym.\n\n"
     '"line_items" (array of objects, one per distinct purchased item): '
     "reconstruct every legible item row, correcting obvious OCR damage "
-    "(merged \"RM\"+digits, a comma misread for a decimal point, "
+    '(merged "RM"+digits, a comma misread for a decimal point, '
     "dropped/swapped letters in the item name). Transcribe each price's "
     "digits exactly as printed — never invent or merge digits from a "
     "neighboring line; a single item's price must not exceed the "
-    "receipt's total. Each object has \"name\" (string — the item "
-    "description, cleaned up), \"price\" (number or null — the row's "
+    'receipt\'s total. Each object has "name" (string — the item '
+    'description, cleaned up), "price" (number or null — the row\'s '
     "printed line total in MYR, never a unit price, no currency "
-    "prefix), and \"quantity\" (number or null — read from a leading "
-    "count column printed before the item name, e.g. \"3 Teh O Limau "
-    "Ais\" -> quantity 3, or a trailing multiplier like \"2 x\"; null "
+    'prefix), and "quantity" (number or null — read from a leading '
+    'count column printed before the item name, e.g. "3 Teh O Limau '
+    'Ais" -> quantity 3, or a trailing multiplier like "2 x"; null '
     "when no quantity is printed, not when the count is 1). Skip "
     "summary rows (subtotal, tax, service charge, rounding, change, "
     "cash/card tendered). Empty array if no item rows are legible.\n\n"
@@ -438,9 +438,7 @@ def resolve_llm_config() -> LlmEndpointConfig:
         base_url = os.environ.get("VLLM_BASE_URL", "").strip()
         model_name = os.environ.get("VLLM_MODEL_NAME", "").strip()
         api_key = os.environ.get("VLLM_API_KEY", "").strip() or None
-        reasoning_effort = (
-            os.environ.get("VLLM_REASONING_EFFORT", "").strip() or None
-        )
+        reasoning_effort = os.environ.get("VLLM_REASONING_EFFORT", "").strip() or None
         missing_hint = "VLLM_BASE_URL/VLLM_MODEL_NAME not set"
     elif provider == "deepseek":
         base_url = (
