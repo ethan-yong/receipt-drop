@@ -21,39 +21,68 @@ class AppDatabase extends _$AppDatabase {
   /// In-memory database for widget/unit tests (no path_provider).
   AppDatabase.memory() : super(NativeDatabase.memory());
 
+  /// File-backed database for tests that need to close and reopen the same
+  /// file (e.g. exercising migration retries after a partial upgrade).
+  AppDatabase.forTesting(super.executor);
+
   @override
   int get schemaVersion => 7;
+
+  /// True when [column] already exists on [table] (SQLite `PRAGMA table_info`).
+  ///
+  /// Used so `ADD COLUMN` migrations stay idempotent: SQLite applies DDL even
+  /// when a later step fails before Drift bumps `user_version`, so a retry
+  /// would otherwise hit "duplicate column name".
+  Future<bool> _hasColumn(TableInfo table, GeneratedColumn column) async {
+    final rows = await customSelect(
+      'PRAGMA table_info(${table.actualTableName})',
+    ).get();
+    return rows.any((row) => row.read<String>('name') == column.name);
+  }
+
+  Future<void> _addColumnIfAbsent(
+    Migrator m,
+    TableInfo table,
+    GeneratedColumn column,
+  ) async {
+    if (!await _hasColumn(table, column)) {
+      await m.addColumn(table, column);
+    }
+  }
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (Migrator m, int from, int to) async {
           if (from < 2) {
-            await m.addColumn(outboxTransactions, outboxTransactions.impactUser);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.impactUser);
           }
           if (from < 3) {
-            await m.addColumn(outboxTransactions, outboxTransactions.ritualledAt);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.ritualledAt);
           }
           if (from < 4) {
             await m.createTable(outboxLineItems);
           }
           if (from < 5) {
-            await m.addColumn(outboxTransactions, outboxTransactions.rawOcrText);
-            await m.addColumn(
-                outboxTransactions, outboxTransactions.ocrServiceConfidence);
-            await m.addColumn(
-                outboxTransactions, outboxTransactions.lineItemsConfidence);
-            await m.addColumn(
-                outboxTransactions, outboxTransactions.parseFailureReason);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.rawOcrText);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.ocrServiceConfidence);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.lineItemsConfidence);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.parseFailureReason);
           }
           if (from < 6) {
-            await m.addColumn(
-                outboxTransactions, outboxTransactions.merchantCandidatesJson);
-            await m.addColumn(
-                outboxTransactions, outboxTransactions.ocrHeaderText);
+            await _addColumnIfAbsent(m, outboxTransactions,
+                outboxTransactions.merchantCandidatesJson);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.ocrHeaderText);
           }
           if (from < 7) {
-            await m.addColumn(
-                outboxTransactions, outboxTransactions.llmUnderstandingJson);
+            await _addColumnIfAbsent(m, outboxTransactions,
+                outboxTransactions.llmUnderstandingJson);
           }
         },
         // sqlite disables FK enforcement by default; needed for cascade

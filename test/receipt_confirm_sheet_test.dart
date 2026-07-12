@@ -457,4 +457,81 @@ void main() {
 
     expect(find.text('Save for later'), findsNothing);
   });
+
+  group('items scroll section', () {
+    List<ReceiptLineItem> manyItems(int n) => [
+          for (var i = 0; i < n; i++)
+            ReceiptLineItem(name: 'Line Item $i', priceMyr: 1.0 + i),
+        ];
+
+    // The default 800x600 test surface is landscape and clips the sheet.
+    // Portrait, oversized to absorb the Ahem test font being wider/taller
+    // than the real one, so the whole sheet body fits like on device.
+    Future<void> usePhoneViewport(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(500, 1100);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
+
+    testWidgets(
+        'many items scroll internally while header and Save stay visible',
+        (tester) async {
+      await usePhoneViewport(tester);
+      await _openSheet(tester, _draft(lineItems: manyItems(15)), (_) {});
+
+      expect(tester.takeException(), isNull);
+
+      // Header and pinned actions visible without any scrolling.
+      expect(find.text('Sf Cafe'), findsOneWidget);
+      expect(find.text('Impact'), findsOneWidget);
+      expect(find.text('Save'), findsOneWidget);
+      expect(find.byType(RawScrollbar), findsOneWidget);
+
+      // Tail items only appear after scrolling the internal list.
+      expect(find.text('Line Item 14'), findsNothing);
+      await tester.drag(find.byType(ListView), const Offset(0, -600));
+      await tester.pump();
+      expect(find.text('Line Item 14'), findsOneWidget);
+
+      // Header did not scroll away with the items.
+      expect(find.text('Sf Cafe'), findsOneWidget);
+      expect(find.text('Impact'), findsOneWidget);
+    });
+
+    testWidgets('toggling and price-editing work on rows inside the scroller',
+        (tester) async {
+      await usePhoneViewport(tester);
+      await _openSheet(tester, _draft(lineItems: manyItems(15)), (_) {});
+
+      await tester.drag(find.byType(ListView), const Offset(0, -600));
+      await tester.pump();
+
+      await tester.tap(find.text('Line Item 14'));
+      await tester.pump();
+      expect(find.text('14 of 15 items'), findsOneWidget);
+      expect(find.text('Line Item 14 excluded'), findsOneWidget);
+
+      await tester.tap(find.text('RM 14.00')); // Line Item 13's price
+      await tester.pump();
+      expect(find.byType(TextField), findsOneWidget);
+      await tester.enterText(find.byType(TextField), '20.00');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text('RM 20.00'), findsOneWidget);
+    });
+
+    testWidgets('a short list takes only its natural height and hides the '
+        'scrollbar thumb', (tester) async {
+      await _openSheet(tester, _draft(), (_) {}); // 3 items
+
+      final scrollbar =
+          tester.widget<RawScrollbar>(find.byType(RawScrollbar));
+      expect(scrollbar.thumbVisibility, isFalse);
+
+      // All items visible with no internal scrolling.
+      expect(find.text('Rsb Biasa'), findsOneWidget);
+      expect(find.text('Milo Ais Bungkus'), findsOneWidget);
+    });
+  });
 }
