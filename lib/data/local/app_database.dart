@@ -13,6 +13,7 @@ part 'app_database.g.dart';
     OutboxArtifacts,
     OutboxLineItems,
     CategoryConfigCache,
+    PendingImports,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -26,7 +27,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   /// True when [column] already exists on [table] (SQLite `PRAGMA table_info`).
   ///
@@ -83,6 +84,9 @@ class AppDatabase extends _$AppDatabase {
           if (from < 7) {
             await _addColumnIfAbsent(m, outboxTransactions,
                 outboxTransactions.llmUnderstandingJson);
+          }
+          if (from < 8) {
+            await m.createTable(pendingImports);
           }
         },
         // sqlite disables FK enforcement by default; needed for cascade

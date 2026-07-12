@@ -3408,6 +3408,470 @@ class CategoryConfigCacheCompanion
   }
 }
 
+class $PendingImportsTable extends PendingImports
+    with TableInfo<$PendingImportsTable, PendingImport> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PendingImportsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _localFilePathMeta = const VerificationMeta(
+    'localFilePath',
+  );
+  @override
+  late final GeneratedColumn<String> localFilePath = GeneratedColumn<String>(
+    'local_file_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mimeTypeMeta = const VerificationMeta(
+    'mimeType',
+  );
+  @override
+  late final GeneratedColumn<String> mimeType = GeneratedColumn<String>(
+    'mime_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceAppMeta = const VerificationMeta(
+    'sourceApp',
+  );
+  @override
+  late final GeneratedColumn<String> sourceApp = GeneratedColumn<String>(
+    'source_app',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('local'),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    localFilePath,
+    mimeType,
+    sourceApp,
+    status,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pending_imports';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PendingImport> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('local_file_path')) {
+      context.handle(
+        _localFilePathMeta,
+        localFilePath.isAcceptableOrUnknown(
+          data['local_file_path']!,
+          _localFilePathMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_localFilePathMeta);
+    }
+    if (data.containsKey('mime_type')) {
+      context.handle(
+        _mimeTypeMeta,
+        mimeType.isAcceptableOrUnknown(data['mime_type']!, _mimeTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mimeTypeMeta);
+    }
+    if (data.containsKey('source_app')) {
+      context.handle(
+        _sourceAppMeta,
+        sourceApp.isAcceptableOrUnknown(data['source_app']!, _sourceAppMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PendingImport map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PendingImport(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      localFilePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_file_path'],
+      )!,
+      mimeType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mime_type'],
+      )!,
+      sourceApp: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_app'],
+      ),
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $PendingImportsTable createAlias(String alias) {
+    return $PendingImportsTable(attachedDatabase, alias);
+  }
+}
+
+class PendingImport extends DataClass implements Insertable<PendingImport> {
+  final String id;
+  final String userId;
+  final String localFilePath;
+  final String mimeType;
+  final String? sourceApp;
+
+  /// 'local' | 'processing' | 'failed'
+  final String status;
+  final DateTime createdAt;
+  const PendingImport({
+    required this.id,
+    required this.userId,
+    required this.localFilePath,
+    required this.mimeType,
+    this.sourceApp,
+    required this.status,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['local_file_path'] = Variable<String>(localFilePath);
+    map['mime_type'] = Variable<String>(mimeType);
+    if (!nullToAbsent || sourceApp != null) {
+      map['source_app'] = Variable<String>(sourceApp);
+    }
+    map['status'] = Variable<String>(status);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  PendingImportsCompanion toCompanion(bool nullToAbsent) {
+    return PendingImportsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      localFilePath: Value(localFilePath),
+      mimeType: Value(mimeType),
+      sourceApp: sourceApp == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceApp),
+      status: Value(status),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory PendingImport.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PendingImport(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      localFilePath: serializer.fromJson<String>(json['localFilePath']),
+      mimeType: serializer.fromJson<String>(json['mimeType']),
+      sourceApp: serializer.fromJson<String?>(json['sourceApp']),
+      status: serializer.fromJson<String>(json['status']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'localFilePath': serializer.toJson<String>(localFilePath),
+      'mimeType': serializer.toJson<String>(mimeType),
+      'sourceApp': serializer.toJson<String?>(sourceApp),
+      'status': serializer.toJson<String>(status),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  PendingImport copyWith({
+    String? id,
+    String? userId,
+    String? localFilePath,
+    String? mimeType,
+    Value<String?> sourceApp = const Value.absent(),
+    String? status,
+    DateTime? createdAt,
+  }) => PendingImport(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    localFilePath: localFilePath ?? this.localFilePath,
+    mimeType: mimeType ?? this.mimeType,
+    sourceApp: sourceApp.present ? sourceApp.value : this.sourceApp,
+    status: status ?? this.status,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  PendingImport copyWithCompanion(PendingImportsCompanion data) {
+    return PendingImport(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      localFilePath: data.localFilePath.present
+          ? data.localFilePath.value
+          : this.localFilePath,
+      mimeType: data.mimeType.present ? data.mimeType.value : this.mimeType,
+      sourceApp: data.sourceApp.present ? data.sourceApp.value : this.sourceApp,
+      status: data.status.present ? data.status.value : this.status,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingImport(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('localFilePath: $localFilePath, ')
+          ..write('mimeType: $mimeType, ')
+          ..write('sourceApp: $sourceApp, ')
+          ..write('status: $status, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    localFilePath,
+    mimeType,
+    sourceApp,
+    status,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PendingImport &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.localFilePath == this.localFilePath &&
+          other.mimeType == this.mimeType &&
+          other.sourceApp == this.sourceApp &&
+          other.status == this.status &&
+          other.createdAt == this.createdAt);
+}
+
+class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<String> localFilePath;
+  final Value<String> mimeType;
+  final Value<String?> sourceApp;
+  final Value<String> status;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const PendingImportsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.localFilePath = const Value.absent(),
+    this.mimeType = const Value.absent(),
+    this.sourceApp = const Value.absent(),
+    this.status = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PendingImportsCompanion.insert({
+    required String id,
+    required String userId,
+    required String localFilePath,
+    required String mimeType,
+    this.sourceApp = const Value.absent(),
+    this.status = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       localFilePath = Value(localFilePath),
+       mimeType = Value(mimeType);
+  static Insertable<PendingImport> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<String>? localFilePath,
+    Expression<String>? mimeType,
+    Expression<String>? sourceApp,
+    Expression<String>? status,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (localFilePath != null) 'local_file_path': localFilePath,
+      if (mimeType != null) 'mime_type': mimeType,
+      if (sourceApp != null) 'source_app': sourceApp,
+      if (status != null) 'status': status,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PendingImportsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<String>? localFilePath,
+    Value<String>? mimeType,
+    Value<String?>? sourceApp,
+    Value<String>? status,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return PendingImportsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      localFilePath: localFilePath ?? this.localFilePath,
+      mimeType: mimeType ?? this.mimeType,
+      sourceApp: sourceApp ?? this.sourceApp,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (localFilePath.present) {
+      map['local_file_path'] = Variable<String>(localFilePath.value);
+    }
+    if (mimeType.present) {
+      map['mime_type'] = Variable<String>(mimeType.value);
+    }
+    if (sourceApp.present) {
+      map['source_app'] = Variable<String>(sourceApp.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingImportsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('localFilePath: $localFilePath, ')
+          ..write('mimeType: $mimeType, ')
+          ..write('sourceApp: $sourceApp, ')
+          ..write('status: $status, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3421,6 +3885,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $CategoryConfigCacheTable categoryConfigCache =
       $CategoryConfigCacheTable(this);
+  late final $PendingImportsTable pendingImports = $PendingImportsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3430,6 +3895,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     outboxArtifacts,
     outboxLineItems,
     categoryConfigCache,
+    pendingImports,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -5475,6 +5941,248 @@ typedef $$CategoryConfigCacheTableProcessedTableManager =
       CategoryConfigCacheRow,
       PrefetchHooks Function()
     >;
+typedef $$PendingImportsTableCreateCompanionBuilder =
+    PendingImportsCompanion Function({
+      required String id,
+      required String userId,
+      required String localFilePath,
+      required String mimeType,
+      Value<String?> sourceApp,
+      Value<String> status,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+typedef $$PendingImportsTableUpdateCompanionBuilder =
+    PendingImportsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<String> localFilePath,
+      Value<String> mimeType,
+      Value<String?> sourceApp,
+      Value<String> status,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$PendingImportsTableFilterComposer
+    extends Composer<_$AppDatabase, $PendingImportsTable> {
+  $$PendingImportsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localFilePath => $composableBuilder(
+    column: $table.localFilePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mimeType => $composableBuilder(
+    column: $table.mimeType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceApp => $composableBuilder(
+    column: $table.sourceApp,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PendingImportsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PendingImportsTable> {
+  $$PendingImportsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localFilePath => $composableBuilder(
+    column: $table.localFilePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mimeType => $composableBuilder(
+    column: $table.mimeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceApp => $composableBuilder(
+    column: $table.sourceApp,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PendingImportsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PendingImportsTable> {
+  $$PendingImportsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get localFilePath => $composableBuilder(
+    column: $table.localFilePath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get mimeType =>
+      $composableBuilder(column: $table.mimeType, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceApp =>
+      $composableBuilder(column: $table.sourceApp, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$PendingImportsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PendingImportsTable,
+          PendingImport,
+          $$PendingImportsTableFilterComposer,
+          $$PendingImportsTableOrderingComposer,
+          $$PendingImportsTableAnnotationComposer,
+          $$PendingImportsTableCreateCompanionBuilder,
+          $$PendingImportsTableUpdateCompanionBuilder,
+          (
+            PendingImport,
+            BaseReferences<_$AppDatabase, $PendingImportsTable, PendingImport>,
+          ),
+          PendingImport,
+          PrefetchHooks Function()
+        > {
+  $$PendingImportsTableTableManager(
+    _$AppDatabase db,
+    $PendingImportsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PendingImportsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PendingImportsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PendingImportsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> localFilePath = const Value.absent(),
+                Value<String> mimeType = const Value.absent(),
+                Value<String?> sourceApp = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingImportsCompanion(
+                id: id,
+                userId: userId,
+                localFilePath: localFilePath,
+                mimeType: mimeType,
+                sourceApp: sourceApp,
+                status: status,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required String localFilePath,
+                required String mimeType,
+                Value<String?> sourceApp = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingImportsCompanion.insert(
+                id: id,
+                userId: userId,
+                localFilePath: localFilePath,
+                mimeType: mimeType,
+                sourceApp: sourceApp,
+                status: status,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PendingImportsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PendingImportsTable,
+      PendingImport,
+      $$PendingImportsTableFilterComposer,
+      $$PendingImportsTableOrderingComposer,
+      $$PendingImportsTableAnnotationComposer,
+      $$PendingImportsTableCreateCompanionBuilder,
+      $$PendingImportsTableUpdateCompanionBuilder,
+      (
+        PendingImport,
+        BaseReferences<_$AppDatabase, $PendingImportsTable, PendingImport>,
+      ),
+      PendingImport,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -5487,4 +6195,6 @@ class $AppDatabaseManager {
       $$OutboxLineItemsTableTableManager(_db, _db.outboxLineItems);
   $$CategoryConfigCacheTableTableManager get categoryConfigCache =>
       $$CategoryConfigCacheTableTableManager(_db, _db.categoryConfigCache);
+  $$PendingImportsTableTableManager get pendingImports =>
+      $$PendingImportsTableTableManager(_db, _db.pendingImports);
 }

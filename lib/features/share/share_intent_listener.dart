@@ -4,8 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
+import '../../core/platform/platform_feedback.dart';
 import '../../core/routing/app_router.dart';
-import 'receipt_capture_flow.dart';
+import '../pending_imports/pending_import_service.dart';
 
 /// Listens for OS share intents and routes them through the ingest pipeline.
 class ShareIntentListener extends StatefulWidget {
@@ -61,11 +62,18 @@ class _ShareIntentListenerState extends State<ShareIntentListener> {
     final context = rootNavigatorKey.currentContext;
     if (context == null || !context.mounted) return;
 
-    await ReceiptCaptureFlow.ingestSharedPath(
-      context,
+    await PendingImportService.saveSharedReceipt(
       path: file.path,
       mimeType: file.mimeType ?? _guessMimeType(file.path),
     );
+
+    if (context.mounted) {
+      PlatformFeedback.showMessage(
+        context,
+        'Receipt saved — open Receipt Drop to review',
+      );
+    }
+
     await ReceiveSharingIntent.instance.reset();
   }
 

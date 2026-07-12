@@ -6,20 +6,27 @@ For durable architecture/schema/API facts, see `docs/`. This file is for state t
 
 Receipt Drop: Malaysian users share receipt images/PDFs via the OS share sheet; the app OCRs them (self-hosted Tesseract), extracts amount/merchant/category/line-items, saves instantly to a local outbox, and syncs to Supabase in the background. Layered on top: gamification (avatar, badges, streaks), a spend map with friend pins, a friends feed, and a friends+global leaderboard. See `docs/architecture.md` for the full data-flow diagram.
 
-## Current development focus (branch: `feat/ethanyong/20260702134010/receipt-finetuning`)
+## Current development focus (branch: `feat/ethanyong/20260712121831/receipt-share-feat`)
 
-Recent commits (newest first) show active work tightening the receipt-parsing/review pipeline and the map:
-- Handheld/thermal receipt parsing improvements + showing line items on the receipt card (`f2b366b`).
-- OCR API startup hardening — refuses to start if the port is already in use (`90e26b0`).
-- Routing OCR exclusively through the API (dropped remaining on-device paths) + parser improvements (`527a5bb`).
-- Mobile OAuth callback + sign-in polish (`8b65379`).
-- Map rebuilt on `flutter_map`/CARTO after Google Maps SDK never had a billing key (`ac17253`, `428ea10`).
+The share intent flow (OS share sheet → Receipt Drop) has been reworked from **immediate OCR** to an **inbox / pending-import pattern**:
 
-**Uncommitted working-tree changes at last check (2026-07-09)** — receipt-flow design handoff implementation:
-- New `lib/features/share/receipt_confirm_sheet.dart` replaces the deleted `receipt_summary_card.dart` (editable post-OCR confirmation: item exclude with live total + undo, inline vendor rename; `show()` returns an edited `ReceiptIngestDraft?` instead of a bool).
-- `lib/features/places/place_picker_screen.dart` restyled per the handoff (full-bleed map, 300 m ring, in-sheet search mode); `push()` contract unchanged.
-- New `lib/core/theme/receipt_sheet_theme.dart` + `lib/widgets/receipt_sheet_widgets.dart` (Baloo 2 / cream-gold tokens, sheet primitives); `AdaptiveSheet.showForm` gained optional styling params.
-- Design bundle checked in at `docs/design/design_handoff_receipt_flows/`. ADR in `docs/decisions.md` (2026-07-09 entry).
+- Sharing a receipt from any app saves it locally first (no OCR, no blocking spinner). The user sees a "Receipt saved — open Receipt Drop to review" toast and returns to their previous app.
+- A home-screen banner ("N receipts waiting") links to a new `PendingImportsScreen` where the user explicitly taps **Process** (or **Retry** on failure) to trigger OCR.
+- The existing Camera/Gallery → OCR → Confirm → Save capture flow is **unchanged**.
+- Drift is the immediate source of truth; Supabase `pending_receipts` syncs asynchronously, best-effort.
+
+**Key new files (2026-07-12):**
+- `supabase/migrations/20260712000000_pending_receipts.sql` — new Supabase table
+- `lib/data/local/tables.dart` — `PendingImports` Drift table (schema v8)
+- `lib/data/local/app_database.dart` — bumped `schemaVersion` 7→8, added v8 migration branch
+- `lib/domain/models/pending_import_model.dart` — pure Dart model (web-safe, no Drift dependency)
+- `lib/data/repositories/pending_imports_repository.dart` — Drift + Supabase repo
+- `lib/features/pending_imports/pending_import_service.dart` + `_io.dart` + `_web.dart`
+- `lib/features/pending_imports/pending_imports_screen.dart`
+- `lib/core/bootstrap/app_services_io.dart` + `app_services_web.dart` — extended with `pendingImports`
+- `lib/features/share/share_intent_listener.dart` — now calls `PendingImportService.saveSharedReceipt()` instead of launching OCR directly
+- `lib/features/home/home_screen.dart` — `_PendingImportsBanner` + stream
+- `lib/core/routing/app_router.dart` — `/pending-imports` route
 
 If you're picking this up cold: check `git status`/`git diff` again before assuming this description is still current.
 
