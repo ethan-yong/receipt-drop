@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../../domain/logic/bank_receipt_parser.dart';
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/merchant_extractor.dart';
@@ -187,6 +188,34 @@ ReceiptParseResult parseReceiptOcrText({
   ReceiptUnderstanding? understanding,
   String? understandingError,
 }) {
+  // Fast path: known bank/wallet providers have templated, labeled-field output
+  // that regex can read reliably. Skip heuristics and LLM entirely.
+  final bankParse = tryParseBankReceipt(ocrText);
+  if (bankParse != null) {
+    return ReceiptParseResult(
+      filePath: filePath,
+      ocrText: ocrText,
+      amountMyr: bankParse.amountMyr,
+      needsAmount: false,
+      ocrConfidence: 0.92,
+      merchantRaw: bankParse.merchantRaw,
+      categoryGuess: bankParse.category,
+      categoryConfidence: 0.90,
+      impactLevel: deriveImpactLevel(bankParse.amountMyr).storageValue,
+      amountSource: AmountParseSource.rmPrefixed.name,
+      merchantCandidates: [
+        MerchantCandidate(
+          text: bankParse.merchantRaw,
+          confidence: 0.92,
+          source: 'bankParser',
+        ),
+      ],
+      // No line items — bank screenshots never have itemized lists.
+      // ocrHeaderText: null — not a physical merchant; skip Places enrichment.
+      // understanding/understandingError: null — LLM bypassed by design.
+    );
+  }
+
   // The heuristic pass always runs first: its line-item subtotal feeds the
   // amount-parsing cross-check below regardless of the LLM's own extraction,
   // and it's the fallback whenever the LLM found nothing or failed outright.
