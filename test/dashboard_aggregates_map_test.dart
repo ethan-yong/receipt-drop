@@ -88,4 +88,146 @@ void main() {
       expect(cats, ['All categories', 'Unclassified']);
     });
   });
+
+  group('mapClusters', () {
+    test('computes dominantCategory once per place, highest spend wins', () {
+      final clusters = mapClusters([
+        _tx(id: 'a', amount: 100, lat: 3.1390, lng: 101.6869, category: 'Food'),
+        _tx(id: 'b', amount: 10, lat: 3.1390, lng: 101.6869, category: 'Transport'),
+      ]);
+      expect(clusters, hasLength(1));
+      expect(clusters.single.dominantCategory, 'Food');
+    });
+  });
+
+  group('bucketClusters', () {
+    // a/b share a geohash-8 place cell (w283cgqn); c is a different place
+    // cell (w283cgwg) but all three share the same geohash-5 bucket
+    // (w283c), verified directly against geohashAt.
+    test('counts receipts and distinct places per geohash bucket', () {
+      final buckets = bucketClusters([
+        _tx(id: 'a', amount: 10, lat: 3.1390, lng: 101.6869, category: 'Food'),
+        _tx(id: 'b', amount: 20, lat: 3.1391, lng: 101.6870, category: 'Food'),
+        _tx(id: 'c', amount: 5, lat: 3.1400, lng: 101.6880, category: 'Transport'),
+      ], 5);
+      expect(buckets, hasLength(1));
+      expect(buckets.single.receiptCount, 3);
+      expect(buckets.single.placeCount, 2);
+    });
+
+    test('splits into separate buckets for far-apart points', () {
+      final buckets = bucketClusters([
+        _tx(id: 'a', amount: 10, lat: 3.1390, lng: 101.6869),
+        _tx(id: 'b', amount: 10, lat: 5.4141, lng: 100.3288), // Penang
+      ], 5);
+      expect(buckets, hasLength(2));
+    });
+
+    test('dominant category is the highest-spend category in the bucket', () {
+      final buckets = bucketClusters([
+        _tx(id: 'a', amount: 100, lat: 3.1390, lng: 101.6869, category: 'Food'),
+        _tx(id: 'b', amount: 10, lat: 3.1391, lng: 101.6870, category: 'Transport'),
+      ], 5);
+      expect(buckets.single.dominantCategory, 'Food');
+    });
+
+    test('empty input yields no buckets', () {
+      expect(bucketClusters(const [], 5), isEmpty);
+    });
+  });
+
+  group('zoomBucketPrecision', () {
+    test('individual-pin precision at high zoom', () {
+      expect(zoomBucketPrecision(16), individualPinPrecision);
+      expect(zoomBucketPrecision(15), individualPinPrecision);
+    });
+
+    test('coarsens as zoom decreases', () {
+      expect(zoomBucketPrecision(13), 6);
+      expect(zoomBucketPrecision(10), 5);
+      expect(zoomBucketPrecision(7), 4);
+      expect(zoomBucketPrecision(3), 3);
+    });
+  });
+
+  group('boundsChangedMaterially', () {
+    const base = (minLat: 3.0, minLng: 101.0, maxLat: 3.2, maxLng: 101.2);
+
+    test('identical bounds are not a material change', () {
+      expect(boundsChangedMaterially(base, base), isFalse);
+    });
+
+    test('tiny settle-jitter is not a material change', () {
+      const jittered = (
+        minLat: 3.001,
+        minLng: 101.001,
+        maxLat: 3.201,
+        maxLng: 101.201,
+      );
+      expect(boundsChangedMaterially(base, jittered), isFalse);
+    });
+
+    test('panning far away is a material change', () {
+      const farAway = (
+        minLat: 8.0,
+        minLng: 106.0,
+        maxLat: 8.2,
+        maxLng: 106.2,
+      );
+      expect(boundsChangedMaterially(base, farAway), isTrue);
+    });
+
+    test('zooming out enough is a material change', () {
+      const zoomedOut = (
+        minLat: 2.0,
+        minLng: 100.0,
+        maxLat: 4.2,
+        maxLng: 102.2,
+      );
+      expect(boundsChangedMaterially(base, zoomedOut), isTrue);
+    });
+  });
+
+  group('expandBounds', () {
+    const base = (minLat: 3.0, minLng: 101.0, maxLat: 3.2, maxLng: 101.2);
+
+    test('expands span by the default 1.5x factor around the center', () {
+      final expanded = expandBounds(base);
+      expect(expanded.minLat, closeTo(2.95, 1e-9));
+      expect(expanded.maxLat, closeTo(3.25, 1e-9));
+      expect(expanded.minLng, closeTo(100.95, 1e-9));
+      expect(expanded.maxLng, closeTo(101.25, 1e-9));
+    });
+
+    test('respects a custom factor', () {
+      final expanded = expandBounds(base, factor: 2.0);
+      expect(expanded.maxLat - expanded.minLat, closeTo(0.4, 1e-9));
+      expect(expanded.maxLng - expanded.minLng, closeTo(0.4, 1e-9));
+    });
+
+    test('clamps latitude at the pole instead of exceeding 90', () {
+      const nearPole = (minLat: 89.0, minLng: 101.0, maxLat: 89.9, maxLng: 101.2);
+      final expanded = expandBounds(nearPole);
+      expect(expanded.maxLat, lessThanOrEqualTo(90.0));
+    });
+
+    test('clamps longitude at the antimeridian instead of exceeding 180', () {
+      const nearDateline = (minLat: 3.0, minLng: 179.0, maxLat: 3.2, maxLng: 179.9);
+      final expanded = expandBounds(nearDateline);
+      expect(expanded.maxLng, lessThanOrEqualTo(180.0));
+    });
+
+    test('never inverts min/max even when clamped', () {
+      const nearDateline = (minLat: 3.0, minLng: 179.5, maxLat: 3.2, maxLng: 179.9);
+      final expanded = expandBounds(nearDateline);
+      expect(expanded.minLng, lessThanOrEqualTo(expanded.maxLng));
+    });
+
+    test('degenerate zero-span box stays zero-span (no divide-by-zero)', () {
+      const point = (minLat: 3.1, minLng: 101.6, maxLat: 3.1, maxLng: 101.6);
+      final expanded = expandBounds(point);
+      expect(expanded.maxLat - expanded.minLat, 0.0);
+      expect(expanded.maxLng - expanded.minLng, 0.0);
+    });
+  });
 }

@@ -37,6 +37,45 @@ String geohashAt(double latitude, double longitude, int precision) =>
   return (lat: (latMin + latMax) / 2, lng: (lonMin + lonMax) / 2);
 }
 
+/// Bounding box of a geohash cell (sibling to [geohashCentroid], same decode
+/// loop, returning the box instead of its midpoint). Used to zoom the camera
+/// into a cluster bubble's extent on tap.
+({double latMin, double latMax, double lngMin, double lngMax}) geohashBounds(
+  String geohash,
+) {
+  const base32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+  var latMin = -90.0;
+  var latMax = 90.0;
+  var lonMin = -180.0;
+  var lonMax = 180.0;
+  var even = true;
+
+  for (final c in geohash.split('')) {
+    final cd = base32.indexOf(c);
+    if (cd < 0) continue;
+    for (var mask = 16; mask != 0; mask >>= 1) {
+      if (even) {
+        final mid = (lonMin + lonMax) / 2;
+        if ((cd & mask) != 0) {
+          lonMin = mid;
+        } else {
+          lonMax = mid;
+        }
+      } else {
+        final mid = (latMin + latMax) / 2;
+        if ((cd & mask) != 0) {
+          latMin = mid;
+        } else {
+          latMax = mid;
+        }
+      }
+      even = !even;
+    }
+  }
+
+  return (latMin: latMin, latMax: latMax, lngMin: lonMin, lngMax: lonMax);
+}
+
 /// Stable key for aggregating spend on the map (design spec §9).
 ///
 /// Prefer Google `place_id` when known; otherwise geohash precision 8 (~38m × 19m).
