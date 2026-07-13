@@ -101,14 +101,28 @@ class FriendshipView {
       status == FriendshipStatus.pending && addresseeId == myUserId;
 }
 
+class AchievementBadgeSummary {
+  const AchievementBadgeSummary({required this.badgeId, required this.tier});
+
+  final String badgeId;
+  final int tier; // 1=Bronze, 2=Silver, 3=Gold
+
+  factory AchievementBadgeSummary.fromJson(Map<String, dynamic> json) =>
+      AchievementBadgeSummary(
+        badgeId: json['badge_id'] as String,
+        tier: (json['tier'] as num).toInt(),
+      );
+}
+
 class LeaderboardEntry {
   const LeaderboardEntry({
     required this.userId,
     required this.displayName,
     required this.avatarConfigJson,
     required this.currentMood,
-    required this.badgeCount,
+    required this.badgeScore,
     required this.currentStreak,
+    required this.topBadges,
     required this.isMe,
   });
 
@@ -116,9 +130,12 @@ class LeaderboardEntry {
   final String? displayName;
   final Map<String, dynamic>? avatarConfigJson;
   final String? currentMood;
-  final int badgeCount;
+  final int badgeScore;
   final int currentStreak;
+  final List<AchievementBadgeSummary> topBadges;
   final bool isMe;
+
+  int get rankScore => currentStreak * 100 + badgeScore;
 }
 
 /// Friends/feed/reactions. Mirrors `BadgeRepository`'s shape: a thin,
@@ -392,13 +409,20 @@ class SocialRepository {
   }
 
   static LeaderboardEntry _leaderboardEntryFromRow(Map<String, dynamic> row) {
+    final rawBadges = row['top_badges'];
+    final topBadges = rawBadges is List
+        ? rawBadges
+            .map((b) => AchievementBadgeSummary.fromJson(b as Map<String, dynamic>))
+            .toList()
+        : const <AchievementBadgeSummary>[];
     return LeaderboardEntry(
       userId: row['user_id'] as String,
       displayName: row['display_name'] as String?,
       avatarConfigJson: row['avatar_config'] as Map<String, dynamic>?,
       currentMood: row['current_mood'] as String?,
-      badgeCount: (row['badge_count'] as num).toInt(),
+      badgeScore: (row['badge_score'] as num?)?.toInt() ?? 0,
       currentStreak: (row['current_streak'] as num).toInt(),
+      topBadges: topBadges,
       isMe: row['is_me'] as bool,
     );
   }
