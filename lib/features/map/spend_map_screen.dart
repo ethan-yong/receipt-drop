@@ -113,6 +113,11 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   List<GeoBucket> _lastBuckets = const [];
   LatLngBox? _lastFetchedBounds;
   int? _lastZoomBucket;
+
+  /// Bumped only when [_maybeFetchViewport] applies a genuine data refresh
+  /// (never during camera movement) — the pin-overlay `AnimatedSwitcher`
+  /// keys off this so it crossfades old/new markers instead of a hard cut.
+  int _dataVersion = 0;
   List<LatLng> _bootstrapPlacePoints = const [];
   List<LatLng>? _pendingFitPoints;
 
@@ -357,11 +362,17 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     final category =
         _categoryFilter == 'All categories' ? null : _categoryFilter;
 
+    // Fetch a padded margin beyond the visible region so a small pan
+    // afterward already has data available — but keep `_lastFetchedBounds`
+    // (below) as the raw, unpadded region: comparing padded-vs-raw bounds
+    // next time would make `boundsChangedMaterially` misread the size
+    // difference itself as camera movement and refetch on almost every idle.
+    final paddedBounds = expandBounds(bounds);
     final rows = await MapTransactionsRepository.fetchInBounds(
-      minLat: bounds.minLat,
-      minLng: bounds.minLng,
-      maxLat: bounds.maxLat,
-      maxLng: bounds.maxLng,
+      minLat: paddedBounds.minLat,
+      minLng: paddedBounds.minLng,
+      maxLat: paddedBounds.maxLat,
+      maxLng: paddedBounds.maxLng,
       startAt: start,
       endAt: end,
       category: category,
@@ -374,6 +385,10 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     _lastFetchedBounds = bounds;
     _lastZoomBucket = bucket;
     setState(() {
+      // Only bumped on a genuine data refresh (never during camera
+      // movement) — the pin-overlay AnimatedSwitcher keys off this to
+      // crossfade old/new markers instead of hard-cutting between them.
+      _dataVersion++;
       _viewportRows = rows;
       _lastClusters = bucket == individualPinPrecision ? mapClusters(rows) : const [];
       _lastBuckets =
@@ -681,10 +696,26 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                 animation: _overlayPositions,
                 builder: (context, _) => Stack(
                   children: [
-                    if (!_heatmapMode && !_bucketMode)
-                      ..._placeOverlays(_lastClusters, _overlayPositions.placePos),
-                    if (!_heatmapMode && _bucketMode)
-                      ..._bucketOverlays(_lastBuckets, _overlayPositions.bucketPos),
+                    // Keyed on `_dataVersion`, which only changes on a
+                    // genuine viewport-data refresh (never on a camera-move
+                    // frame, since this same AnimatedBuilder rebuild passes
+                    // an unchanged key then) — so old/new marker sets
+                    // crossfade instead of hard-cutting, without this
+                    // transition ever firing mid-drag.
+                    if (!_heatmapMode)
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 120),
+                        child: KeyedSubtree(
+                          key: ValueKey(_dataVersion),
+                          child: Stack(
+                            children: _bucketMode
+                                ? _bucketOverlays(
+                                    _lastBuckets, _overlayPositions.bucketPos)
+                                : _placeOverlays(
+                                    _lastClusters, _overlayPositions.placePos),
+                          ),
+                        ),
+                      ),
                     ..._friendOverlays(_overlayPositions.friendPos),
                     ?_myLocationOverlay(all, _overlayPositions.mePos),
                   ],

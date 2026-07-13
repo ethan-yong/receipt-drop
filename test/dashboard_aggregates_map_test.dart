@@ -187,4 +187,47 @@ void main() {
       expect(boundsChangedMaterially(base, zoomedOut), isTrue);
     });
   });
+
+  group('expandBounds', () {
+    const base = (minLat: 3.0, minLng: 101.0, maxLat: 3.2, maxLng: 101.2);
+
+    test('expands span by the default 1.5x factor around the center', () {
+      final expanded = expandBounds(base);
+      expect(expanded.minLat, closeTo(2.95, 1e-9));
+      expect(expanded.maxLat, closeTo(3.25, 1e-9));
+      expect(expanded.minLng, closeTo(100.95, 1e-9));
+      expect(expanded.maxLng, closeTo(101.25, 1e-9));
+    });
+
+    test('respects a custom factor', () {
+      final expanded = expandBounds(base, factor: 2.0);
+      expect(expanded.maxLat - expanded.minLat, closeTo(0.4, 1e-9));
+      expect(expanded.maxLng - expanded.minLng, closeTo(0.4, 1e-9));
+    });
+
+    test('clamps latitude at the pole instead of exceeding 90', () {
+      const nearPole = (minLat: 89.0, minLng: 101.0, maxLat: 89.9, maxLng: 101.2);
+      final expanded = expandBounds(nearPole);
+      expect(expanded.maxLat, lessThanOrEqualTo(90.0));
+    });
+
+    test('clamps longitude at the antimeridian instead of exceeding 180', () {
+      const nearDateline = (minLat: 3.0, minLng: 179.0, maxLat: 3.2, maxLng: 179.9);
+      final expanded = expandBounds(nearDateline);
+      expect(expanded.maxLng, lessThanOrEqualTo(180.0));
+    });
+
+    test('never inverts min/max even when clamped', () {
+      const nearDateline = (minLat: 3.0, minLng: 179.5, maxLat: 3.2, maxLng: 179.9);
+      final expanded = expandBounds(nearDateline);
+      expect(expanded.minLng, lessThanOrEqualTo(expanded.maxLng));
+    });
+
+    test('degenerate zero-span box stays zero-span (no divide-by-zero)', () {
+      const point = (minLat: 3.1, minLng: 101.6, maxLat: 3.1, maxLng: 101.6);
+      final expanded = expandBounds(point);
+      expect(expanded.maxLat - expanded.minLat, 0.0);
+      expect(expanded.maxLng - expanded.minLng, 0.0);
+    });
+  });
 }

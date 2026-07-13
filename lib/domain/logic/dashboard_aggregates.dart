@@ -153,6 +153,27 @@ bool boundsChangedMaterially(
   return false;
 }
 
+/// Expands a lat/lng box by [factor] around its own center, so a fetch
+/// covers a margin beyond what's currently visible — a small pan afterward
+/// already has data available instead of showing a loading gap. Clamped to
+/// valid lat/lng ranges rather than wrapping at the poles/antimeridian, so
+/// `minLat`/`minLng` never exceed `maxLat`/`maxLng` (required for the
+/// bounding-box RPC query this feeds).
+LatLngBox expandBounds(LatLngBox bounds, {double factor = 1.5}) {
+  final latSpan = bounds.maxLat - bounds.minLat;
+  final lngSpan = bounds.maxLng - bounds.minLng;
+  final centerLat = (bounds.minLat + bounds.maxLat) / 2;
+  final centerLng = (bounds.minLng + bounds.maxLng) / 2;
+  final halfLat = (latSpan * factor) / 2;
+  final halfLng = (lngSpan * factor) / 2;
+  return (
+    minLat: (centerLat - halfLat).clamp(-90.0, 90.0),
+    minLng: (centerLng - halfLng).clamp(-180.0, 180.0),
+    maxLat: (centerLat + halfLat).clamp(-90.0, 90.0),
+    maxLng: (centerLng + halfLng).clamp(-180.0, 180.0),
+  );
+}
+
 MonthSummary monthSummary(
   List<TransactionView> rows,
   DateTime month,
