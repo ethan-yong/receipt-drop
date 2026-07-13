@@ -18,6 +18,7 @@ import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/places/place_picker_screen.dart';
 import '../../features/places/places_search_screen.dart';
 import '../../domain/logic/merchant_extractor.dart';
+import '../../features/pending_imports/pending_imports_screen.dart';
 import '../../features/review/receipt_review_screen.dart';
 import '../../features/ritual/ritual_screen.dart';
 import '../../features/settings/settings_screen.dart';
@@ -208,6 +209,12 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/review',
         name: 'review',
         builder: (context, state) => const ReceiptReviewScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/pending-imports',
+        name: 'pending-imports',
+        builder: (context, state) => const PendingImportsScreen(),
       ),
     ],
   );

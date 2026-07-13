@@ -11,6 +11,7 @@ import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
 import '../../domain/logic/badge_catalog.dart';
 import '../../domain/logic/badge_progress.dart';
+import '../../domain/models/pending_import_model.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../features/share/receipt_capture_flow.dart';
 import '../../widgets/adaptive_sync_banner.dart';
@@ -84,6 +85,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     onDismiss: () => setState(() => _showCoachMark = false),
                   ),
                 AdaptiveSyncBanner(stuckCount: stuck, onRetry: _retrySync),
+                StreamBuilder<List<PendingImportModel>>(
+                  stream: AppServices.pendingImports.watchAll(),
+                  builder: (context, pendingSnapshot) {
+                    final pending = pendingSnapshot.data ?? const [];
+                    if (pending.isEmpty) return const SizedBox.shrink();
+                    return _PendingImportsBanner(
+                      count: pending.length,
+                      onTap: () => context.pushNamed('pending-imports'),
+                    );
+                  },
+                ),
                 if (needsReview > 0)
                   _NeedsReviewBanner(
                     count: needsReview,
@@ -183,6 +195,64 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _PendingImportsBanner extends StatelessWidget {
+  const _PendingImportsBanner({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.xs,
+        AppSpacing.md,
+        0,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppSpacing.chipBorderRadius,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.badgePendingBg,
+            borderRadius: AppSpacing.chipBorderRadius,
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.inbox_outlined,
+                size: 18,
+                color: AppColors.badgePendingText,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  count == 1
+                      ? '1 receipt waiting to be processed'
+                      : '$count receipts waiting to be processed',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.badgePendingText,
+                      ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: AppColors.badgePendingText,
+              ),
+            ],
+          ),
         ),
       ),
     );

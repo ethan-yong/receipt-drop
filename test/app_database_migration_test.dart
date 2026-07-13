@@ -33,27 +33,42 @@ void main() {
     // Simulate the crash state: the schema is fully at v7 (the
     // llm_understanding_json column exists) but user_version is still 6
     // because a previous run died before drift bumped it. Reopening must
-    // re-run the v7 step without hitting "duplicate column name".
+    // re-run the v7 step without hitting "duplicate column name", then
+    // continue to apply the v8 step.
     var db = await openDb();
     await db.customStatement('PRAGMA user_version = 6');
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 7);
+    expect(await userVersion(db), 8);
     await db.customSelect(
       'SELECT llm_understanding_json FROM outbox_transactions',
     ).get();
     await db.close();
   });
 
-  test('re-running every upgrade step against a v7 schema is a no-op',
+  test('re-running every upgrade step against a v1 schema reaches current version',
       () async {
     var db = await openDb();
     await db.customStatement('PRAGMA user_version = 1');
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 7);
+    expect(await userVersion(db), 8);
+    await db.close();
+  });
+
+  test('reopening after a partial v8 migration does not crash', () async {
+    // Simulate the crash state: the pending_imports table already exists but
+    // user_version is still 7. Drift's createTable uses IF NOT EXISTS so
+    // re-running must not throw "table already exists".
+    var db = await openDb();
+    await db.customStatement('PRAGMA user_version = 7');
+    await db.close();
+
+    db = await openDb();
+    expect(await userVersion(db), 8);
+    await db.customSelect('SELECT id FROM pending_imports').get();
     await db.close();
   });
 }

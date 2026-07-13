@@ -67,6 +67,10 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
   Timer? _tapSettleTimer;
   Timer? _dotChainTimer;
 
+  final GlobalKey _dotsKey = GlobalKey();
+  double? _dotDragStartGlobalX;
+  bool _dotDragMoved = false;
+
   bool get _busy => _previous != null;
 
   @override
@@ -191,32 +195,73 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     }
   }
 
+  void _setScrubIndex(int idx) {
+    if (idx == _current) return;
+    _transitionController.stop();
+    setState(() {
+      _previous = null;
+      _current = idx;
+      _resetLiveTransform();
+    });
+  }
+
+  int _globalXToDotIndex(double globalX) {
+    final rb = _dotsKey.currentContext?.findRenderObject() as RenderBox?;
+    if (rb == null) return _current;
+    final localX = rb.globalToLocal(Offset(globalX, 0)).dx;
+    final n = widget.transactions.length;
+    return (localX / rb.size.width * n).floor().clamp(0, n - 1);
+  }
+
+  void _onDotPanStart(DragStartDetails d) {
+    _dotDragStartGlobalX = d.globalPosition.dx;
+    _dotDragMoved = false;
+    _pauseAutoRotate();
+  }
+
+  void _onDotPanUpdate(DragUpdateDetails d) {
+    final start = _dotDragStartGlobalX;
+    if (start == null) return;
+    if (!_dotDragMoved &&
+        (d.globalPosition.dx - start).abs() > _dragTapTolerance) {
+      _dotDragMoved = true;
+    }
+    if (_dotDragMoved) _setScrubIndex(_globalXToDotIndex(d.globalPosition.dx));
+  }
+
+  void _onDotPanEnd(DragEndDetails _) {
+    final start = _dotDragStartGlobalX;
+    if (!_dotDragMoved && start != null) {
+      _dotJump(_globalXToDotIndex(start));
+    }
+    _dotDragStartGlobalX = null;
+    _dotDragMoved = false;
+    _resumeAutoRotateSoon();
+  }
+
   void _openDetail(TransactionView tx) {
     context.pushNamed('tx-detail', pathParameters: {'id': tx.id});
   }
 
+  // Only bookkeeping here — no visual change yet. Flutter calls this the
+  // instant a finger touches the card, before the gesture arena has decided
+  // whether it's a horizontal swipe, a tap, or a vertical scroll inside the
+  // card's own items list. Applying the press-down scale here would flash it
+  // on every scroll attempt too (see _onDragCancel below).
   void _onDragDown(DragDownDetails details) {
     if (_busy) return;
     _pauseAutoRotate();
     _dragStartX = details.globalPosition.dx;
     _dragRawDx = 0;
     _dragMoved = false;
-    setState(() {
-      _liveDuration = const Duration(milliseconds: 100);
-      _liveCurve = Curves.easeInOut;
-      _dx = 0;
-      _opacity = 1;
-      _scale = 0.965;
-    });
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
     final startX = _dragStartX;
     if (startX == null || _busy) return;
     _dragRawDx = details.globalPosition.dx - startX;
-    if (!_dragMoved && _dragRawDx.abs() > _dragTapTolerance) {
-      _dragMoved = true;
-    }
+    final justConfirmed = !_dragMoved && _dragRawDx.abs() > _dragTapTolerance;
+    if (justConfirmed) _dragMoved = true;
     if (!_dragMoved) return;
     final clamped = _dragRawDx.clamp(-_dragClamp, _dragClamp).toDouble();
     final scale =
@@ -224,8 +269,13 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     final fade =
         1 - (clamped.abs() / (_dragClamp * 2)).clamp(0.0, 1.0).toDouble() * 0.3;
     setState(() {
-      _liveDuration = Duration.zero;
-      _liveCurve = Curves.linear;
+      // Ease into the press-down feel on the first confirmed-horizontal
+      // frame (now that we know this isn't a vertical scroll); track the
+      // finger 1:1 with no animation on every frame after.
+      _liveDuration = justConfirmed
+          ? const Duration(milliseconds: 100)
+          : Duration.zero;
+      _liveCurve = justConfirmed ? Curves.easeInOut : Curves.linear;
       _dx = clamped * 0.6;
       _scale = scale;
       _opacity = fade;
@@ -355,12 +405,15 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
         if (n > 1) ...[
           const SizedBox(height: 14),
           _DotIndicator(
+            key: _dotsKey,
             count: n,
             current: current,
             palettes: txs
                 .map((t) => receiptPaletteForCategory(t.effectiveCategory))
                 .toList(),
-            onTap: _dotJump,
+            onPanStart: _onDotPanStart,
+            onPanUpdate: _onDotPanUpdate,
+            onPanEnd: _onDotPanEnd,
           ),
         ],
       ],
@@ -544,41 +597,49 @@ class _CardVisual extends StatelessWidget {
 
 class _DotIndicator extends StatelessWidget {
   const _DotIndicator({
+    super.key,
     required this.count,
     required this.current,
     required this.palettes,
-    required this.onTap,
+    required this.onPanStart,
+    required this.onPanUpdate,
+    required this.onPanEnd,
   });
 
   final int count;
   final int current;
   final List<ReceiptCardPalette> palettes;
-  final ValueChanged<int> onTap;
+  final GestureDragStartCallback onPanStart;
+  final GestureDragUpdateCallback onPanUpdate;
+  final GestureDragEndCallback onPanEnd;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(count, (i) {
-        final isActive = i == current;
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => onTap(i),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: onPanStart,
+      onPanUpdate: onPanUpdate,
+      onPanEnd: onPanEnd,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(count, (i) {
+          final isActive = i == current;
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeInOut,
-              width: isActive ? 22 : 7,
-              height: 7,
+              width: isActive ? 22 : 8,
+              height: 8,
               decoration: BoxDecoration(
                 color: isActive ? palettes[i].acc : AppColors.divider,
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
-          ),
-        );
-      }),
+          );
+        }),
+      ),
     );
   }
 }

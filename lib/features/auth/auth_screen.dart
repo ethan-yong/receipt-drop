@@ -25,6 +25,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordFocus = FocusNode();
   var _isSignUp = true;
   var _loading = false;
+  var _obscurePassword = true;
 
   @override
   void initState() {
@@ -74,11 +75,50 @@ class _AuthScreenState extends State<AuthScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(e.message)));
       }
-    } catch (e) {
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Something went wrong — check your connection'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your email address first')),
+      );
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password reset email sent — check your inbox'),
+          ),
+        );
+      }
+    } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('$e')));
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not send reset email — check your connection'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -141,7 +181,11 @@ class _AuthScreenState extends State<AuthScreen> {
                       ],
                     ),
                     alignment: Alignment.center,
-                    child: const Text('??', style: TextStyle(fontSize: 30)),
+                    child: const Icon(
+                      Icons.receipt_long,
+                      size: 34,
+                      color: Colors.white,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   const Text(
@@ -242,31 +286,52 @@ class _AuthScreenState extends State<AuthScreen> {
                     },
                   ),
                   const SizedBox(height: AppSpacing.xs),
-                  // Password + Forgot?
+                  // Password + visibility toggle
                   _AuthField(
                     controller: _passwordController,
                     focusNode: _passwordFocus,
                     hint: 'Password',
-                    obscure: true,
+                    obscure: _obscurePassword,
                     validator: (v) {
                       if (v == null || v.isEmpty) return 'Enter password';
                       if (v.length < 6) return 'At least 6 characters';
                       return null;
                     },
-                    trailing: _PressScale(
-                      onTap: () {},
-                      child: const Text(
-                        'Forgot?',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primaryGreenDark,
+                    trailing: GestureDetector(
+                      onTap: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
+                      child: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 20,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+
+                  // Forgot password
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _PressScale(
+                      onTap: _loading ? null : _forgotPassword,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                          vertical: AppSpacing.xs,
+                        ),
+                        child: Text(
+                          'Forgot password?',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primaryGreenDark,
+                          ),
                         ),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: AppSpacing.md),
+                  const SizedBox(height: AppSpacing.sm),
 
                   // CTA
                   _PressScale(

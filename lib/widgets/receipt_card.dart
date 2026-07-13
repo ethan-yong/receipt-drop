@@ -432,29 +432,12 @@ class ReceiptCard extends StatelessWidget {
               child: Column(
                 children: [
                   Expanded(
-                    child: ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                      physics: const ClampingScrollPhysics(),
-                      itemCount: items.isEmpty ? 1 : items.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 14),
-                      itemBuilder: (context, i) => GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: onTap,
-                        // One row per line item when available, otherwise
-                        // the merchant/place summary row.
-                        child: items.isEmpty
-                            ? _buildItemRow(
-                                palette: palette,
-                                name: tx.needsAmount ? null : tx.displayPlace,
-                                priceText: tx.needsAmount ? '' : amountText,
-                              )
-                            : _buildItemRow(
-                                palette: palette,
-                                name: items[i].name,
-                                priceText:
-                                    'RM ${items[i].priceMyr.toStringAsFixed(2)}',
-                              ),
-                      ),
+                    child: _ReceiptItemsList(
+                      items: items,
+                      palette: palette,
+                      tx: tx,
+                      amountText: amountText,
+                      onTap: onTap,
                     ),
                   ),
                   Padding(
@@ -512,6 +495,81 @@ class ReceiptCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Scrollable line-items list for [ReceiptCard]. Owns its own
+/// [ScrollController] so a [RawScrollbar] can show how much is left to
+/// scroll — the plain [ListView] this replaced gave no such affordance,
+/// making a card with more than ~2 items look like it was missing rows.
+class _ReceiptItemsList extends StatefulWidget {
+  const _ReceiptItemsList({
+    required this.items,
+    required this.palette,
+    required this.tx,
+    required this.amountText,
+    required this.onTap,
+  });
+
+  final List<ReceiptLineItem> items;
+  final ReceiptCardPalette palette;
+  final TransactionView tx;
+  final String amountText;
+  final VoidCallback? onTap;
+
+  @override
+  State<_ReceiptItemsList> createState() => _ReceiptItemsListState();
+}
+
+class _ReceiptItemsListState extends State<_ReceiptItemsList> {
+  final _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    final palette = widget.palette;
+    final tx = widget.tx;
+
+    return RawScrollbar(
+      controller: _controller,
+      thumbVisibility: items.length > 3,
+      thickness: 3,
+      radius: const Radius.circular(3),
+      thumbColor: palette.ink.withValues(alpha: 0.28),
+      child: ListView.separated(
+        controller: _controller,
+        // Right gutter keeps the scrollbar clear of the prices; bottom
+        // padding gives the last row breathing room instead of sitting
+        // flush against the box edge.
+        padding: const EdgeInsets.fromLTRB(20, 18, 14, 14),
+        physics: const ClampingScrollPhysics(),
+        itemCount: items.isEmpty ? 1 : items.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 14),
+        itemBuilder: (context, i) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          // One row per line item when available, otherwise the
+          // merchant/place summary row.
+          child: items.isEmpty
+              ? _buildItemRow(
+                  palette: palette,
+                  name: tx.needsAmount ? null : tx.displayPlace,
+                  priceText: tx.needsAmount ? '' : widget.amountText,
+                )
+              : _buildItemRow(
+                  palette: palette,
+                  name: items[i].name,
+                  priceText: 'RM ${items[i].priceMyr.toStringAsFixed(2)}',
+                ),
+        ),
       ),
     );
   }

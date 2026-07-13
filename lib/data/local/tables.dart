@@ -165,6 +165,31 @@ class OutboxLineItems extends Table {
   Set<Column<Object>>? get primaryKey => {id};
 }
 
+@DataClassName('PendingImport')
+class PendingImports extends Table {
+  @override
+  String get tableName => 'pending_imports';
+
+  TextColumn get id => text()();
+
+  TextColumn get userId => text()();
+
+  TextColumn get localFilePath => text()();
+
+  TextColumn get mimeType => text()();
+
+  TextColumn get sourceApp => text().nullable()();
+
+  /// 'local' | 'processing' | 'failed'
+  TextColumn get status => text().withDefault(const Constant('local'))();
+
+  DateTimeColumn get createdAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column<Object>>? get primaryKey => {id};
+}
+
 @DataClassName('CategoryConfigCacheRow')
 class CategoryConfigCache extends Table {
   @override

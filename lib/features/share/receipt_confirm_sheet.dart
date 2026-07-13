@@ -513,8 +513,10 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
                 controller: _itemsScrollController,
                 shrinkWrap: true,
                 physics: const ClampingScrollPhysics(),
-                // Right gutter keeps the scrollbar clear of the prices.
-                padding: const EdgeInsets.only(right: 12),
+                // Right gutter keeps the scrollbar clear of the prices;
+                // bottom padding keeps the last row from sitting flush
+                // against the box edge once fully scrolled into view.
+                padding: const EdgeInsets.fromLTRB(0, 0, 12, 12),
                 itemCount: _items.length,
                 separatorBuilder: (_, _) => const SizedBox(height: 14),
                 itemBuilder: (context, i) => _ItemRow(

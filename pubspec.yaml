@@ -70,6 +70,23 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   drift_dev: ^2.20.1
   build_runner: ^2.4.13
+  flutter_launcher_icons: ^0.14.4
+
+# App launcher icon, generated via `dart run flutter_launcher_icons` from the
+# receipt icon in `# Budget App Room Backgrounds/icon-export/`. Re-run that
+# command after changing image_path/adaptive_icon_foreground.
+flutter_launcher_icons:
+  image_path: "assets/branding/app_icon/icon.png"
+  android: true
+  adaptive_icon_background: "#F6C64B"
+  adaptive_icon_foreground: "assets/branding/app_icon/adaptive_foreground.png"
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: "assets/branding/app_icon/icon.png"
+    background_color: "#F6C64B"
+    theme_color: "#F6C64B"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

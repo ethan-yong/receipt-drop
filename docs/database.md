@@ -78,6 +78,22 @@ Added `20260626000002_social.sql`. `id`, `user_id` FK (cascade), `transaction_id
 ### `feed_reactions`
 Added `20260626000002_social.sql`. `id`, `post_id` FK → `feed_posts` (cascade), `user_id` FK (cascade), `kind text` (`fire\|laugh\|eyes`), `created_at`. `unique(post_id, user_id, kind)` for idempotent repeat-tap. RLS: **insert-only** own policy — no select policy at all. Reads only ever happen aggregated inside `get_friend_feed()`; a direct `select` from a client is denied by RLS even though a table grant exists.
 
+### `pending_receipts`
+Added `20260712000000_pending_receipts.sql`. Supabase mirror of the device inbox — created asynchronously after the local Drift row. The **Drift row is the source of truth**; this table exists only so the cloud has visibility. RLS: owner-only for all operations (`pending_receipts_owner` policy). Index `(user_id, created_at desc)`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | client-generated, matches Drift `pending_imports.id` |
+| `user_id` | uuid FK → `profiles.id` | cascade delete |
+| `storage_path` | text | `<user_id>/pending/<id>.<ext>` in the `receipts` bucket |
+| `file_type` | text | mime type |
+| `status` | text | `pending\|processing\|completed\|failed` (check constraint). `completed` written by client after the transaction is saved; never written by a server process |
+| `source_app` | text | optional — app that originated the share (e.g. "Touch 'n Go") |
+| `transaction_id` | uuid FK → `transactions.id` | set to null on delete; written when `completed` |
+| `created_at` | timestamptz | |
+
+Storage path reuses the existing `receipts` bucket (the folder-level RLS `(storage.foldername(name))[1] = auth.uid()::text` already covers `<user_id>/pending/...`). The client uploads the file and inserts this row in a single best-effort async step after the local Drift save — never blocking the share flow.
+
 ### `merchant_aliases`
 Added `20260708000000_merchant_aliases.sql`. `id`, `alias_text_normalized text`, `geohash_bucket text` (precision-7, ~150m cells — coarser than the map's precision-8 aggregation key, to tolerate phone GPS drift), `canonical_place_id text`, `canonical_name text`, `canonical_lat/lng double precision`, `confidence double precision` (check 0-1), `hit_count int default 1`, `created_at`, `last_matched_at`. `unique(alias_text_normalized, geohash_bucket, canonical_place_id)`, index on `(alias_text_normalized, geohash_bucket)`.
 
@@ -120,6 +136,8 @@ profiles 1─N friendships as addressee_id (cascade)
 profiles 1─N feed_posts (user_id, cascade)
 feed_posts 1─N feed_reactions (post_id, cascade)
 profiles 1─N feed_reactions (user_id, cascade)
+profiles 1─N pending_receipts (user_id, cascade)
+pending_receipts 0..1─0..1 transactions (transaction_id, set null on delete)
 ```
 
 `merchant_aliases` has no FK to any other table — it's a standalone global cache keyed by `(alias_text_normalized, geohash_bucket)`, not by user or transaction.
@@ -134,7 +152,7 @@ Not competing — layered. **Friend leaderboard** = Postgres-native, RLS-backed 
 
 ## Local-only tables (Drift/SQLite, on-device — see `lib/data/local/tables.dart`)
 
-Not part of Postgres; the outbox mirrors the cloud schema plus sync bookkeeping. Schema is versioned (`schemaVersion = 7` in `app_database.dart`) with incremental `onUpgrade` migrations.
+Not part of Postgres; the outbox mirrors the cloud schema plus sync bookkeeping. Schema is versioned (`schemaVersion = 8` in `app_database.dart`) with incremental `onUpgrade` migrations.
 
 | Table | Mirrors | Extra fields |
 |---|---|---|
@@ -142,6 +160,7 @@ Not part of Postgres; the outbox mirrors the cloud schema plus sync bookkeeping.
 | `OutboxArtifacts` | `receipt_artifacts` | `localFilePath` |
 | `OutboxLineItems` (v4) | `receipt_line_items` | — |
 | `CategoryConfigCache` | remote categories JSON | etag/version — **scaffolded but not actively fetched at runtime**; categories are loaded only from the bundled asset (`assets/config/categories-v1.json`). Don't assume remote refresh works. |
+| `PendingImports` (v8) | `pending_receipts` (async best-effort) | local-only inbox. Rows are the **immediate source of truth** — the Supabase mirror is best-effort. Status: `local\|processing\|failed`. On successful save the Drift row **and** the copied local file are deleted; there is no `completed` status. `localFilePath` points to `<documents>/pending_receipts/<id>.<ext>`. Exposed via `PendingImportsRepository` (`lib/data/repositories/pending_imports_repository.dart`); public API uses pure Dart `PendingImportModel` (not the Drift-generated class) so web compiles without Drift. |
 
 `beforeOpen` sets `PRAGMA foreign_keys = ON` — SQLite disables FK enforcement by default; required for cascade deletes.
 
