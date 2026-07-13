@@ -9,7 +9,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/current_location.dart';
+import '../../core/utils/place_key.dart';
 import '../../data/repositories/avatar_repository.dart';
+import '../../data/repositories/map_transactions_repository.dart';
 import '../../data/repositories/places_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
@@ -22,6 +24,7 @@ import '../../widgets/map_filter_chips.dart';
 import 'widgets/friend_map_marker.dart';
 import 'widgets/friend_pin_sheet.dart';
 import 'widgets/place_detail_panel.dart';
+import 'widgets/spend_cluster_bubble.dart';
 import 'widgets/spend_place_marker.dart';
 
 /// Standard Web Mercator tile-pixel projection (256px tiles, doubling per
@@ -49,6 +52,31 @@ LatLng _mercatorUnproject(Offset point, double zoom) {
   return LatLng(lat, lng);
 }
 
+/// Screen-pixel positions for the custom-widget pins, isolated in their own
+/// `ChangeNotifier` so a reprojection pass (every camera-move frame) only
+/// rebuilds the small overlay subtree listening to it, rather than the whole
+/// screen's `StreamBuilder` — which would otherwise re-run the full
+/// clustering/filtering pipeline on every single animation frame of a drag.
+class _MapOverlayPositions extends ChangeNotifier {
+  Map<String, Offset> placePos = const {};
+  Map<String, Offset> bucketPos = const {};
+  Map<String, Offset> friendPos = const {};
+  Offset? mePos;
+
+  void update({
+    required Map<String, Offset> place,
+    required Map<String, Offset> bucket,
+    required Map<String, Offset> friend,
+    Offset? me,
+  }) {
+    placePos = place;
+    bucketPos = bucket;
+    friendPos = friend;
+    mePos = me;
+    notifyListeners();
+  }
+}
+
 /// Snap-style spend map: own spend bubbles (or heat overlay) plus friends'
 /// avatar pins at their latest receipt place.
 class SpendMapScreen extends StatefulWidget {
@@ -64,6 +92,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
 
   GoogleMapController? _controller;
   final _panelController = DraggableScrollableController();
+  final _overlayPositions = _MapOverlayPositions();
   String _timeFilter = 'This month';
   String _categoryFilter = 'All categories';
   var _heatmapMode = false;
@@ -74,38 +103,64 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   AvatarConfig? _myAvatarConfig;
   MapPlaceCluster? _selectedCluster;
 
-  /// Latest clusters from the stream, cached so the async reprojection pass
-  /// (which runs outside `build`) always has the current pin set.
+  /// Viewport-fetched rows backing the map's own-place clustering/heat data
+  /// (see [MapTransactionsRepository]) — replaces streaming the user's
+  /// entire local transaction history into clustering on every rebuild.
+  /// Only refetched on `onCameraIdle`, gated by [_maybeFetchViewport]'s
+  /// materially-changed-bounds/zoom-bucket guard.
+  List<TransactionView> _viewportRows = const [];
   List<MapPlaceCluster> _lastClusters = const [];
+  List<GeoBucket> _lastBuckets = const [];
+  LatLngBox? _lastFetchedBounds;
+  int? _lastZoomBucket;
+  List<LatLng> _bootstrapPlacePoints = const [];
   List<LatLng>? _pendingFitPoints;
 
-  /// Screen-pixel (logical) positions for the custom-widget pins, since
-  /// `google_maps_flutter`'s native `Marker` can only host a static bitmap,
-  /// not an arbitrary widget. Recomputed by [_reproject].
-  Map<String, Offset> _placeScreenPos = {};
-  Map<String, Offset> _friendScreenPos = {};
-  Offset? _meScreenPos;
   bool _reprojectScheduled = false;
   bool _reprojecting = false;
   bool _reprojectPending = false;
+
+  /// Whether the current zoom level is coarse enough that we render
+  /// [GeoBucket] cluster bubbles instead of individual [MapPlaceCluster]
+  /// pins. Mirrors whichever precision [_maybeFetchViewport] last fetched at.
+  bool get _bucketMode =>
+      (_lastZoomBucket ?? individualPinPrecision) != individualPinPrecision;
 
   @override
   void initState() {
     super.initState();
     SocialRepository.getFriendMapPins().then((pins) {
-      if (mounted && pins.isNotEmpty) setState(() => _friendPins = pins);
+      if (mounted && pins.isNotEmpty) {
+        setState(() => _friendPins = pins);
+        _scheduleReproject();
+      }
+      _tryAutoFit();
     });
     AvatarRepository.getAvatarConfig().then((config) {
       if (mounted) setState(() => _myAvatarConfig = config);
     });
     getCurrentPositionOrNull().then((pos) {
-      if (mounted && pos != null) setState(() => _myPosition = pos);
+      if (mounted && pos != null) {
+        setState(() => _myPosition = pos);
+        _scheduleReproject();
+      }
+      _tryAutoFit();
+    });
+    // One-shot local read purely to bootstrap the initial camera auto-fit
+    // before any viewport bounds exist yet — not a live subscription, so it
+    // doesn't drive the map's ongoing clustering (that's [_viewportRows]).
+    AppServices.transactions.watchAll().first.then((rows) {
+      if (!mounted) return;
+      final clusters = mapClusters(_categoryFiltered(_timeFiltered(rows)));
+      _bootstrapPlacePoints = [for (final c in clusters) LatLng(c.lat, c.lng)];
+      _tryAutoFit();
     });
   }
 
   @override
   void dispose() {
     _panelController.dispose();
+    _overlayPositions.dispose();
     super.dispose();
   }
 
@@ -146,6 +201,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     final pos = await getCurrentPositionOrNull();
     if (pos == null || !mounted) return;
     setState(() => _myPosition = pos);
+    _scheduleReproject();
     _controller?.animateCamera(
       CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 14),
     );
@@ -167,17 +223,34 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     _controller?.animateCamera(CameraUpdate.newLatLngZoom(shifted, zoom));
   }
 
+  /// Cluster-bubble tap: zoom into the bucket's geohash cell rather than
+  /// opening the per-place detail panel (there's no single place to show).
+  void _selectBucket(GeoBucket bucket) {
+    final box = geohashBounds(bucket.bucketKey);
+    _controller?.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(box.latMin, box.lngMin),
+          northeast: LatLng(box.latMax, box.lngMax),
+        ),
+        48,
+      ),
+    );
+  }
+
   void _closePanel() {
     if (_selectedCluster == null) return;
     setState(() => _selectedCluster = null);
   }
 
   /// One-time camera fit over everything worth seeing (own places, friend
-  /// pins, own position) once the first data arrives.
-  void _autoFitOnce(List<MapPlaceCluster> clusters) {
+  /// pins, own position) once the first data arrives from whichever async
+  /// source resolves first — retried (harmlessly, via [_didAutoFit]) from
+  /// each of the three `initState` callbacks that can contribute a point.
+  void _tryAutoFit() {
     if (_didAutoFit) return;
     final points = <LatLng>[
-      for (final c in clusters) LatLng(c.lat, c.lng),
+      ..._bootstrapPlacePoints,
       for (final p in _friendPins) LatLng(p.lat, p.lng),
       if (_myPosition != null)
         LatLng(_myPosition!.latitude, _myPosition!.longitude),
@@ -191,9 +264,9 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   }
 
   /// `GoogleMapController` only exists once the platform view finishes
-  /// creating, which can race with the first stream emission — this is
-  /// called from both `onMapCreated` and the post-frame callback above, and
-  /// no-ops until both the controller and a pending fit are ready.
+  /// creating, which can race with [_tryAutoFit] - this is called from both
+  /// `onMapCreated` and the post-frame callback above, and no-ops until both
+  /// the controller and a pending fit are ready.
   void _applyPendingFitIfReady() {
     final controller = _controller;
     final points = _pendingFitPoints;
@@ -228,6 +301,12 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     _controller = controller;
     _applyPendingFitIfReady();
     _scheduleReproject();
+    unawaited(_maybeFetchViewport(force: true));
+  }
+
+  void _onCameraIdle() {
+    _scheduleReproject();
+    unawaited(_maybeFetchViewport());
   }
 
   /// Coalesces however many camera-move ticks land in one frame into a
@@ -242,13 +321,76 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     });
   }
 
+  /// Fetches the transactions inside the current camera viewport via
+  /// [MapTransactionsRepository] and recomputes place/bucket clustering from
+  /// them — only called from `onCameraIdle`/`onMapCreated`/filter changes,
+  /// never on every camera-move frame. Guarded so tiny settle-jitter near the
+  /// idle threshold doesn't refire redundant queries.
+  Future<void> _maybeFetchViewport({bool force = false}) async {
+    final controller = _controller;
+    if (controller == null) return;
+    final region = await controller.getVisibleRegion();
+    final zoom = await controller.getZoomLevel();
+    if (!mounted) return;
+
+    final bounds = (
+      minLat: region.southwest.latitude,
+      minLng: region.southwest.longitude,
+      maxLat: region.northeast.latitude,
+      maxLng: region.northeast.longitude,
+    );
+    final bucket = zoomBucketPrecision(zoom);
+    final lastBounds = _lastFetchedBounds;
+    final shouldFetch = force ||
+        lastBounds == null ||
+        bucket != _lastZoomBucket ||
+        boundsChangedMaterially(lastBounds, bounds);
+    if (!shouldFetch) return;
+
+    final now = DateTime.now();
+    final start = _timeFilter == 'This month'
+        ? DateTime(now.year, now.month)
+        : DateTime(now.year, now.month - 1);
+    final end = _timeFilter == 'This month'
+        ? DateTime(now.year, now.month + 1)
+        : DateTime(now.year, now.month);
+    final category =
+        _categoryFilter == 'All categories' ? null : _categoryFilter;
+
+    final rows = await MapTransactionsRepository.fetchInBounds(
+      minLat: bounds.minLat,
+      minLng: bounds.minLng,
+      maxLat: bounds.maxLat,
+      maxLng: bounds.maxLng,
+      startAt: start,
+      endAt: end,
+      category: category,
+    );
+    if (!mounted) return;
+    // `null` means the fetch failed (e.g. offline) — keep showing the
+    // last-known-good clusters rather than clearing the map.
+    if (rows == null) return;
+
+    _lastFetchedBounds = bounds;
+    _lastZoomBucket = bucket;
+    setState(() {
+      _viewportRows = rows;
+      _lastClusters = bucket == individualPinPrecision ? mapClusters(rows) : const [];
+      _lastBuckets =
+          bucket == individualPinPrecision ? const [] : bucketClusters(rows, bucket);
+    });
+    _scheduleReproject();
+  }
+
   /// Re-derives on-screen positions for every custom-widget pin
-  /// (`SpendPlaceMarker`/`FriendMapMarker`/"you are here") via
-  /// `GoogleMapController.getScreenCoordinate`, since `google_maps_flutter`'s
-  /// native `Marker` can't host arbitrary widgets. Batches every pin into one
-  /// `Future.wait` so drag/pinch stays smooth, and folds in any reproject
-  /// request that arrives while a batch is already in flight rather than
-  /// piling up unbounded work.
+  /// (`SpendPlaceMarker`/`SpendClusterBubble`/`FriendMapMarker`/"you are
+  /// here") via `GoogleMapController.getScreenCoordinate`, since
+  /// `google_maps_flutter`'s native `Marker` can't host arbitrary widgets.
+  /// Batches every pin into one `Future.wait` so drag/pinch stays smooth,
+  /// and folds in any reproject request that arrives while a batch is
+  /// already in flight rather than piling up unbounded work. Writes results
+  /// into [_overlayPositions] (a `ChangeNotifier`), never `setState` — so
+  /// this never triggers the outer `StreamBuilder`'s expensive rebuild.
   Future<void> _reproject() async {
     final controller = _controller;
     if (controller == null) return;
@@ -258,13 +400,21 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     }
     _reprojecting = true;
     try {
-      final placeKeys = [for (final c in _lastClusters) c.placeKey];
+      final bucketMode = _bucketMode;
+      final placeKeys =
+          bucketMode ? const <String>[] : [for (final c in _lastClusters) c.placeKey];
+      final bucketKeys =
+          bucketMode ? [for (final b in _lastBuckets) b.bucketKey] : const <String>[];
       final friendKeys = [for (final p in _friendPins) p.userId];
       final me = _myPosition;
 
       final futures = <Future<ScreenCoordinate>>[
-        for (final c in _lastClusters)
-          controller.getScreenCoordinate(LatLng(c.lat, c.lng)),
+        if (bucketMode)
+          for (final b in _lastBuckets)
+            controller.getScreenCoordinate(LatLng(b.lat, b.lng))
+        else
+          for (final c in _lastClusters)
+            controller.getScreenCoordinate(LatLng(c.lat, c.lng)),
         for (final p in _friendPins)
           controller.getScreenCoordinate(LatLng(p.lat, p.lng)),
         if (me != null)
@@ -273,11 +423,12 @@ class _SpendMapScreenState extends State<SpendMapScreen>
 
       if (futures.isEmpty) {
         if (mounted) {
-          setState(() {
-            _placeScreenPos = {};
-            _friendScreenPos = {};
-            _meScreenPos = null;
-          });
+          _overlayPositions.update(
+            place: const {},
+            bucket: const {},
+            friend: const {},
+            me: null,
+          );
         }
         return;
       }
@@ -299,6 +450,11 @@ class _SpendMapScreenState extends State<SpendMapScreen>
         newPlacePos[key] = Offset(resolved[i].x / dpr, resolved[i].y / dpr);
         i++;
       }
+      final newBucketPos = <String, Offset>{};
+      for (final key in bucketKeys) {
+        newBucketPos[key] = Offset(resolved[i].x / dpr, resolved[i].y / dpr);
+        i++;
+      }
       final newFriendPos = <String, Offset>{};
       for (final key in friendKeys) {
         newFriendPos[key] = Offset(resolved[i].x / dpr, resolved[i].y / dpr);
@@ -307,11 +463,12 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       final newMePos =
           me != null ? Offset(resolved[i].x / dpr, resolved[i].y / dpr) : null;
 
-      setState(() {
-        _placeScreenPos = newPlacePos;
-        _friendScreenPos = newFriendPos;
-        _meScreenPos = newMePos;
-      });
+      _overlayPositions.update(
+        place: newPlacePos,
+        bucket: newBucketPos,
+        friend: newFriendPos,
+        me: newMePos,
+      );
     } finally {
       _reprojecting = false;
       if (_reprojectPending) {
@@ -321,10 +478,13 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     }
   }
 
-  List<Widget> _placeOverlays(List<MapPlaceCluster> clusters) {
+  List<Widget> _placeOverlays(
+    List<MapPlaceCluster> clusters,
+    Map<String, Offset> positions,
+  ) {
     final widgets = <Widget>[];
     for (final c in clusters) {
-      final pos = _placeScreenPos[c.placeKey];
+      final pos = positions[c.placeKey];
       if (pos == null) continue;
       // Bubble sits above the point; the tail tip is the anchor (96×56 box,
       // point at bottom-center).
@@ -340,10 +500,30 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     return widgets;
   }
 
-  List<Widget> _friendOverlays() {
+  List<Widget> _bucketOverlays(
+    List<GeoBucket> buckets,
+    Map<String, Offset> positions,
+  ) {
+    final widgets = <Widget>[];
+    for (final b in buckets) {
+      final pos = positions[b.bucketKey];
+      if (pos == null) continue;
+      widgets.add(Positioned(
+        left: pos.dx - 54,
+        top: pos.dy - 60,
+        child: SpendClusterBubble(
+          bucket: b,
+          onTap: () => _selectBucket(b),
+        ),
+      ));
+    }
+    return widgets;
+  }
+
+  List<Widget> _friendOverlays(Map<String, Offset> positions) {
     final widgets = <Widget>[];
     for (final p in _friendPins) {
-      final pos = _friendScreenPos[p.userId];
+      final pos = positions[p.userId];
       if (pos == null) continue;
       widgets.add(Positioned(
         left: pos.dx - 36,
@@ -357,8 +537,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     return widgets;
   }
 
-  Widget? _myLocationOverlay(List<TransactionView> allRows) {
-    final pos = _meScreenPos;
+  Widget? _myLocationOverlay(List<TransactionView> allRows, Offset? pos) {
     final config = _myAvatarConfig;
     if (pos == null || config == null) return null;
     final mood =
@@ -438,12 +617,18 @@ class _SpendMapScreenState extends State<SpendMapScreen>
           final categories = mapCategories(timeFiltered);
           if (!categories.contains(_categoryFilter)) {
             _categoryFilter = 'All categories';
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) unawaited(_maybeFetchViewport(force: true));
+            });
           }
-          final filtered = _categoryFiltered(timeFiltered);
-          final clusters = mapClusters(filtered);
-          _lastClusters = clusters;
 
-          if (filtered.isEmpty && _friendPins.isEmpty) {
+          // Only declare "no map data" once at least one viewport fetch has
+          // actually resolved — avoids a flash of the empty state while the
+          // first fetch is still in flight.
+          final showEmpty = _viewportRows.isEmpty &&
+              _friendPins.isEmpty &&
+              _lastFetchedBounds != null;
+          if (showEmpty) {
             return const EmptyState(
               title: 'No map data yet',
               subtitle:
@@ -452,18 +637,12 @@ class _SpendMapScreenState extends State<SpendMapScreen>
             );
           }
 
-          _autoFitOnce(clusters);
-          // Data changed (new stream emission) — pin positions may be stale
-          // or missing for newly-appeared pins, not just after camera moves.
-          _scheduleReproject();
-          final myOverlay = _myLocationOverlay(all);
-
-          // Re-resolve the selection against the live stream so the panel
-          // always shows fresh data — and closes if its place vanished
-          // (filter change, deletion).
+          // Re-resolve the selection against the live viewport clusters so
+          // the panel always shows fresh data — and closes if its place
+          // vanished (filter change, deletion, zoomed out past pin level).
           MapPlaceCluster? selected;
           if (_selectedCluster != null) {
-            for (final c in clusters) {
+            for (final c in _lastClusters) {
               if (c.placeKey == _selectedCluster!.placeKey) {
                 selected = c;
                 break;
@@ -488,17 +667,29 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                 // Google Maps.
                 onTap: (_) => _closePanel(),
                 onCameraMove: _scheduleReproject,
-                onCameraIdle: _scheduleReproject,
+                onCameraIdle: _onCameraIdle,
                 rotateGesturesEnabled: false,
                 tiltGesturesEnabled: false,
                 myLocationButtonEnabled: false,
                 mapToolbarEnabled: false,
                 compassEnabled: false,
-                circles: _heatmapMode ? _heatCircles(filtered) : const {},
+                circles: _heatmapMode ? _heatCircles(_viewportRows) : const {},
               ),
-              if (!_heatmapMode) ..._placeOverlays(clusters),
-              ..._friendOverlays(),
-              ?myOverlay,
+              // Isolated so a reprojection pass (every camera-move frame)
+              // only rebuilds this subtree, not the outer StreamBuilder.
+              AnimatedBuilder(
+                animation: _overlayPositions,
+                builder: (context, _) => Stack(
+                  children: [
+                    if (!_heatmapMode && !_bucketMode)
+                      ..._placeOverlays(_lastClusters, _overlayPositions.placePos),
+                    if (!_heatmapMode && _bucketMode)
+                      ..._bucketOverlays(_lastBuckets, _overlayPositions.bucketPos),
+                    ..._friendOverlays(_overlayPositions.friendPos),
+                    ?_myLocationOverlay(all, _overlayPositions.mePos),
+                  ],
+                ),
+              ),
               SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -547,11 +738,16 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                     ),
                     MapFilterChips(
                       selectedTime: _timeFilter,
-                      onTimeChanged: (v) => setState(() => _timeFilter = v),
+                      onTimeChanged: (v) {
+                        setState(() => _timeFilter = v);
+                        unawaited(_maybeFetchViewport(force: true));
+                      },
                       categories: categories,
                       selectedCategory: _categoryFilter,
-                      onCategoryChanged: (v) =>
-                          setState(() => _categoryFilter = v),
+                      onCategoryChanged: (v) {
+                        setState(() => _categoryFilter = v);
+                        unawaited(_maybeFetchViewport(force: true));
+                      },
                     ),
                   ],
                 ),

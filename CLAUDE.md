@@ -12,7 +12,7 @@ Full v1 product spec (still mostly accurate for the core capture flow, but the a
 - **Backend**: Supabase (Postgres + Row-Level Security + Auth (PKCE) + Storage) plus 3 Deno Edge Functions (BFF layer for Google Places + OCR proxy).
 - **OCR**: self-hosted `services/ocr-api` — Python/FastAPI + Tesseract (`pytesseract`). Not on-device, not PaddleOCR — both were tried and replaced (`docs/decisions.md`).
 - **Leaderboard**: `services/leaderboard-api` — Python/FastAPI + Redis ZSET, for the global (all-users) leaderboard tier; friends tier is a plain Postgres RPC.
-- **Maps**: `flutter_map` + free CARTO Voyager tiles (not Google Maps SDK — abandoned, see `docs/decisions.md`).
+- **Maps**: `google_maps_flutter` (real Google Maps SDK). Briefly on `flutter_map` + free CARTO Voyager tiles due to a GCP billing blocker, reverted once billing was enabled — see `docs/decisions.md` ("Back to `google_maps_flutter`", 2026-07-09). Custom pins (spend places, friends) are Flutter widgets overlaid on the map, not native `Marker`s — see `docs/decisions.md`'s 2026-07-13 entry for the viewport-query/clustering design built on top of that.
 - **`Impact Drops/`**: a separate, frozen React/TanStack Start prototype (Lovable-generated) used only as a one-time design/behavior reference for the gamification features. **Not built, imported, or deployed with the product.** See `docs/architecture.md`.
 
 ## Important directories

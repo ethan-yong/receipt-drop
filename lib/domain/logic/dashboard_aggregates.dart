@@ -59,6 +59,7 @@ class MapPlaceCluster {
     required this.totalSpend,
     required this.visitCount,
     required this.transactions,
+    required this.dominantCategory,
   });
 
   final String placeKey;
@@ -68,6 +69,88 @@ class MapPlaceCluster {
   final double totalSpend;
   final int visitCount;
   final List<TransactionView> transactions;
+
+  /// Highest-spend category among this place's transactions, computed once
+  /// here rather than per marker per animation frame.
+  final String dominantCategory;
+}
+
+/// Coarser-than-place aggregation for zoomed-out map cluster bubbles (e.g.
+/// "42 receipts" / "15 places"), bucketed by geohash cell instead of exact
+/// place identity.
+class GeoBucket {
+  const GeoBucket({
+    required this.bucketKey,
+    required this.lat,
+    required this.lng,
+    required this.receiptCount,
+    required this.placeCount,
+    required this.dominantCategory,
+  });
+
+  final String bucketKey;
+  final double lat;
+  final double lng;
+  final int receiptCount;
+  final int placeCount;
+  final String dominantCategory;
+}
+
+/// Geohash precision at which a place-level cluster is itself the finest
+/// grain the map ever shows (matches `effectivePlaceKey`'s geohash-8 fallback
+/// in `place_key.dart`). At or above this, render individual place pins via
+/// [mapClusters] instead of [bucketClusters].
+const individualPinPrecision = 8;
+
+/// Geohash precision to use for cluster bubbles at a given camera zoom.
+/// Thresholds line up with standard geohash cell sizes: precision 8 (~38m,
+/// individual place territory) down to precision 3 (~156km, country-scale).
+int zoomBucketPrecision(double zoom) {
+  if (zoom >= 15) return individualPinPrecision;
+  if (zoom >= 12) return 6;
+  if (zoom >= 9) return 5;
+  if (zoom >= 6) return 4;
+  return 3;
+}
+
+/// Lat/lng box, kept as a plain record (not `google_maps_flutter`'s
+/// `LatLngBounds`) so this file stays free of Flutter/plugin dependencies.
+typedef LatLngBox = ({
+  double minLat,
+  double minLng,
+  double maxLat,
+  double maxLng,
+});
+
+/// Whether the visible map region has moved enough since the last viewport
+/// fetch to warrant a new one — guards against refetching on the tiny
+/// settle-jitter that lands right at the `onCameraIdle` threshold.
+bool boundsChangedMaterially(
+  LatLngBox last,
+  LatLngBox next, {
+  double threshold = 0.3,
+}) {
+  final lastLatSpan = last.maxLat - last.minLat;
+  final lastLngSpan = last.maxLng - last.minLng;
+  if (lastLatSpan <= 0 || lastLngSpan <= 0) return true;
+
+  final lastCenterLat = (last.minLat + last.maxLat) / 2;
+  final lastCenterLng = (last.minLng + last.maxLng) / 2;
+  final nextCenterLat = (next.minLat + next.maxLat) / 2;
+  final nextCenterLng = (next.minLng + next.maxLng) / 2;
+  final latDrift = (nextCenterLat - lastCenterLat).abs() / lastLatSpan;
+  final lngDrift = (nextCenterLng - lastCenterLng).abs() / lastLngSpan;
+  if (latDrift > threshold || lngDrift > threshold) return true;
+
+  final nextLatSpan = next.maxLat - next.minLat;
+  final nextLngSpan = next.maxLng - next.minLng;
+  final latSpanRatio = nextLatSpan / lastLatSpan;
+  final lngSpanRatio = nextLngSpan / lastLngSpan;
+  if ((latSpanRatio - 1).abs() > threshold ||
+      (lngSpanRatio - 1).abs() > threshold) {
+    return true;
+  }
+  return false;
 }
 
 MonthSummary monthSummary(
@@ -223,6 +306,52 @@ List<MapPlaceCluster> mapClusters(List<TransactionView> rows) {
       totalSpend: total,
       visitCount: txs.length,
       transactions: txs,
+      dominantCategory: _dominantCategory(txs),
+    );
+  }).toList();
+}
+
+String _dominantCategory(List<TransactionView> txs) {
+  final totals = <String, double>{};
+  for (final t in txs) {
+    totals.update(
+      t.effectiveCategory,
+      (v) => v + (t.amountMyr ?? 0),
+      ifAbsent: () => t.amountMyr ?? 0,
+    );
+  }
+  if (totals.isEmpty) return 'Unclassified';
+  return totals.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+}
+
+/// Groups geolocated rows into geohash-precision buckets for zoomed-out map
+/// cluster bubbles — coarser than [mapClusters]' exact-place grouping.
+/// Recompute only on zoom-bucket change or a materially-changed viewport
+/// (see [boundsChangedMaterially]), never on every camera-move frame.
+List<GeoBucket> bucketClusters(List<TransactionView> rows, int precision) {
+  final buckets = <String, List<TransactionView>>{};
+  for (final t in rows) {
+    if (!t.includeInCharts) continue;
+    final lat = t.placeLat;
+    final lng = t.placeLng;
+    if (lat == null || lng == null) continue;
+    final key = geohashAt(lat, lng, precision);
+    buckets.putIfAbsent(key, () => []).add(t);
+  }
+  return buckets.entries.map((e) {
+    final txs = e.value;
+    final center = geohashCentroid(e.key);
+    final placeKeys = <String>{
+      for (final t in txs)
+        effectivePlaceKey(t.placeGooglePlaceId, t.placeLat!, t.placeLng!),
+    };
+    return GeoBucket(
+      bucketKey: e.key,
+      lat: center.lat,
+      lng: center.lng,
+      receiptCount: txs.length,
+      placeCount: placeKeys.length,
+      dominantCategory: _dominantCategory(txs),
     );
   }).toList();
 }
