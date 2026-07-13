@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/badge_repository.dart';
 import '../../domain/logic/badge_catalog.dart';
-import '../../domain/logic/badge_progress.dart';
-import '../../domain/models/transaction_view.dart';
 import '../../widgets/badge_detail_dialog.dart';
 import '../../widgets/badge_hex.dart';
 
@@ -22,7 +19,6 @@ class BadgesScreen extends StatefulWidget {
 class _BadgesScreenState extends State<BadgesScreen> {
   BadgeCatalog? _catalog;
   _Filter _filter = _Filter.all;
-  final _lastSynced = <String, int>{};
 
   @override
   void initState() {
@@ -30,18 +26,6 @@ class _BadgesScreenState extends State<BadgesScreen> {
     BadgeCatalog.loadBundled().then((c) {
       if (mounted) setState(() => _catalog = c);
     });
-  }
-
-  void _syncChanged(List<BadgeEntry> entries) {
-    for (final e in entries) {
-      if (_lastSynced[e.badge.id] == e.progress) continue;
-      _lastSynced[e.badge.id] = e.progress;
-      BadgeRepository.saveBadgeState(
-        e.badge.id,
-        progress: e.progress.toDouble(),
-        earned: e.earned,
-      );
-    }
   }
 
   @override
@@ -58,15 +42,26 @@ class _BadgesScreenState extends State<BadgesScreen> {
       ),
       body: catalog == null
           ? const Center(child: CircularProgressIndicator())
-          : StreamBuilder<List<TransactionView>>(
-              stream: AppServices.transactions.watchAll(),
+          : StreamBuilder<List<Map<String, dynamic>>>(
+              stream: BadgeRepository.streamAll(),
               builder: (context, snapshot) {
-                final rows = snapshot.data ?? const [];
-                final entries = computeBadgeEntries(catalog, rows);
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    snapshot.data == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _syncChanged(entries);
-                });
+                final rows = snapshot.data ?? const [];
+                final entries = catalog.badges.map((badge) {
+                  final row = rows
+                      .where((r) => r['badge_id'] == badge.id)
+                      .firstOrNull;
+                  return (
+                    badge: badge,
+                    progress: (row?['progress'] as num?)?.toInt() ?? 0,
+                    earned: row?['earned'] as bool? ?? false,
+                    tier: (row?['unlocked_tier'] as int?) ?? 0,
+                  );
+                }).toList();
 
                 final filtered = entries.where((e) {
                   switch (_filter) {

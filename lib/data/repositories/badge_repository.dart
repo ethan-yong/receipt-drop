@@ -49,6 +49,18 @@ class BadgeRepository {
     }
   }
 
+  /// Real-time stream of all achievement rows for the current user.
+  /// Emits a new list whenever the Postgres trigger updates user_badges after
+  /// a receipt mutation. Returns an empty stream when not signed in.
+  static Stream<List<Map<String, dynamic>>> streamAll() {
+    final userId = _userId;
+    if (userId == null) return Stream.value([]);
+    return Supabase.instance.client
+        .from('user_badges')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', userId);
+  }
+
   /// Upserts one badge's progress; no-ops silently without a signed-in user
   /// (e.g. demo/skip-auth mode) since there's nowhere to persist to yet.
   static Future<void> saveBadgeState(

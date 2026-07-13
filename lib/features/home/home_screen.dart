@@ -7,6 +7,7 @@ import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/avatar_repository.dart';
+import '../../data/repositories/badge_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
 import '../../domain/logic/badge_catalog.dart';
@@ -30,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   var _showCoachMark =
       AppPrefs.shareCoachMarkPending && !AppPrefs.shareCoachMarkSeen;
   BadgeCatalog? _badgeCatalog;
+  final _badgeStream = BadgeRepository.streamAll();
 
   @override
   void initState() {
@@ -59,20 +61,13 @@ class _HomeScreenState extends State<HomeScreen> {
             final needsReview = rows.where((t) => t.needsReview).length;
             final today = todaysTransactions(rows, DateTime.now());
             final mood = deriveAvatarMood(today);
-            final badgeCatalog = _badgeCatalog;
-            final badgeEntries = badgeCatalog == null
-                ? null
-                : computeBadgeEntries(badgeCatalog, rows);
 
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
               AvatarRepository.syncCurrentMood(mood.name);
               AvatarRepository.syncCurrentStreak(currentDailyStreak(rows));
-              if (badgeEntries != null) {
-                AvatarRepository.syncBadgeCount(
-                  badgeEntries.where((e) => e.earned).length,
-                );
-              }
+              // badge_count is now maintained by the Postgres trigger on transactions;
+              // no client-side syncBadgeCount needed.
               if (Env.hasLeaderboardApiConfig) {
                 SocialRepository.syncLeaderboardScore();
               }
@@ -186,8 +181,26 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        if (badgeEntries != null)
-                          TopBadgesGrid(entries: badgeEntries),
+                        if (_badgeCatalog != null)
+                          StreamBuilder<List<Map<String, dynamic>>>(
+                            stream: _badgeStream,
+                            builder: (context, badgeSnapshot) {
+                              final badgeCatalog = _badgeCatalog!;
+                              final badgeRows = badgeSnapshot.data ?? const [];
+                              final entries = badgeCatalog.badges.map((badge) {
+                                final row = badgeRows
+                                    .where((r) => r['badge_id'] == badge.id)
+                                    .firstOrNull;
+                                return (
+                                  badge: badge,
+                                  progress: (row?['progress'] as num?)?.toInt() ?? 0,
+                                  earned: row?['earned'] as bool? ?? false,
+                                  tier: (row?['unlocked_tier'] as int?) ?? 0,
+                                );
+                              }).toList();
+                              return TopBadgesGrid(entries: entries);
+                            },
+                          ),
                       ],
                     ),
                   ),
