@@ -51,6 +51,7 @@ dependencies:
   http: ^1.2.2
   collection: ^1.18.0
   shared_preferences: ^2.3.3
+  flutter_svg: ^2.0.0
   google_fonts: ^6.2.1
   fl_chart: ^0.69.2
   cached_network_image: ^3.4.1
@@ -103,6 +104,7 @@ flutter:
     - assets/config/categories-v1.json
     - assets/config/badges-v1.json
     - assets/branding/
+    - assets/badges/
     - category_images/
     # Local secrets (gitignored). Copy `.env.example` → `.env` for debug; required for flutter_dotenv on all platforms including web.
     - .env

@@ -1,67 +1,55 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-import '../core/theme/app_theme.dart';
 import '../domain/logic/badge_catalog.dart';
 
-/// Hexagonal badge tile — port of Impact Drops' BadgeHex.
+// Tier ring colors from design: Bronze / Silver / Gold
+const _kTierColors = [
+  Color(0xFFC68A4B),
+  Color(0xFF9AA3AD),
+  Color(0xFFE0AA3E),
+];
+const _kLockedRing = Color(0xFFC9C0AC);
+const _kInnerUnlocked = Color(0xFFF3ECDE);
+const _kInnerLocked = Color(0xFFDEDACF);
+
+// Flat-top hex: 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%
+class _FlatHexClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size s) => Path()
+    ..moveTo(s.width * 0.25, 0)
+    ..lineTo(s.width * 0.75, 0)
+    ..lineTo(s.width, s.height * 0.5)
+    ..lineTo(s.width * 0.75, s.height)
+    ..lineTo(s.width * 0.25, s.height)
+    ..lineTo(0, s.height * 0.5)
+    ..close();
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> old) => false;
+}
+
+/// Hexagonal badge tile.
 class BadgeHex extends StatelessWidget {
   const BadgeHex({
     super.key,
     required this.badge,
     required this.earned,
+    this.tier = 0,
     this.size = 88,
     this.showLabel = false,
-    this.showRarityChip = false,
     this.onTap,
   });
 
   final BadgeDef badge;
   final bool earned;
+  /// 0 = locked, 1/2/3 = current tier.
+  final int tier;
   final double size;
   final bool showLabel;
-  final bool showRarityChip;
   final VoidCallback? onTap;
 
   bool get _locked => badge.comingSoon || !earned;
-
-  Color get _rarityColor {
-    switch (badge.rarity) {
-      case BadgeRarity.common:
-        return const Color(0xFFB8B0A4);
-      case BadgeRarity.rare:
-        return const Color(0xFF6FB8E8);
-      case BadgeRarity.epic:
-        return const Color(0xFFC7A8E8);
-      case BadgeRarity.legendary:
-        return AppColors.primaryGreen;
-    }
-  }
-
-  Color get _rarityChipBg {
-    switch (badge.rarity) {
-      case BadgeRarity.common:
-        return const Color(0xFFE8E4DC);
-      case BadgeRarity.rare:
-        return const Color(0xFFD6EBFA);
-      case BadgeRarity.epic:
-        return const Color(0xFFEDE0F8);
-      case BadgeRarity.legendary:
-        return const Color(0xFFFFF3C4);
-    }
-  }
-
-  Color get _rarityChipText {
-    switch (badge.rarity) {
-      case BadgeRarity.common:
-        return const Color(0xFF645D51);
-      case BadgeRarity.rare:
-        return const Color(0xFF2E6A9E);
-      case BadgeRarity.epic:
-        return const Color(0xFF7B4FA8);
-      case BadgeRarity.legendary:
-        return AppColors.primaryGreenDark;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,45 +58,7 @@ class BadgeHex extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            width: size,
-            height: size,
-            child: CustomPaint(
-              painter: _HexPainter(
-                fill: _locked ? AppColors.divider : _rarityColor,
-                stroke: _locked ? null : _rarityColor,
-                locked: _locked,
-              ),
-              child: Center(
-                child: Opacity(
-                  opacity: _locked ? 0.35 : 1,
-                  child: Text(
-                    badge.emoji,
-                    style: TextStyle(fontSize: size * 0.36),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (showRarityChip) ...[
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: _rarityChipBg,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                badge.rarity.name.toUpperCase(),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      fontSize: 9,
-                      color: _rarityChipText,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.4,
-                    ),
-              ),
-            ),
-          ],
+          _buildHex(),
           if (showLabel) ...[
             const SizedBox(height: 4),
             Text(
@@ -123,97 +73,131 @@ class BadgeHex extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildHex() {
+    final ringColor = _locked ? _kLockedRing : _kTierColors[tier.clamp(1, 3) - 1];
+    final innerBg = _locked ? _kInnerLocked : _kInnerUnlocked;
+    final iconSize = size * 0.54;
+    const inset = 3.0;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // Outer ring hex
+          ClipPath(
+            clipper: _FlatHexClipper(),
+            child: Container(color: ringColor),
+          ),
+          // Inner fill hex
+          Positioned(
+            top: inset,
+            left: inset,
+            right: inset,
+            bottom: inset,
+            child: ClipPath(
+              clipper: _FlatHexClipper(),
+              child: Container(
+                color: innerBg,
+                alignment: Alignment.center,
+                child: _locked
+                    ? ColorFiltered(
+                        colorFilter: const ColorFilter.matrix(<double>[
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0,      0,      0,      0.6, 0,
+                        ]),
+                        child: SvgPicture.asset(
+                          badge.svgAsset,
+                          width: iconSize,
+                          height: iconSize,
+                        ),
+                      )
+                    : SvgPicture.asset(
+                        badge.svgAsset,
+                        width: iconSize,
+                        height: iconSize,
+                      ),
+              ),
+            ),
+          ),
+          // Tier number badge (top-left) — shown only when a tier is earned
+          if (tier > 0)
+            Positioned(
+              top: 2,
+              left: 2,
+              child: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: ringColor,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$tier',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          // Lock icon (bottom-centre)
+          if (_locked)
+            Positioned(
+              bottom: 5,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 19,
+                  child: CustomPaint(painter: _LockPainter()),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
-class _HexPainter extends CustomPainter {
-  _HexPainter({
-    required this.fill,
-    required this.locked,
-    this.stroke,
-  });
-
-  final Color fill;
-  final Color? stroke;
-  final bool locked;
-
-  Path _hexPath(double w, double h) {
-    return Path()
-      ..moveTo(w * 0.5, 0)
-      ..lineTo(w * 0.95, h * 0.25)
-      ..lineTo(w * 0.95, h * 0.75)
-      ..lineTo(w * 0.5, h)
-      ..lineTo(w * 0.05, h * 0.75)
-      ..lineTo(w * 0.05, h * 0.25)
-      ..close();
-  }
-
-  void _drawLock(Canvas canvas, double w, double h) {
-    final bodyPaint = Paint()..color = AppColors.textMuted;
-    final cx = w * 0.5;
-    final cy = h * 0.82;
-    final bodyW = w * 0.14;
-    final bodyH = h * 0.08;
+class _LockPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    const bodyColor = Color(0xFFB9AC8E);
+    final body = Paint()..color = bodyColor;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        Rect.fromCenter(
-          center: Offset(cx, cy + bodyH * 0.15),
-          width: bodyW,
-          height: bodyH,
-        ),
-        const Radius.circular(2),
+        Rect.fromLTWH(0, size.height * 0.41, size.width, size.height * 0.59),
+        const Radius.circular(3),
       ),
-      bodyPaint,
+      body,
     );
     canvas.drawArc(
-      Rect.fromCenter(
-        center: Offset(cx, cy - bodyH * 0.1),
-        width: bodyW * 0.9,
-        height: bodyH * 1.4,
-      ),
+      Rect.fromLTWH(size.width * 0.15, 0, size.width * 0.7, size.height * 0.82),
       3.14,
       3.14,
       false,
       Paint()
-        ..color = AppColors.textMuted
+        ..color = bodyColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
+        ..strokeWidth = 2.6,
     );
   }
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final path = _hexPath(w, h);
-
-    final gradient = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: locked
-            ? [fill.withValues(alpha: 0.6), fill.withValues(alpha: 0.3)]
-            : [fill, fill.withValues(alpha: 0.75)],
-      ).createShader(Offset.zero & size);
-    canvas.drawPath(path, gradient);
-
-    if (stroke != null) {
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = stroke!
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2,
-      );
-    }
-
-    if (locked) {
-      _drawLock(canvas, w, h);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _HexPainter oldDelegate) =>
-      oldDelegate.fill != fill ||
-      oldDelegate.locked != locked ||
-      oldDelegate.stroke != stroke;
+  bool shouldRepaint(covariant CustomPainter old) => false;
 }

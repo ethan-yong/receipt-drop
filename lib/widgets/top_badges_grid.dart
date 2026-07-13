@@ -71,13 +71,14 @@ class _TopBadgesGridState extends State<TopBadgesGrid> {
     return BadgeHex(
       badge: e.badge,
       earned: e.earned,
+      tier: e.tier,
       showLabel: true,
-      showRarityChip: true,
       onTap: () => BadgeDetailDialog.show(
         context,
         badge: e.badge,
         earned: e.earned,
         progress: e.progress,
+        tier: e.tier,
       ),
     );
   }

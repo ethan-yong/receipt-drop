@@ -4,46 +4,54 @@ import '../core/theme/app_theme.dart';
 import '../domain/logic/badge_catalog.dart';
 import 'badge_hex.dart';
 
+const _kTierColors = [
+  Color(0xFFC68A4B),
+  Color(0xFF9AA3AD),
+  Color(0xFFE0AA3E),
+];
+
 class BadgeDetailDialog extends StatelessWidget {
   const BadgeDetailDialog({
     super.key,
     required this.badge,
     required this.earned,
     required this.progress,
+    this.tier = 0,
   });
 
   final BadgeDef badge;
   final bool earned;
   final int progress;
+  final int tier;
 
   static Future<void> show(
     BuildContext context, {
     required BadgeDef badge,
     required bool earned,
     required int progress,
+    int tier = 0,
   }) {
     return showDialog<void>(
       context: context,
-      builder: (_) => BadgeDetailDialog(badge: badge, earned: earned, progress: progress),
+      builder: (_) => BadgeDetailDialog(
+        badge: badge,
+        earned: earned,
+        progress: progress,
+        tier: tier,
+      ),
     );
-  }
-
-  String get _rarityLabel {
-    switch (badge.rarity) {
-      case BadgeRarity.common:
-        return 'COMMON';
-      case BadgeRarity.rare:
-        return 'RARE';
-      case BadgeRarity.epic:
-        return 'EPIC';
-      case BadgeRarity.legendary:
-        return 'LEGENDARY';
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final ratio = (progress / badge.goal).clamp(0.0, 1.0).toDouble();
+    final tierGoals = badge.tierGoals;
+    final nextGoal = tier < tierGoals.length ? tierGoals[tier] : tierGoals.last;
+    final baseGoal = tier > 0 ? tierGoals[tier - 1] : 0;
+    final ratio = ((progress - baseGoal) / (nextGoal - baseGoal)).clamp(0.0, 1.0);
+
+    final tierColor = tier > 0 ? _kTierColors[tier - 1] : const Color(0xFFA69F91);
+    final tierLabel = tier > 0 ? 'TIER $tier / ${tierGoals.length}' : 'LOCKED';
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: AppSpacing.heroBorderRadius),
       child: Padding(
@@ -51,17 +59,28 @@ class BadgeDetailDialog extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            BadgeHex(badge: badge, earned: earned && !badge.comingSoon, size: 96),
+            BadgeHex(
+              badge: badge,
+              earned: earned && !badge.comingSoon,
+              tier: tier,
+              size: 96,
+            ),
             const SizedBox(height: AppSpacing.md),
             Text(badge.label, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 4),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.divider,
+                color: tierColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(_rarityLabel, style: Theme.of(context).textTheme.labelSmall),
+              child: Text(
+                tierLabel,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: tierColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
@@ -83,18 +102,33 @@ class BadgeDetailDialog extends StatelessWidget {
                 ),
               ),
             ] else ...[
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(value: ratio, minHeight: 8),
+              _TierRoadmap(
+                tierGoals: tierGoals,
+                tierUnit: badge.tierUnit,
+                currentTier: tier,
+                progress: progress,
               ),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                earned
-                    ? 'Earned'
-                    : '$progress / ${badge.goal}'
-                        '${badge.hint != null ? ' — ${badge.hint}' : ''}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              if (tier < tierGoals.length) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 8,
+                    color: tierColor,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  '$progress / $nextGoal ${badge.tierUnit}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ] else ...[
+                Text(
+                  'All tiers unlocked!',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ],
             const SizedBox(height: AppSpacing.md),
             TextButton(
@@ -104,6 +138,67 @@ class BadgeDetailDialog extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TierRoadmap extends StatelessWidget {
+  const _TierRoadmap({
+    required this.tierGoals,
+    required this.tierUnit,
+    required this.currentTier,
+    required this.progress,
+  });
+
+  final List<int> tierGoals;
+  final String tierUnit;
+  final int currentTier;
+  final int progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(tierGoals.length, (i) {
+        final earned = i < currentTier;
+        final color = earned ? _kTierColors[i] : AppColors.divider;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Column(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: earned ? color : AppColors.textMuted,
+                    width: 1.5,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${i + 1}',
+                  style: TextStyle(
+                    color: earned ? Colors.white : AppColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${tierGoals[i]}',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: earned ? color : AppColors.textMuted,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 }

@@ -113,12 +113,14 @@ class _BadgesScreenState extends State<BadgesScreen> {
                           return BadgeHex(
                             badge: e.badge,
                             earned: e.earned,
+                            tier: e.tier,
                             showLabel: true,
                             onTap: () => BadgeDetailDialog.show(
                               context,
                               badge: e.badge,
                               earned: e.earned,
                               progress: e.progress,
+                              tier: e.tier,
                             ),
                           );
                         },
