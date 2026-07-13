@@ -19,7 +19,6 @@ import '../../domain/logic/dashboard_aggregates.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/blob_avatar.dart';
-import '../../widgets/empty_state.dart';
 import '../../widgets/map_filter_chips.dart';
 import 'widgets/friend_map_marker.dart';
 import 'widgets/friend_pin_sheet.dart';
@@ -635,21 +634,6 @@ class _SpendMapScreenState extends State<SpendMapScreen>
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) unawaited(_maybeFetchViewport(force: true));
             });
-          }
-
-          // Only declare "no map data" once at least one viewport fetch has
-          // actually resolved — avoids a flash of the empty state while the
-          // first fetch is still in flight.
-          final showEmpty = _viewportRows.isEmpty &&
-              _friendPins.isEmpty &&
-              _lastFetchedBounds != null;
-          if (showEmpty) {
-            return const EmptyState(
-              title: 'No map data yet',
-              subtitle:
-                  'Share receipts with location or enable location when sharing to see spend bubbles.',
-              mascotAsset: 'assets/branding/pug-empty-state.png',
-            );
           }
 
           // Re-resolve the selection against the live viewport clusters so
