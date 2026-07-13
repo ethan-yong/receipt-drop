@@ -85,6 +85,9 @@ export const CATEGORY_TO_PLACE_TYPES: Record<string, string[]> = {
     "meal_takeaway",
     "meal_delivery",
     "bar",
+    "fast_food_restaurant",
+    "coffee_shop",
+    "food_court",
   ],
   "Groceries": ["supermarket", "grocery_store", "convenience_store"],
   "Transport": [

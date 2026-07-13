@@ -243,28 +243,25 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     context.pushNamed('tx-detail', pathParameters: {'id': tx.id});
   }
 
+  // Only bookkeeping here — no visual change yet. Flutter calls this the
+  // instant a finger touches the card, before the gesture arena has decided
+  // whether it's a horizontal swipe, a tap, or a vertical scroll inside the
+  // card's own items list. Applying the press-down scale here would flash it
+  // on every scroll attempt too (see _onDragCancel below).
   void _onDragDown(DragDownDetails details) {
     if (_busy) return;
     _pauseAutoRotate();
     _dragStartX = details.globalPosition.dx;
     _dragRawDx = 0;
     _dragMoved = false;
-    setState(() {
-      _liveDuration = const Duration(milliseconds: 100);
-      _liveCurve = Curves.easeInOut;
-      _dx = 0;
-      _opacity = 1;
-      _scale = 0.965;
-    });
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
     final startX = _dragStartX;
     if (startX == null || _busy) return;
     _dragRawDx = details.globalPosition.dx - startX;
-    if (!_dragMoved && _dragRawDx.abs() > _dragTapTolerance) {
-      _dragMoved = true;
-    }
+    final justConfirmed = !_dragMoved && _dragRawDx.abs() > _dragTapTolerance;
+    if (justConfirmed) _dragMoved = true;
     if (!_dragMoved) return;
     final clamped = _dragRawDx.clamp(-_dragClamp, _dragClamp).toDouble();
     final scale =
@@ -272,8 +269,13 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     final fade =
         1 - (clamped.abs() / (_dragClamp * 2)).clamp(0.0, 1.0).toDouble() * 0.3;
     setState(() {
-      _liveDuration = Duration.zero;
-      _liveCurve = Curves.linear;
+      // Ease into the press-down feel on the first confirmed-horizontal
+      // frame (now that we know this isn't a vertical scroll); track the
+      // finger 1:1 with no animation on every frame after.
+      _liveDuration = justConfirmed
+          ? const Duration(milliseconds: 100)
+          : Duration.zero;
+      _liveCurve = justConfirmed ? Curves.easeInOut : Curves.linear;
       _dx = clamped * 0.6;
       _scale = scale;
       _opacity = fade;
