@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.global_leaderboard import leaderboard_score
+from app.global_leaderboard import compute_leaderboard_score
 from app.main import app, lifespan
 
 
@@ -89,7 +89,8 @@ async def test_score_upsert_reads_postgres():
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     mock_upsert.assert_awaited_once_with(me_id, 7, 3)
-    assert leaderboard_score(7, 3) == 7_000_003.0
+    # score = (streak × 100) + badge_score
+    assert compute_leaderboard_score(7, 3) == 703
 
 
 @pytest.mark.asyncio

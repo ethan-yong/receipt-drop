@@ -1,17 +1,11 @@
 {
-  "version": "2026-06-26.1",
+  "version": "2026-07-14.1",
   "badges": [
-    { "id": "savvy_shopper", "label": "Savvy Shopper", "emoji": "🛍️", "description": "You've recorded 25 shopping receipts.", "rarity": "epic", "goal": 25 },
-    { "id": "caffeine_club", "label": "Caffeine Club", "emoji": "☕", "description": "Logged 15 coffee runs. Your barista knows you.", "rarity": "common", "goal": 15 },
-    { "id": "receipt_keeper", "label": "Receipt Keeper", "emoji": "🧾", "description": "Saved 50 receipts in total. Organized!", "rarity": "rare", "goal": 50 },
-    { "id": "budget_buddy", "label": "Budget Buddy", "emoji": "🐷", "description": "Stayed under budget 4 weeks in a row.", "rarity": "rare", "goal": 4, "comingSoon": true },
-    { "id": "streak_master", "label": "Streak Master", "emoji": "🏅", "description": "Logged a receipt every day for 14 days.", "rarity": "epic", "goal": 14 },
-    { "id": "fuel_saver", "label": "Fuel Saver", "emoji": "⛽", "description": "Tracked 10 fuel receipts and spotted patterns.", "rarity": "common", "goal": 10 },
-    { "id": "explorer", "label": "Explorer", "emoji": "🔍", "description": "Categorize 10 different merchant types.", "rarity": "common", "goal": 10, "hint": "Keep exploring!" },
-    { "id": "early_bird", "label": "Early Bird", "emoji": "⏰", "description": "Log 5 receipts before 9am.", "rarity": "common", "goal": 5, "hint": "Catch the morning runs." },
-    { "id": "smart_spender", "label": "Smart Spender", "emoji": "👛", "description": "Compare prices on 20 items before buying.", "rarity": "rare", "goal": 20, "hint": "Compare and conquer.", "comingSoon": true },
-    { "id": "category_master", "label": "Category Master", "emoji": "🗂️", "description": "Properly categorize 100 receipts.", "rarity": "rare", "goal": 100, "hint": "Sort it out." },
-    { "id": "no_spend_ninja", "label": "No-Spend Ninja", "emoji": "🥷", "description": "Complete a 7-day no-spend streak.", "rarity": "epic", "goal": 7, "hint": "Stealth mode." },
-    { "id": "big_saver", "label": "Big Saver", "emoji": "🔐", "description": "Track RM1000 in a single month.", "rarity": "legendary", "goal": 1000 }
+    { "id": "food_explorer", "label": "Food Explorer", "description": "Discover Malaysian food culture, one restaurant receipt at a time.", "svgAsset": "assets/badges/food_explorer.svg", "tierGoals": [3, 10, 50], "tierUnit": "restaurant receipts" },
+    { "id": "cafe_hopper", "label": "Cafe Hopper", "description": "Hop between cafes and log every cup.", "svgAsset": "assets/badges/cafe_hopper.svg", "tierGoals": [3, 10, 30], "tierUnit": "cafe receipts" },
+    { "id": "grocery_planner", "label": "Grocery Planner", "description": "Keep tabs on every supermarket run.", "svgAsset": "assets/badges/grocery_planner.svg", "tierGoals": [3, 10, 50], "tierUnit": "grocery receipts" },
+    { "id": "digital_tracker", "label": "Digital Tracker", "description": "Share receipts with friends and track together.", "svgAsset": "assets/badges/digital_tracker.svg", "tierGoals": [3, 10, 50], "tierUnit": "shared receipts", "comingSoon": true },
+    { "id": "receipt_collector", "label": "Receipt Collector", "description": "Build up your receipt collection — every one counts.", "svgAsset": "assets/badges/receipt_collector.svg", "tierGoals": [5, 25, 100], "tierUnit": "total receipts" },
+    { "id": "category_explorer", "label": "Category Explorer", "description": "Spend across more categories and unlock your habits.", "svgAsset": "assets/badges/category_explorer.svg", "tierGoals": [3, 5, 8], "tierUnit": "categories" }
   ]
 }

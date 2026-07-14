@@ -4,8 +4,9 @@ import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
-import '../../domain/logic/leaderboard_label.dart';
+import '../../domain/logic/badge_catalog.dart';
 import '../../domain/models/avatar_config.dart';
+import '../../widgets/badge_hex.dart';
 import '../../widgets/blob_avatar.dart';
 
 const _medals = ['🥇', '🥈', '🥉'];
@@ -24,10 +25,14 @@ class LeaderboardScreen extends StatefulWidget {
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
   _LeaderboardMode _mode = _LeaderboardMode.friends;
   List<LeaderboardEntry>? _entries;
+  BadgeCatalog? _catalog;
 
   @override
   void initState() {
     super.initState();
+    BadgeCatalog.loadBundled().then((c) {
+      if (mounted) setState(() => _catalog = c);
+    });
     _load();
   }
 
@@ -87,6 +92,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                     child: _LeaderboardRow(
                       rank: i + 1,
                       entry: entry,
+                      catalog: _catalog,
                       isGlobal: _mode == _LeaderboardMode.global,
                     ),
                   ),
@@ -159,11 +165,13 @@ class _LeaderboardRow extends StatelessWidget {
   const _LeaderboardRow({
     required this.rank,
     required this.entry,
+    required this.catalog,
     required this.isGlobal,
   });
 
   final int rank;
   final LeaderboardEntry entry;
+  final BadgeCatalog? catalog;
   final bool isGlobal;
 
   @override
@@ -172,13 +180,17 @@ class _LeaderboardRow extends StatelessWidget {
         ? AvatarConfig.fromJson(entry.avatarConfigJson!)
         : AvatarConfig.defaultConfig();
     final mood = moodFromName(entry.currentMood);
-    final label = leaderboardLabel(mood: mood, streak: entry.currentStreak);
     final fallbackName = isGlobal ? 'User' : 'Friend';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
-        color: entry.isMe ? AppColors.primaryGreen.withValues(alpha: 0.18) : AppColors.cardSurface,
+        color: entry.isMe
+            ? AppColors.primaryGreen.withValues(alpha: 0.18)
+            : AppColors.cardSurface,
         borderRadius: AppSpacing.cardBorderRadius,
         border: Border.all(
           color: entry.isMe ? AppColors.primaryGreen : AppColors.divider,
@@ -189,7 +201,7 @@ class _LeaderboardRow extends StatelessWidget {
           SizedBox(
             width: 28,
             child: Text(
-              '$rank',
+              rank <= 3 ? _medals[rank - 1] : '$rank',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium,
             ),
@@ -206,11 +218,43 @@ class _LeaderboardRow extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleSmall,
                   overflow: TextOverflow.ellipsis,
                 ),
-                Text(label, style: Theme.of(context).textTheme.bodySmall),
+                if (entry.currentStreak > 0)
+                  Text(
+                    '🔥 ${entry.currentStreak} days',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),
-          if (rank <= 3) Text(_medals[rank - 1], style: const TextStyle(fontSize: 20)),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (catalog != null && entry.topBadges.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final b in entry.topBadges)
+                      if (catalog!.byId(b.badgeId) case final def?)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: BadgeHex(
+                            badge: def,
+                            earned: true,
+                            tier: b.tier,
+                            size: 32,
+                          ),
+                        ),
+                  ],
+                ),
+              Text(
+                '${entry.rankScore} pts',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+              ),
+            ],
+          ),
         ],
       ),
     );

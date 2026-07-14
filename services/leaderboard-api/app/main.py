@@ -88,6 +88,6 @@ async def sync_leaderboard_score(
     scores = await fetch_caller_profile_scores(user.user_id)
     if scores is None:
         return {"status": "no_profile"}
-    streak, badge_count = scores
-    await upsert_user_score(user.user_id, streak, badge_count)
+    streak, badge_score = scores
+    await upsert_user_score(user.user_id, streak, badge_score)
     return {"status": "ok"}

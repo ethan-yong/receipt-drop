@@ -1,16 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/badge_repository.dart';
 import '../../domain/logic/badge_catalog.dart';
-import '../../domain/logic/badge_progress.dart';
-import '../../domain/models/transaction_view.dart';
+import '../../widgets/achievement_progress_card.dart';
 import '../../widgets/badge_detail_dialog.dart';
-import '../../widgets/badge_hex.dart';
-
-enum _Filter { all, earned, locked }
 
 class BadgesScreen extends StatefulWidget {
   const BadgesScreen({super.key});
@@ -21,8 +16,6 @@ class BadgesScreen extends StatefulWidget {
 
 class _BadgesScreenState extends State<BadgesScreen> {
   BadgeCatalog? _catalog;
-  _Filter _filter = _Filter.all;
-  final _lastSynced = <String, int>{};
 
   @override
   void initState() {
@@ -30,18 +23,6 @@ class _BadgesScreenState extends State<BadgesScreen> {
     BadgeCatalog.loadBundled().then((c) {
       if (mounted) setState(() => _catalog = c);
     });
-  }
-
-  void _syncChanged(List<BadgeEntry> entries) {
-    for (final e in entries) {
-      if (_lastSynced[e.badge.id] == e.progress) continue;
-      _lastSynced[e.badge.id] = e.progress;
-      BadgeRepository.saveBadgeState(
-        e.badge.id,
-        progress: e.progress.toDouble(),
-        earned: e.earned,
-      );
-    }
   }
 
   @override
@@ -58,76 +39,99 @@ class _BadgesScreenState extends State<BadgesScreen> {
       ),
       body: catalog == null
           ? const Center(child: CircularProgressIndicator())
-          : StreamBuilder<List<TransactionView>>(
-              stream: AppServices.transactions.watchAll(),
+          : StreamBuilder<List<Map<String, dynamic>>>(
+              stream: BadgeRepository.streamAll(),
               builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    snapshot.data == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
                 final rows = snapshot.data ?? const [];
-                final entries = computeBadgeEntries(catalog, rows);
 
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _syncChanged(entries);
-                });
-
-                final filtered = entries.where((e) {
-                  switch (_filter) {
-                    case _Filter.all:
-                      return true;
-                    case _Filter.earned:
-                      return e.earned;
-                    case _Filter.locked:
-                      return !e.earned;
-                  }
-                }).toList();
-
-                return Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        AppSpacing.md,
-                        0,
-                      ),
-                      child: SegmentedButton<_Filter>(
-                        showSelectedIcon: false,
-                        segments: const [
-                          ButtonSegment(value: _Filter.all, label: Text('ALL')),
-                          ButtonSegment(value: _Filter.earned, label: Text('EARNED')),
-                          ButtonSegment(value: _Filter.locked, label: Text('LOCKED')),
-                        ],
-                        selected: {_filter},
-                        onSelectionChanged: (s) => setState(() => _filter = s.first),
-                      ),
-                    ),
-                    Expanded(
-                      child: GridView.builder(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: AppSpacing.md,
-                          crossAxisSpacing: AppSpacing.sm,
-                        ),
-                        itemCount: filtered.length,
-                        itemBuilder: (context, i) {
-                          final e = filtered[i];
-                          return BadgeHex(
-                            badge: e.badge,
-                            earned: e.earned,
-                            showLabel: true,
-                            onTap: () => BadgeDetailDialog.show(
-                              context,
-                              badge: e.badge,
-                              earned: e.earned,
-                              progress: e.progress,
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final twoCol = constraints.maxWidth > 700;
+                    return CustomScrollView(
+                      slivers: [
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.md,
+                            AppSpacing.md,
+                            AppSpacing.md,
+                            0,
+                          ),
+                          sliver: SliverToBoxAdapter(
+                            child: Text(
+                              'ALL ACHIEVEMENTS',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.6,
+                                    color: const Color(0xFF8A8375),
+                                  ),
                             ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                          ),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.md,
+                            AppSpacing.md,
+                            AppSpacing.md,
+                            AppSpacing.xl,
+                          ),
+                          sliver: twoCol
+                              ? SliverGrid.builder(
+                                  gridDelegate:
+                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    crossAxisSpacing: AppSpacing.md,
+                                    mainAxisSpacing: AppSpacing.md,
+                                    childAspectRatio: 1.55,
+                                  ),
+                                  itemCount: catalog.badges.length,
+                                  itemBuilder: (context, i) =>
+                                      _buildCard(context, catalog.badges[i], rows),
+                                )
+                              : SliverList.separated(
+                                  itemCount: catalog.badges.length,
+                                  separatorBuilder: (context, _) =>
+                                      const SizedBox(height: AppSpacing.md),
+                                  itemBuilder: (context, i) =>
+                                      _buildCard(context, catalog.badges[i], rows),
+                                ),
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
             ),
+    );
+  }
+
+  Widget _buildCard(
+    BuildContext context,
+    BadgeDef badge,
+    List<Map<String, dynamic>> rows,
+  ) {
+    final row = rows.where((r) => r['badge_id'] == badge.id).firstOrNull;
+    final progress = (row?['progress'] as num?)?.toInt() ?? 0;
+    final tier = (row?['unlocked_tier'] as int?) ?? 0;
+
+    return AchievementProgressCard(
+      badge: badge,
+      progress: progress,
+      tier: tier,
+      onTap: () => BadgeDetailDialog.show(
+        context,
+        badge: badge,
+        earned: tier > 0,
+        progress: progress,
+        tier: tier,
+      ),
     );
   }
 }

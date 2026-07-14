@@ -2,7 +2,7 @@ from typing import Any
 
 from app.cache import get_redis
 from app.db import fetch_all_leaderboard_scores, fetch_profiles_by_ids_as_user
-from app.global_leaderboard import GLOBAL_ZSET_KEY, leaderboard_score
+from app.global_leaderboard import GLOBAL_ZSET_KEY, compute_leaderboard_score
 
 
 async def zset_cardinality() -> int:
@@ -10,9 +10,9 @@ async def zset_cardinality() -> int:
     return int(await client.zcard(GLOBAL_ZSET_KEY))
 
 
-async def upsert_user_score(user_id: str, streak: int, badge_count: int) -> None:
+async def upsert_user_score(user_id: str, streak: int, badge_score: int) -> None:
     client = await get_redis()
-    score = leaderboard_score(streak, badge_count)
+    score = compute_leaderboard_score(streak, badge_score)
     await client.zadd(GLOBAL_ZSET_KEY, {user_id: score})
 
 
@@ -28,8 +28,8 @@ async def rebuild_from_postgres() -> int:
         return 0
     client = await get_redis()
     mapping = {
-        user_id: leaderboard_score(streak, badge_count)
-        for user_id, streak, badge_count in rows
+        user_id: compute_leaderboard_score(streak, badge_score)
+        for user_id, streak, badge_score in rows
     }
     await client.zadd(GLOBAL_ZSET_KEY, mapping)
     return len(mapping)
