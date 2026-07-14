@@ -162,8 +162,8 @@ class BadgeHex extends StatelessWidget {
               right: 0,
               child: Center(
                 child: SizedBox(
-                  width: 24,
-                  height: 19,
+                  width: 14,
+                  height: 12,
                   child: CustomPaint(painter: _LockPainter()),
                 ),
               ),

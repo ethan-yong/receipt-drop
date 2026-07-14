@@ -285,8 +285,8 @@ class _TierHex extends StatelessWidget {
               right: 0,
               child: Center(
                 child: SizedBox(
-                  width: 20,
-                  height: 17,
+                  width: 14,
+                  height: 12,
                   child: CustomPaint(painter: _LockPainter()),
                 ),
               ),
