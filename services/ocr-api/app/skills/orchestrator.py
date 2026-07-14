@@ -10,7 +10,10 @@ prior-probability winner in the Malaysian receipt corpus.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger("ocr_api.skills.orchestrator")
 
 # Each entry is (keyword_substring, weight).  Longer/more-specific phrases
 # score higher so "transaction id" beats a stray "balance" hit.
@@ -140,18 +143,46 @@ def classify_receipt(ocr_text: str) -> ClassificationResult:
     """
     text = ocr_text.lower()
     scores: dict[str, float] = {}
+    matched_signals: dict[str, list[str]] = {}
 
     for receipt_type, signals in _SIGNALS.items():
         total_weight = sum(w for _, w in signals)
-        hit_weight = sum(w for kw, w in signals if kw in text)
+        hits = [(kw, w) for kw, w in signals if kw in text]
+        hit_weight = sum(w for _, w in hits)
         scores[receipt_type] = hit_weight / total_weight if total_weight else 0.0
+        matched_signals[receipt_type] = [kw for kw, _ in hits]
 
     best_type = max(scores, key=lambda t: scores[t])
     best_score = scores[best_type]
 
+    if logger.isEnabledFor(logging.DEBUG):
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        parts = [f"{t}={s:.3f}" for t, s in ranked if s > 0]
+        logger.debug(
+            "classifier scores: %s",
+            ", ".join(parts) if parts else "(no hits)",
+        )
+        if matched_signals.get(best_type):
+            logger.debug(
+                "top type %r matched signals: %s",
+                best_type,
+                ", ".join(repr(kw) for kw in matched_signals[best_type]),
+            )
+
     if best_score < _MIN_CONFIDENCE_THRESHOLD:
+        logger.info(
+            "classifier: no type cleared threshold (best=%r score=%.3f) → fallback to restaurant",
+            best_type,
+            best_score,
+        )
         return ClassificationResult(receipt_type="restaurant", confidence=best_score)
 
     # Clamp to [0, 1] and scale so a max-match is ~0.99.
     confidence = min(best_score * 3.0, 0.99)
+    logger.info(
+        "classifier: skill=%r confidence=%.2f signals=[%s]",
+        best_type,
+        confidence,
+        ", ".join(repr(kw) for kw in matched_signals[best_type]),
+    )
     return ClassificationResult(receipt_type=best_type, confidence=confidence)

@@ -462,11 +462,6 @@ async def call_receipt_understanding(
     """
     classification = classify_receipt(ocr_text)
     skill_prompt = SKILL_PROMPTS[classification.receipt_type]
-    logger.info(
-        "receipt classified as %r (confidence=%.2f)",
-        classification.receipt_type,
-        classification.confidence,
-    )
 
     cfg = resolve_llm_config()
 
