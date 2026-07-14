@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -9,11 +10,14 @@ import '../../core/bootstrap/app_services.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/category_matcher_bundled.dart';
+import '../../domain/models/ocr_progress_event.dart';
 import '../../domain/models/transaction_view.dart';
+import 'ocr_progress_notifier.dart';
 import 'receipt_capture_menu.dart';
 import 'receipt_confirm_sheet.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_ingest_service.dart';
+import 'receipt_scan_processing_screen.dart';
 
 /// Picks a receipt, runs ingest, and shows the save sheet.
 class ReceiptCaptureFlow {
@@ -71,29 +75,32 @@ class ReceiptCaptureFlow {
     required String path,
     required String mimeType,
   }) async {
-    try {
-      PlatformFeedback.lightTap();
-      PlatformFeedback.showOcrProgress(context);
-      final draft = await ReceiptIngestService.ingestPath(
-        path: path,
-        mimeType: mimeType,
-      );
-      PlatformFeedback.hideOcrProgress();
-      if (!context.mounted) return;
-      await _showSaveSheet(
-        context,
-        draft,
-        fromShareIntent: true,
-      );
-    } catch (e) {
-      PlatformFeedback.hideOcrProgress();
-      if (context.mounted) {
-        PlatformFeedback.showError(
-          context,
-          'Could not read shared receipt: $e',
+    PlatformFeedback.lightTap();
+    final notifier = OcrProgressNotifier();
+    unawaited(Future<void>(() async {
+      try {
+        await ReceiptIngestService.ingestPath(
+          path: path,
+          mimeType: mimeType,
+          notifier: notifier,
         );
+      } catch (e) {
+        await notifier.emit(ProcessingFailedEvent(error: e));
       }
+    }));
+    if (!context.mounted) {
+      notifier.dispose();
+      return;
     }
+    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+      MaterialPageRoute<ReceiptIngestDraft>(
+        builder: (_) =>
+            ReceiptScanProcessingScreen(stream: notifier.stream),
+      ),
+    );
+    notifier.dispose();
+    if (draft == null || !context.mounted) return;
+    await _showSaveSheet(context, draft, fromShareIntent: true);
   }
 
   static Future<void> _ingestAndSave(
@@ -101,21 +108,31 @@ class ReceiptCaptureFlow {
     required Uint8List bytes,
     required String mimeType,
   }) async {
-    PlatformFeedback.showOcrProgress(context);
-    try {
-      final draft = await ReceiptIngestService.ingestBytes(
-        bytes: bytes,
-        mimeType: mimeType,
-      );
-      PlatformFeedback.hideOcrProgress();
-      if (!context.mounted) return;
-      await _showSaveSheet(context, draft);
-    } catch (e) {
-      PlatformFeedback.hideOcrProgress();
-      if (context.mounted) {
-        PlatformFeedback.showError(context, 'Could not read receipt: $e');
+    final notifier = OcrProgressNotifier();
+    unawaited(Future<void>(() async {
+      try {
+        await ReceiptIngestService.ingestBytes(
+          bytes: bytes,
+          mimeType: mimeType,
+          notifier: notifier,
+        );
+      } catch (e) {
+        await notifier.emit(ProcessingFailedEvent(error: e));
       }
+    }));
+    if (!context.mounted) {
+      notifier.dispose();
+      return;
     }
+    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+      MaterialPageRoute<ReceiptIngestDraft>(
+        builder: (_) =>
+            ReceiptScanProcessingScreen(stream: notifier.stream),
+      ),
+    );
+    notifier.dispose();
+    if (draft == null || !context.mounted) return;
+    await _showSaveSheet(context, draft);
   }
 
   static Future<void> _showSaveSheet(

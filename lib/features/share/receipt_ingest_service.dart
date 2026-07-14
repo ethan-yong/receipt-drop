@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import '../../core/utils/current_location.dart';
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/category_matcher_bundled.dart';
+import '../../domain/models/ocr_progress_event.dart';
+import 'ocr_progress_notifier.dart';
 import 'receipt_file_store.dart';
 import 'receipt_ingest_draft.dart';
 import 'receipt_parse_file.dart';
@@ -26,21 +28,29 @@ class ReceiptIngestService {
   static Future<ReceiptIngestDraft> ingestBytes({
     required Uint8List bytes,
     required String mimeType,
+    OcrProgressNotifier? notifier,
   }) async {
+    await notifier?.emit(const ReceiptUploadedEvent());
     final stored = await persistReceiptBytes(bytes, mimeType);
-    return _buildDraft(stored);
+    return _buildDraft(stored, notifier: notifier);
   }
 
   /// Build a draft from a filesystem path (native share / image picker path).
   static Future<ReceiptIngestDraft> ingestPath({
     required String path,
     required String mimeType,
+    OcrProgressNotifier? notifier,
   }) async {
+    await notifier?.emit(const ReceiptUploadedEvent());
     final bytes = await path_reader.readPathBytes(path);
-    return ingestBytes(bytes: bytes, mimeType: mimeType);
+    final stored = await persistReceiptBytes(bytes, mimeType);
+    return _buildDraft(stored, notifier: notifier);
   }
 
-  static Future<ReceiptIngestDraft> _buildDraft(StoredReceiptFile stored) async {
+  static Future<ReceiptIngestDraft> _buildDraft(
+    StoredReceiptFile stored, {
+    OcrProgressNotifier? notifier,
+  }) async {
     final categories = await _categories();
     final parsed = stored.localPath.startsWith('web:')
         ? parseReceiptOcrText(
@@ -52,11 +62,23 @@ class ReceiptIngestService {
             filePath: stored.localPath,
             mimeType: stored.mimeType,
             categories: categories,
+            notifier: notifier,
           );
+
+    // Emit extracted-data events sequentially so the UI log fills in with
+    // real values. The notifier enforces a minimum display time per step.
+    await notifier?.emit(MerchantIdentifiedEvent(
+      merchant: parsed.understanding?.merchantName ?? parsed.merchantRaw,
+    ));
+    if (parsed.lineItems.isNotEmpty) {
+      await notifier?.emit(ItemsExtractedEvent(count: parsed.lineItems.length));
+    }
+    await notifier?.emit(TotalExtractedEvent(amount: parsed.amountMyr));
+    await notifier?.emit(CategoryPredictedEvent(category: parsed.categoryGuess));
 
     final location = await getCurrentPositionOrNull();
 
-    return ReceiptIngestDraft(
+    final draft = ReceiptIngestDraft(
       localFilePath: stored.localPath,
       mimeType: stored.mimeType,
       amountMyr: parsed.amountMyr,
@@ -70,9 +92,6 @@ class ReceiptIngestService {
       shareLocationCapturedAt: location != null ? DateTime.now().toUtc() : null,
       ocrConfidence: parsed.ocrConfidence,
       lineItems: parsed.lineItems,
-      // Always kept now (capped): the server-side LLM receipt-understanding
-      // step (enrich-transaction) needs the full receipt body, not just the
-      // merchant header, to infer category from line items.
       rawOcrText: parsed.ocrText.isNotEmpty
           ? _capOcrText(parsed.ocrText)
           : null,
@@ -84,6 +103,9 @@ class ReceiptIngestService {
       ocrHeaderText: parsed.ocrHeaderText,
       understanding: parsed.understanding,
     );
+
+    await notifier?.emit(ProcessingCompletedEvent(draft: draft));
+    return draft;
   }
 
   static const int _maxRawOcrTextChars = 8000;
