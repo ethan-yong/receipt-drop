@@ -19,6 +19,11 @@ Places-query-building (buildLlmTextQueries/resolveIncludedTypes) and
 re-validates whatever this endpoint returns as a second line of defense —
 same "two ports of one algorithm" precedent as the Dart/TS geohash encoder
 (see memory/dependency_graph.md).
+
+Receipt routing: a keyword classifier (app/skills/orchestrator.py) picks
+the appropriate extraction prompt before each LLM call — no extra round-trip.
+Skill prompts live in app/skills/; restaurant.py is the original prompt
+moved verbatim.
 """
 
 from __future__ import annotations
@@ -32,6 +37,8 @@ from dataclasses import dataclass
 
 import httpx
 from pydantic import BaseModel
+
+from app.skills import SKILL_PROMPTS, classify_receipt
 
 logger = logging.getLogger("ocr_api.receipt_understanding")
 
@@ -149,67 +156,6 @@ ALLOWED_PLACE_TYPES = {
     "barber_shop",
 }
 
-SYSTEM_PROMPT = (
-    "You are a receipt-understanding engine for Malaysian receipts. The "
-    "input is raw OCR text from ONE receipt — a mix of Malay and English, "
-    "often with OCR errors (dropped letters, wrong characters, merged "
-    "words).\n\n"
-    "Respond with ONE JSON object and nothing else — no markdown, no "
-    "explanation — with exactly these keys:\n\n"
-    '"merchant_name" (string or null): the business name printed on the '
-    'receipt, with obvious OCR spelling errors corrected (e.g. "RESTORAN '
-    'ANWAR MAU" -> "Restoran Anwar Maju") ONLY when you are confident of '
-    "the intended name, normalized to Title Case. Keep legal suffixes "
-    "(Sdn Bhd, Enterprise) here if printed. NEVER a phone number, "
-    "receipt/invoice number, tax/SST/GST/ROC registration ID, cashier "
-    "name, or slogan. null if no business name is readable.\n\n"
-    '"merchant_search_queries" (array of 1-3 strings, most specific '
-    "first): variants of the merchant name suitable for a Google Places "
-    "text search — strip legal suffixes (Sdn Bhd, Trading, Enterprise), "
-    "branch codes, and store numbers. Empty array if merchant_name is "
-    "null.\n\n"
-    '"address_text" (string or null): the vendor\'s street address as '
-    "printed on the receipt, cleaned up, or null if none is present. "
-    "Never the customer's address.\n\n"
-    '"location_clues" (array of strings): short area tokens found on the '
-    "receipt that help locate the vendor — neighbourhood (SS2, USJ 10), "
-    "mall (Pavilion KL, 1 Utama), city (Petaling Jaya, Kuala Lumpur). "
-    "Empty array if none.\n\n"
-    '"vendor_category" (string): exactly one of food_and_drink, '
-    "groceries, transport, travel, shopping, health_beauty, "
-    "entertainment, services, other. Infer from the merchant name AND "
-    "the purchased line items — e.g. shampoo + milk + bread means "
-    "groceries even if the shop name is unreadable.\n\n"
-    '"google_place_types" (array of 1-4 strings): Google Places API '
-    "place types matching this vendor, e.g. restaurant, cafe, bakery, "
-    "meal_takeaway, fast_food_restaurant, coffee_shop, supermarket, "
-    "convenience_store, pharmacy, gas_station, clothing_store, "
-    "hair_salon, gym.\n\n"
-    '"line_items" (array of objects, one per distinct purchased item): '
-    "reconstruct every legible item row, correcting obvious OCR damage "
-    '(merged "RM"+digits, a comma misread for a decimal point, '
-    "dropped/swapped letters in the item name). Transcribe each price's "
-    "digits exactly as printed — never invent or merge digits from a "
-    "neighboring line; a single item's price must not exceed the "
-    'receipt\'s total. Each object has "name" (string — the item '
-    'description, cleaned up), "price" (number or null — the row\'s '
-    "printed line total in MYR, never a unit price, no currency "
-    'prefix), and "quantity" (number or null — read from a leading '
-    'count column printed before the item name, e.g. "3 Teh O Limau '
-    'Ais" -> quantity 3, or a trailing multiplier like "2 x"; null '
-    "when no quantity is printed, not when the count is 1). Skip "
-    "summary rows (subtotal, tax, service charge, rounding, change, "
-    "cash/card tendered). Empty array if no item rows are legible.\n\n"
-    '"confidence" (object): {"merchant": 0-1, "address": 0-1, '
-    '"category": 0-1, "line_items": 0-1} — your confidence in each '
-    "extraction.\n\n"
-    "If the merchant name is unreadable but an address or line items "
-    "are present, set merchant_name to null with a low merchant "
-    "confidence and still fill in the address, location clues, and "
-    "category."
-)
-
-
 class ReceiptUnderstandingConfidence(BaseModel):
     merchant: float
     address: float
@@ -236,6 +182,18 @@ class ReceiptUnderstandingResponse(BaseModel):
     google_place_types: list[str]
     line_items: list[ReceiptLineItemUnderstanding] = []
     confidence: ReceiptUnderstandingConfidence
+    # Skill routing output — stamped by call_receipt_understanding after the
+    # LLM call; the LLM itself does not produce this field.
+    receipt_type: str | None = None
+    # Skill-specific optional fields (payment, grocery, transport skills).
+    # All None for restaurant/cafe receipts.
+    transaction_date: str | None = None
+    amount: float | None = None          # LLM-extracted total (payment/transport)
+    payment_method: str | None = None
+    transaction_id: str | None = None
+    booking_reference: str | None = None
+    origin: str | None = None
+    destination: str | None = None
 
 
 class ReceiptUnderstandingError(Exception):
@@ -380,8 +338,18 @@ def parse_receipt_understanding(raw: str) -> ReceiptUnderstandingResponse | None
     location_clues = _as_str_list(obj.get("location_clues"))
     line_items = _as_line_items(obj.get("line_items"))
 
+    # Skill-specific optional fields — defensive coercion, wrong types → None.
+    transaction_date = _as_str_or_none(obj.get("transaction_date"))
+    amount = _as_positive_float_or_none(obj.get("amount"))
+    payment_method = _as_str_or_none(obj.get("payment_method"))
+    transaction_id = _as_str_or_none(obj.get("transaction_id"))
+    booking_reference = _as_str_or_none(obj.get("booking_reference"))
+    origin = _as_str_or_none(obj.get("origin"))
+    destination = _as_str_or_none(obj.get("destination"))
+
     actionable = bool(
         merchant_name or queries or address_text or location_clues or line_items
+        or amount or transaction_id or booking_reference
     )
     if not actionable:
         return None
@@ -400,13 +368,20 @@ def parse_receipt_understanding(raw: str) -> ReceiptUnderstandingResponse | None
             category=_clamp01(confidence_obj.get("category")),
             line_items=_clamp01(confidence_obj.get("line_items")),
         ),
+        transaction_date=transaction_date,
+        amount=amount,
+        payment_method=payment_method,
+        transaction_id=transaction_id,
+        booking_reference=booking_reference,
+        origin=origin,
+        destination=destination,
     )
 
 
-def _build_messages(ocr_text: str) -> list[dict[str, str]]:
+def _build_messages(ocr_text: str, *, system_prompt: str) -> list[dict[str, str]]:
     truncated = ocr_text[:MAX_OCR_PROMPT_CHARS]
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": truncated},
     ]
 
@@ -480,14 +455,26 @@ async def call_receipt_understanding(
     [ReceiptUnderstandingError]. No retry beyond one narrow response_format
     fallback on HTTP 400 — every other failure propagates immediately so the
     caller (enrich-transaction) fails the enrichment rather than falling
-    back to weaker heuristics."""
+    back to weaker heuristics.
+
+    The keyword orchestrator (app/skills/orchestrator.py) selects the
+    appropriate extraction prompt before the LLM call — no extra round-trip.
+    """
+    classification = classify_receipt(ocr_text)
+    skill_prompt = SKILL_PROMPTS[classification.receipt_type]
+    logger.info(
+        "receipt classified as %r (confidence=%.2f)",
+        classification.receipt_type,
+        classification.confidence,
+    )
+
     cfg = resolve_llm_config()
 
     url = _chat_completions_url(cfg.base_url)
     headers = {"Content-Type": "application/json"}
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
-    messages = _build_messages(ocr_text)
+    messages = _build_messages(ocr_text, system_prompt=skill_prompt)
 
     def _body(with_response_format: bool) -> dict[str, object]:
         body: dict[str, object] = {
@@ -568,12 +555,16 @@ async def call_receipt_understanding(
             content[:2000],
         )
 
+    # Stamp the classifier result — the LLM prompt does not produce this field.
+    understanding.receipt_type = classification.receipt_type
+
     logger.info(
-        "LLM understanding ok in %.2fs (model=%s) — merchant=%r "
-        "(confidence=%.2f), category=%r (confidence=%.2f), queries=%d, "
-        "placeTypes=%d, lineItems=%d",
+        "LLM understanding ok in %.2fs (model=%s) — receiptType=%r, "
+        "merchant=%r (confidence=%.2f), category=%r (confidence=%.2f), "
+        "queries=%d, placeTypes=%d, lineItems=%d",
         elapsed,
         model_used,
+        understanding.receipt_type,
         understanding.merchant_name,
         understanding.confidence.merchant,
         understanding.vendor_category,

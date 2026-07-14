@@ -16,6 +16,14 @@ class ReceiptUnderstanding {
     required this.googlePlaceTypes,
     required this.lineItems,
     required this.confidence,
+    this.receiptType,
+    this.transactionDate,
+    this.amount,
+    this.paymentMethod,
+    this.transactionId,
+    this.bookingReference,
+    this.origin,
+    this.destination,
   });
 
   final String? merchantName;
@@ -26,6 +34,22 @@ class ReceiptUnderstanding {
   final List<String> googlePlaceTypes;
   final List<ReceiptUnderstandingLineItem> lineItems;
   final ReceiptUnderstandingConfidence confidence;
+
+  /// Receipt type determined by the keyword orchestrator before the LLM call.
+  /// One of: restaurant, cafe, payment, grocery, retail, transport, travel, unknown.
+  final String? receiptType;
+
+  /// Skill-specific optional fields — non-null only for the relevant skill.
+  final String? transactionDate;
+
+  /// LLM-extracted payment/fare amount (payment and transport skills only).
+  /// Distinct from the heuristic-parsed `amountMyr` in [ReceiptParseResult].
+  final double? amount;
+  final String? paymentMethod;
+  final String? transactionId;
+  final String? bookingReference;
+  final String? origin;
+  final String? destination;
 
   /// Defensive parse: any wrong-shaped field is dropped rather than
   /// throwing — this is a hint from an external call, never the source of
@@ -47,6 +71,8 @@ class ReceiptUnderstanding {
           ].whereType<ReceiptUnderstandingLineItem>().toList()
         : <ReceiptUnderstandingLineItem>[];
 
+    final amountRaw = json['amount'];
+
     return ReceiptUnderstanding(
       merchantName: asStringOrNull(json['merchant_name']),
       merchantSearchQueries: asStringList(json['merchant_search_queries']),
@@ -56,6 +82,14 @@ class ReceiptUnderstanding {
       googlePlaceTypes: asStringList(json['google_place_types']),
       lineItems: lineItems,
       confidence: ReceiptUnderstandingConfidence.fromJson(json['confidence']),
+      receiptType: asStringOrNull(json['receipt_type']),
+      transactionDate: asStringOrNull(json['transaction_date']),
+      amount: amountRaw is num ? amountRaw.toDouble() : null,
+      paymentMethod: asStringOrNull(json['payment_method']),
+      transactionId: asStringOrNull(json['transaction_id']),
+      bookingReference: asStringOrNull(json['booking_reference']),
+      origin: asStringOrNull(json['origin']),
+      destination: asStringOrNull(json['destination']),
     );
   }
 
@@ -68,6 +102,14 @@ class ReceiptUnderstanding {
         'google_place_types': googlePlaceTypes,
         'line_items': lineItems.map((it) => it.toJson()).toList(),
         'confidence': confidence.toJson(),
+        if (receiptType != null) 'receipt_type': receiptType,
+        if (transactionDate != null) 'transaction_date': transactionDate,
+        if (amount != null) 'amount': amount,
+        if (paymentMethod != null) 'payment_method': paymentMethod,
+        if (transactionId != null) 'transaction_id': transactionId,
+        if (bookingReference != null) 'booking_reference': bookingReference,
+        if (origin != null) 'origin': origin,
+        if (destination != null) 'destination': destination,
       };
 }
 

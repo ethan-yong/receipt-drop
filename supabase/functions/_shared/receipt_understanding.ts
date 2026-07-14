@@ -188,6 +188,16 @@ export interface ReceiptUnderstanding {
   google_place_types: string[];
   line_items: ReceiptUnderstandingLineItem[];
   confidence: ReceiptUnderstandingConfidence;
+  // Skill routing — stamped by call_receipt_understanding, not the LLM prompt.
+  receipt_type?: string | null;
+  // Skill-specific optional fields (payment, grocery, transport skills).
+  transaction_date?: string | null;
+  amount?: number | null;
+  payment_method?: string | null;
+  transaction_id?: string | null;
+  booking_reference?: string | null;
+  origin?: string | null;
+  destination?: string | null;
 }
 
 /**
@@ -316,6 +326,16 @@ export function parseReceiptUnderstanding(
 
   const lineItems = asLineItems(obj.line_items);
 
+  // Skill-specific optional fields — defensive coercion, wrong types → null.
+  const receiptType = asTrimmedStringOrNull(obj.receipt_type);
+  const transactionDate = asTrimmedStringOrNull(obj.transaction_date);
+  const amount = asPositiveNumberOrNull(obj.amount);
+  const paymentMethod = asTrimmedStringOrNull(obj.payment_method);
+  const transactionId = asTrimmedStringOrNull(obj.transaction_id);
+  const bookingReference = asTrimmedStringOrNull(obj.booking_reference);
+  const origin = asTrimmedStringOrNull(obj.origin);
+  const destination = asTrimmedStringOrNull(obj.destination);
+
   const understanding: ReceiptUnderstanding = {
     merchant_name: merchantName,
     merchant_search_queries: queries,
@@ -330,13 +350,24 @@ export function parseReceiptUnderstanding(
       category: clamp01(confidenceObj.category),
       line_items: clamp01(confidenceObj.line_items),
     },
+    ...(receiptType !== null && { receipt_type: receiptType }),
+    ...(transactionDate !== null && { transaction_date: transactionDate }),
+    ...(amount !== null && { amount }),
+    ...(paymentMethod !== null && { payment_method: paymentMethod }),
+    ...(transactionId !== null && { transaction_id: transactionId }),
+    ...(bookingReference !== null && { booking_reference: bookingReference }),
+    ...(origin !== null && { origin }),
+    ...(destination !== null && { destination }),
   };
 
   const actionable = understanding.merchant_name !== null ||
     understanding.merchant_search_queries.length > 0 ||
     understanding.address_text !== null ||
     understanding.location_clues.length > 0 ||
-    understanding.line_items.length > 0;
+    understanding.line_items.length > 0 ||
+    understanding.amount != null ||
+    understanding.transaction_id != null ||
+    understanding.booking_reference != null;
   return actionable ? understanding : null;
 }
 

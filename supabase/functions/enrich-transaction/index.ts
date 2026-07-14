@@ -338,6 +338,35 @@ Deno.serve(async (req) => {
   const merchantNormalized = understanding.merchant_name ??
     normalizeMerchant(merchantRaw);
 
+  // Payment receipts (Touch 'n Go, Maybank, GrabPay, etc.) are not physical
+  // venues — a Google Places search would waste API quota and produce wrong
+  // pins. Mark enriched and skip the Places step entirely.
+  if (understanding.receipt_type === "payment") {
+    const { error: upErr } = await supabase
+      .from("transactions")
+      .update({
+        merchant_normalized: merchantNormalized,
+        pipeline_status: "enriched",
+      })
+      .eq("id", transactionId)
+      .eq("user_id", user.id);
+
+    if (upErr) {
+      return new Response(JSON.stringify({ error: "server_misconfigured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    console.log(
+      `enrich-transaction[${transactionId}]: skipped Places (receipt_type=payment)`,
+    );
+    return new Response(
+      JSON.stringify({ ok: true, skipped_places: true, reason: "payment_receipt" }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
   const shareLat = row.share_location_lat;
   const shareLng = row.share_location_lng;
   const hasLocation =

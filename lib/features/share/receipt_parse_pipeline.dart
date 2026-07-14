@@ -189,7 +189,9 @@ ReceiptParseResult parseReceiptOcrText({
   String? understandingError,
 }) {
   // Fast path: known bank/wallet providers have templated, labeled-field output
-  // that regex can read reliably. Skip heuristics and LLM entirely.
+  // that regex can read reliably. Heuristic amount stays authoritative here,
+  // but pass understanding through so receipt_type/payment_method/etc. are
+  // available to downstream consumers.
   final bankParse = tryParseBankReceipt(ocrText);
   if (bankParse != null) {
     return ReceiptParseResult(
@@ -212,7 +214,8 @@ ReceiptParseResult parseReceiptOcrText({
       ],
       // No line items — bank screenshots never have itemized lists.
       // ocrHeaderText: null — not a physical merchant; skip Places enrichment.
-      // understanding/understandingError: null — LLM bypassed by design.
+      understanding: understanding,
+      understandingError: understandingError,
     );
   }
 
@@ -232,7 +235,13 @@ ReceiptParseResult parseReceiptOcrText({
     largestItemPriceMyr: largestItemPrice,
     lineItemCount: extracted.items.length,
   );
-  final amount = parseResult.amount;
+  // For payment and transport receipts the LLM skill extracts the actual
+  // transaction amount (distinguishing it from account balance / surcharges).
+  // Prefer that over the heuristic when available.
+  final _receiptType = understanding?.receiptType;
+  final amount = (_receiptType == 'payment' || _receiptType == 'transport')
+      ? (understanding?.amount ?? parseResult.amount)
+      : parseResult.amount;
   final heuristicLineItems = reconcileWithTotal(extracted, amount);
 
   // LLM items are the source of truth whenever the LLM extracted any — the
