@@ -1,7 +1,7 @@
 """LLM receipt-understanding step: turns raw OCR text into structured
 merchant info (corrected name, search queries, address clues, category,
 Google Places types, line items, confidences). Called synchronously from
-`POST /ocr` (see app/main.py) so the OCR response is already interpreted by
+`POST /ocr` (see ocr_api/main.py) so the OCR response is already interpreted by
 the time it reaches the client — `enrich-transaction` only calls this
 directly (via `POST /understand`) as a fallback for rows that reached it
 without a usable precomputed understanding.
@@ -10,7 +10,7 @@ Calls an OpenAI-compatible chat endpoint — either the self-hosted
 LiteLLM/vLLM gateway (`LLM_PROVIDER=vllm`, the default) or DeepSeek
 (`LLM_PROVIDER=deepseek`). Same vars probed by
 scripts/inspect_llm_endpoint.py; read from the root .env via
-app/__main__.py's _load_root_dotenv(). Flip `LLM_PROVIDER` to switch.
+ocr_api/__main__.py's _load_root_dotenv(). Flip `LLM_PROVIDER` to switch.
 
 Field/vocabulary definitions here (VENDOR_CATEGORIES, ALLOWED_PLACE_TYPES,
 the system prompt) must stay in sync with
@@ -20,9 +20,9 @@ re-validates whatever this endpoint returns as a second line of defense —
 same "two ports of one algorithm" precedent as the Dart/TS geohash encoder
 (see memory/dependency_graph.md).
 
-Receipt routing: a keyword classifier (app/skills/orchestrator.py) picks
+Receipt routing: a keyword classifier (ocr_api/skills/orchestrator.py) picks
 the appropriate extraction prompt before each LLM call — no extra round-trip.
-Skill prompts live in app/skills/; restaurant.py is the original prompt
+Skill prompts live in ocr_api/skills/; restaurant.py is the original prompt
 moved verbatim.
 """
 
@@ -38,7 +38,7 @@ from dataclasses import dataclass
 import httpx
 from pydantic import BaseModel
 
-from app.skills import SKILL_PROMPTS, classify_receipt
+from ocr_api.skills import SKILL_PROMPTS, classify_receipt
 
 logger = logging.getLogger("ocr_api.receipt_understanding")
 
@@ -457,7 +457,7 @@ async def call_receipt_understanding(
     caller (enrich-transaction) fails the enrichment rather than falling
     back to weaker heuristics.
 
-    The keyword orchestrator (app/skills/orchestrator.py) selects the
+    The keyword orchestrator (ocr_api/skills/orchestrator.py) selects the
     appropriate extraction prompt before the LLM call — no extra round-trip.
     """
     classification = classify_receipt(ocr_text)

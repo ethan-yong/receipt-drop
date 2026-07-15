@@ -14,7 +14,9 @@ SYSTEM_PROMPT = (
     "explanation — with exactly these keys:\n\n"
     '"merchant_name" (string or null): the transport provider or hotel '
     "name (e.g. \"AirAsia\", \"KTM\", \"Grab\", \"Hotel Istana\"). "
-    "Normalise to Title Case. null if unreadable.\n\n"
+    "Normalise to Title Case. For card reload receipts, use the transit "
+    "operator in the header (e.g. \"Rapid Rail\"), not the card brand "
+    "(Touch \'n Go). null if unreadable.\n\n"
     '"merchant_search_queries" (array of 0-3 strings): variants for '
     "Google Places, most specific first. For airlines or intercity "
     "transport use an empty array — they are not local venues. For "
@@ -31,7 +33,10 @@ SYSTEM_PROMPT = (
     "Empty array for ride-hailing (Grab) — no fixed venue.\n\n"
     '"amount" (number or null): the total fare or booking amount paid '
     "in MYR. For flights this is the total ticket price including taxes. "
-    "For rides it is the trip fare. null if unreadable.\n\n"
+    "For rides it is the trip fare. For transit card reload receipts, "
+    "use \"Total Amount Paid\" — do NOT use \"Balance Before\" or "
+    "\"Balance After\", those are the card\'s pre- and post-reload "
+    "balance state, not what was paid. null if unreadable.\n\n"
     '"booking_reference" (string or null): the PNR, booking reference, '
     'or confirmation number — labelled "Booking Ref", "PNR", '
     '"Confirmation No", "Order No", or similar. Preserve the exact '

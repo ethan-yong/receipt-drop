@@ -286,7 +286,7 @@ get_friend_feed() RPC → FeedScreen (+ reaction counts from feed_reactions)
 
 **Depends on**: `profiles.current_streak`/`badge_count` (denormalized), `get_friend_leaderboard()` RPC, `services/leaderboard-api` + Redis (global tier — no Postgres fallback)
 
-**Files**: `lib/data/repositories/social_repository.dart`, `lib/domain/logic/leaderboard_label.dart`, `supabase/migrations/20260626000003_leaderboard.sql`, `20260630000000_leaderboard_api.sql`, `20260630100000_global_leaderboard.sql`, `services/leaderboard-api/app/*.py`, `docker-compose.yml`
+**Files**: `lib/data/repositories/social_repository.dart`, `lib/domain/logic/leaderboard_label.dart`, `supabase/migrations/20260626000003_leaderboard.sql`, `20260630000000_leaderboard_api.sql`, `20260630100000_global_leaderboard.sql`, `services/leaderboard-api/leaderboard_api/*.py`, `docker-compose.yml`
 
 **Data flow**:
 ```
@@ -481,22 +481,22 @@ Format: Responsibility / Imports / Used by / Risk / Reason. "Used by" counts are
 **Risk**: Low-Medium.
 **Reason**: narrow, stateless proxies; lower risk than `enrich-transaction` precisely because they don't touch the DB or the shared scoring module.
 
-### `services/ocr-api/app/main.py`
+### `services/ocr-api/ocr_api/main.py`
 **Responsibility**: FastAPI hub — `/health`, `/ocr` routes, ties together auth/models/engine/preprocessing.
-**Imports**: `app.auth`, `app.models`, `app.ocr_engine`, `app.preprocessing`.
+**Imports**: `ocr_api.auth`, `ocr_api.models`, `ocr_api.ocr_engine`, `ocr_api.preprocessing`.
 **Used by**: `__main__.py` (as a uvicorn target string), test suite.
 **Risk**: Medium.
 **Reason**: clean one-directional star topology — `auth.py`/`ocr_engine.py`/`preprocessing.py`/`models.py` never import each other, so `main.py` is the only real integration point and the only place a wiring mistake could occur.
 
-### `services/leaderboard-api/app/main.py`
+### `services/leaderboard-api/leaderboard_api/main.py`
 **Responsibility**: FastAPI hub — `/health`, `/friends-leaderboard`, `/leaderboard/global`, `/leaderboard/score`.
-**Imports**: `app.auth`, `app.cache`, `app.db`, `app.global_service`, `app.models`.
+**Imports**: `leaderboard_api.auth`, `leaderboard_api.cache`, `leaderboard_api.db`, `leaderboard_api.global_service`, `leaderboard_api.models`.
 **Used by**: n/a (entry point).
 **Risk**: Medium.
 
-### `services/leaderboard-api/app/global_service.py`
+### `services/leaderboard-api/leaderboard_api/global_service.py`
 **Responsibility**: orchestration layer bridging Redis (`cache.py`) and Postgres (`db.py`) for the global leaderboard — `upsert_user_score`, `fetch_top_global`, `rebuild_from_postgres`, `build_global_entries`.
-**Imports**: `app.cache.get_redis`, `app.db.{fetch_all_leaderboard_scores, fetch_profiles_by_ids_as_user}`, `app.global_leaderboard.{GLOBAL_ZSET_KEY, leaderboard_score}`.
+**Imports**: `leaderboard_api.cache.get_redis`, `leaderboard_api.db.{fetch_all_leaderboard_scores, fetch_profiles_by_ids_as_user}`, `leaderboard_api.global_leaderboard.{GLOBAL_ZSET_KEY, leaderboard_score}`.
 **Used by**: `main.py` only.
 **Risk**: Medium-High.
 **Reason**: the one secondary hub in an otherwise flat two-service backend — a bug here can silently desync Redis ranks from Postgres truth (cold-start rebuild is best-effort/swallowed on failure, see `memory/bugs.md`).
@@ -521,7 +521,7 @@ Format: Responsibility / Imports / Used by / Risk / Reason. "Used by" counts are
 7. `lib/features/share/receipt_parse_pipeline.dart`
 8. `supabase/functions/_shared/place_matching.ts`
 9. `supabase/migrations/*.sql` (cumulative `transactions`/`profiles` schema)
-10. `services/leaderboard-api/app/global_service.py`
+10. `services/leaderboard-api/leaderboard_api/global_service.py`
 
 ### Isolated Components (confirmed safe-to-modify-in-place candidates)
 
@@ -531,7 +531,7 @@ Format: Responsibility / Imports / Used by / Risk / Reason. "Used by" counts are
 - **The four social/gamification repositories as a group** (`avatar_repository.dart`, `badge_repository.dart`, `social_repository.dart`, `places_repository.dart`) — confirmed to never import each other; changing one's internals doesn't risk breaking a sibling.
 - **`supabase/functions/ocr-proxy/index.ts`** and **`places-proxy/index.ts`** — no shared-module coupling, no DB writes; the lowest-risk edge functions.
 - **`Impact Drops/` (entire directory)** — not imported/built/deployed by anything in the product; safe to ignore or delete without runtime impact (though it's a historical design reference — see `docs/architecture.md` before removing it).
-- **`services/ocr-api/app/{auth,ocr_engine,preprocessing,models}.py`** — none of these four import each other; each can be modified independently of its siblings (only `main.py` ties them together).
+- **`services/ocr-api/ocr_api/{auth,ocr_engine,preprocessing,models}.py`** — none of these four import each other; each can be modified independently of its siblings (only `main.py` ties them together).
 
 ### Shared Dependencies
 
@@ -695,4 +695,4 @@ flowchart LR
 | 7 | `lib/features/share/receipt_parse_pipeline.dart` | sole parse-pipeline hub feeding ingest + batch CLI |
 | 8 | `supabase/functions/_shared/place_matching.ts` | sole production place-matching scoring logic |
 | 9 | `supabase/migrations/*.sql` (schema class) | constraint-redefinition footguns + a real precedent of RLS widening |
-| 10 | `services/leaderboard-api/app/global_service.py` | secondary hub bridging Redis + Postgres for the global leaderboard |
+| 10 | `services/leaderboard-api/leaderboard_api/global_service.py` | secondary hub bridging Redis + Postgres for the global leaderboard |

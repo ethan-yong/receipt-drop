@@ -28,8 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
-COPY app ./app
+COPY ocr_api ./ocr_api
 RUN pip install --no-cache-dir .
 
 EXPOSE 8080
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "ocr_api.main:app", "--host", "0.0.0.0", "--port", "8080"]

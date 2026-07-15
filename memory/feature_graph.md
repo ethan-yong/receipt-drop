@@ -28,7 +28,7 @@ Files:
 - `lib/data/local/tables.dart`, `app_database.dart`
 - `supabase/functions/enrich-transaction/index.ts`, `supabase/functions/ocr-proxy/index.ts`, `supabase/functions/_shared/place_matching.ts` (`geohashEncode`, `buildTextSearchQueries`, `scoreCandidate`)
 - `supabase/migrations/20260708000000_merchant_aliases.sql` (`merchant_aliases` table + `lookup_merchant_alias()`/`upsert_merchant_alias()` RPCs)
-- `services/ocr-api/app/*.py`
+- `services/ocr-api/ocr_api/*.py`
 - Downstream consumer: `lib/domain/models/transaction_view.dart` (every other feature reads through this)
 
 **Fan-out**: nearly everything else (dashboard, map, feed, badges, ritual) consumes `TransactionView` rows produced here. Changing `TransactionView`'s shape or `ingestReceipt`'s side effects (feed post creation, sync trigger) has wide blast radius.
@@ -168,7 +168,7 @@ Files:
 - `lib/data/repositories/social_repository.dart` (leaderboard fetch, chooses API vs RPC based on `Env.hasLeaderboardApiConfig`)
 - `lib/domain/logic/leaderboard_label.dart`
 - `supabase/migrations/20260626000003_leaderboard.sql`, `20260630000000_leaderboard_api.sql`, `20260630100000_global_leaderboard.sql`
-- `services/leaderboard-api/app/*.py`
+- `services/leaderboard-api/leaderboard_api/*.py`
 - `docker-compose.yml`
 
 ---

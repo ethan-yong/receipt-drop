@@ -2,7 +2,7 @@ import socket
 
 import pytest
 
-from app import __main__ as cli
+from ocr_api import __main__ as cli
 
 
 def test_port_in_use_false_when_nothing_listening() -> None:

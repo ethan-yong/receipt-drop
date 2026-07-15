@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.main import app
+from leaderboard_api.main import app
 
 
 @pytest.mark.asyncio
@@ -39,10 +39,10 @@ async def test_cache_hit_skips_database():
     ]
 
     with (
-        patch("app.main.verify_bearer") as mock_verify,
-        patch("app.main.get_cached_leaderboard", new_callable=AsyncMock) as mock_get,
+        patch("leaderboard_api.main.verify_bearer") as mock_verify,
+        patch("leaderboard_api.main.get_cached_leaderboard", new_callable=AsyncMock) as mock_get,
         patch(
-            "app.main.fetch_leaderboard_as_user", new_callable=AsyncMock
+            "leaderboard_api.main.fetch_leaderboard_as_user", new_callable=AsyncMock
         ) as mock_fetch,
     ):
         mock_verify.return_value = type(
@@ -79,11 +79,11 @@ async def test_fresh_bypasses_cache():
     ]
 
     with (
-        patch("app.main.verify_bearer") as mock_verify,
-        patch("app.main.get_cached_leaderboard", new_callable=AsyncMock) as mock_get,
-        patch("app.main.set_cached_leaderboard", new_callable=AsyncMock) as mock_set,
+        patch("leaderboard_api.main.verify_bearer") as mock_verify,
+        patch("leaderboard_api.main.get_cached_leaderboard", new_callable=AsyncMock) as mock_get,
+        patch("leaderboard_api.main.set_cached_leaderboard", new_callable=AsyncMock) as mock_set,
         patch(
-            "app.main.fetch_leaderboard_as_user", new_callable=AsyncMock
+            "leaderboard_api.main.fetch_leaderboard_as_user", new_callable=AsyncMock
         ) as mock_fetch,
     ):
         mock_verify.return_value = type(

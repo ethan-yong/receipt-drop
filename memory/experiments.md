@@ -4,7 +4,7 @@
 
 **Tried**: `services/ocr-api` was originally built around PaddleOCR, with a preprocessing pipeline (CLAHE contrast enhancement, pre-binarization) tuned for it.
 
-**Result**: replaced with `pytesseract`/Tesseract. Comments in `services/ocr-api/app/preprocessing.py` explicitly note the CLAHE/pre-binarization steps were tuned for PaddleOCR and *measured* to degrade Tesseract's results (Tesseract runs its own Otsu thresholding internally, so pre-binarizing fought it). Those steps are now opt-in-only (`shadow_binarize`, `enhance_contrast`), not part of the default pipeline.
+**Result**: replaced with `pytesseract`/Tesseract. Comments in `services/ocr-api/ocr_api/preprocessing.py` explicitly note the CLAHE/pre-binarization steps were tuned for PaddleOCR and *measured* to degrade Tesseract's results (Tesseract runs its own Otsu thresholding internally, so pre-binarizing fought it). Those steps are now opt-in-only (`shadow_binarize`, `enhance_contrast`), not part of the default pipeline.
 
 **Why abandoned**: not documented in-repo beyond the preprocessing tradeoff; likely accuracy/consistency/deployability reasons (see `docs/decisions.md`). If re-evaluating OCR engines again, don't reuse the old CLAHE-heavy preprocessing config without re-measuring against whatever new engine is tried.
 

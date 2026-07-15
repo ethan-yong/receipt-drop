@@ -4,7 +4,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from ocr_api.main import app
 
 SECRET = "test-secret"
 
@@ -78,10 +78,10 @@ def test_ocr_success_returns_text_and_confidence(
 ) -> None:
     # The real Tesseract binary isn't invoked in unit tests — this exercises
     # the route/preprocessing wiring, not the recognition engine itself.
-    from app.ocr_engine import OcrLineResult
+    from ocr_api.ocr_engine import OcrLineResult
 
     monkeypatch.setattr(
-        "app.main.run_ocr_detailed",
+        "ocr_api.main.run_ocr_detailed",
         lambda image: ([OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93),
     )
     # No VLLM_BASE_URL/VLLM_MODEL_NAME configured in this test's environment
@@ -109,10 +109,10 @@ def test_ocr_success_includes_llm_understanding(
     skewed_low_contrast_image_bytes: bytes,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.ocr_engine import OcrLineResult
+    from ocr_api.ocr_engine import OcrLineResult
 
     monkeypatch.setattr(
-        "app.main.run_ocr_detailed",
+        "ocr_api.main.run_ocr_detailed",
         lambda image: (
             [OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.08)],
             0.93,
@@ -149,10 +149,10 @@ def test_ocr_llm_failure_still_returns_raw_ocr(
     skewed_low_contrast_image_bytes: bytes,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.ocr_engine import OcrLineResult
+    from ocr_api.ocr_engine import OcrLineResult
 
     monkeypatch.setattr(
-        "app.main.run_ocr_detailed",
+        "ocr_api.main.run_ocr_detailed",
         lambda image: ([OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93),
     )
     monkeypatch.setenv("VLLM_BASE_URL", "http://gateway.local:31180")
@@ -183,7 +183,7 @@ def test_ocr_no_text_recognized_skips_llm_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "app.main.run_ocr_detailed",
+        "ocr_api.main.run_ocr_detailed",
         lambda image: ([], 0.0),
     )
 
@@ -194,7 +194,7 @@ def test_ocr_no_text_recognized_skips_llm_call(
         calls += 1
         raise AssertionError("LLM should not be called when OCR found no text")
 
-    monkeypatch.setattr("app.main.call_receipt_understanding", _fail_if_called)
+    monkeypatch.setattr("ocr_api.main.call_receipt_understanding", _fail_if_called)
 
     resp = client.post(
         "/ocr",

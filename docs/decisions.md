@@ -4,6 +4,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Unique Python package names for ocr-api vs leaderboard-api (2026-07-14)
+
+**Decision**: rename each service's top-level package from the generic `app` to a unique name — `ocr_api` under `services/ocr-api/` and `leaderboard_api` under `services/leaderboard-api/`. Uvicorn targets, Docker `COPY` paths, `docker-compose.dev.yml` bind mounts, console scripts, and tests follow the new names. `uv run ocr-api` from the monorepo root works again.
+
+**Reason**: the root workspace installs both packages editable into one `.venv`. Both previously exported a top-level `app` module; `leaderboard-api` won import order, so `ocr-api = "app.__main__:main"` resolved to the wrong package (`ModuleNotFoundError: No module named 'app.__main__'`).
+
+**Alternatives considered**: (a) always run via `uv run --directory services/ocr-api ocr-api` — works as a workaround but keeps the footgun for root `uv run ocr-api` and scripts; (b) nest packages under `src/` with distinct names without renaming folders used by Docker — more indirection for the same outcome. Rejected both in favor of renaming the import packages outright.
+
+**Tradeoffs**: Docker images and any external docs that still say `uvicorn app.main:app` need the new module path. Historical ADR text that mentions `app/receipt_understanding.py` is left as-written; live paths use `ocr_api/` / `leaderboard_api/`.
+
+---
+
 ## Spend map: viewport-bounded PostGIS query + decoupled reprojection state (2026-07-13)
 
 **Decision**: fixed reported drag/pan jank on `spend_map_screen.dart` and added zoom-based cluster bubbles, without touching the screen-coordinate overlay architecture from the 2026-07-09 entry below (still no native `Marker`s for own-place/friend pins). Two independent changes:

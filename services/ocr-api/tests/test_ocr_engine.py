@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from app import ocr_engine
+from ocr_api import ocr_engine
 
 
 def _fake_data(
@@ -107,7 +107,7 @@ def test_run_ocr_retries_with_binarize_on_low_confidence(
         return low_conf_data if len(calls) == 1 else high_conf_data
 
     monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
-    monkeypatch.setattr("app.preprocessing.shadow_binarize", lambda image: image + 1)
+    monkeypatch.setattr("ocr_api.preprocessing.shadow_binarize", lambda image: image + 1)
     monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
 
     text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
@@ -147,7 +147,7 @@ def test_run_ocr_keeps_first_pass_when_retry_is_not_better(
         return low_conf_data if len(calls) == 1 else still_low_conf_data
 
     monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
-    monkeypatch.setattr("app.preprocessing.shadow_binarize", lambda image: image + 1)
+    monkeypatch.setattr("ocr_api.preprocessing.shadow_binarize", lambda image: image + 1)
     monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
 
     text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))

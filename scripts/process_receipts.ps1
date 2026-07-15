@@ -78,7 +78,7 @@ OCR API not reachable at $healthUrl
 Start it first:
   cd services/ocr-api
   `$env:OCR_SHARED_SECRET = '$OcrSecret'
-  uvicorn app.main:app --host 127.0.0.1 --port 8080
+  uvicorn ocr_api.main:app --host 127.0.0.1 --port 8080
 "@
     }
     Write-Host "OCR API is up."

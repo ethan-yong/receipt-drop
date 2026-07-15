@@ -1,16 +1,16 @@
 """Receipt-type skills: keyword orchestrator + per-type extraction prompts.
 
 Usage in receipt_understanding.py:
-    from app.skills import classify_receipt, SKILL_PROMPTS
+    from ocr_api.skills import classify_receipt, SKILL_PROMPTS
     classification = classify_receipt(ocr_text)
     prompt = SKILL_PROMPTS[classification.receipt_type]
 """
 
-from app.skills.orchestrator import ClassificationResult, classify_receipt
-from app.skills.restaurant import SYSTEM_PROMPT as RESTAURANT_PROMPT
-from app.skills.payment import SYSTEM_PROMPT as PAYMENT_PROMPT
-from app.skills.grocery import SYSTEM_PROMPT as GROCERY_PROMPT
-from app.skills.transport import SYSTEM_PROMPT as TRANSPORT_PROMPT
+from ocr_api.skills.orchestrator import ClassificationResult, classify_receipt
+from ocr_api.skills.restaurant import SYSTEM_PROMPT as RESTAURANT_PROMPT
+from ocr_api.skills.payment import SYSTEM_PROMPT as PAYMENT_PROMPT
+from ocr_api.skills.grocery import SYSTEM_PROMPT as GROCERY_PROMPT
+from ocr_api.skills.transport import SYSTEM_PROMPT as TRANSPORT_PROMPT
 
 RECEIPT_TYPES = [
     "restaurant",

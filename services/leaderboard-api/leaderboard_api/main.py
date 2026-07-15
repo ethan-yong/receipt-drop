@@ -4,16 +4,16 @@ from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 
-from app.auth import bearer_scheme, verify_bearer
-from app.cache import close_redis, get_cached_leaderboard, set_cached_leaderboard
-from app.db import close_pool, fetch_caller_profile_scores, fetch_leaderboard_as_user
-from app.global_service import (
+from leaderboard_api.auth import bearer_scheme, verify_bearer
+from leaderboard_api.cache import close_redis, get_cached_leaderboard, set_cached_leaderboard
+from leaderboard_api.db import close_pool, fetch_caller_profile_scores, fetch_leaderboard_as_user
+from leaderboard_api.global_service import (
     build_global_entries,
     rebuild_from_postgres,
     upsert_user_score,
     zset_cardinality,
 )
-from app.models import LeaderboardEntry, LeaderboardResponse
+from leaderboard_api.models import LeaderboardEntry, LeaderboardResponse
 
 
 @asynccontextmanager

@@ -1,4 +1,4 @@
-"""Local dev server: ``uv run ocr-api`` from repo root, or ``python -m app`` here."""
+"""Local dev server: ``uv run ocr-api`` from repo root, or ``python -m ocr_api`` here."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def _repo_root() -> Path:
-    # services/ocr-api/app/__main__.py → receipt-drop/
+    # services/ocr-api/ocr_api/__main__.py → receipt-drop/
     return Path(__file__).resolve().parents[3]
 
 
@@ -169,7 +169,7 @@ def main() -> None:
 
     print(f"Starting OCR API on http://{host}:{port} (reload={reload})")
     uvicorn.run(
-        "app.main:app",
+        "ocr_api.main:app",
         host=host,
         port=port,
         reload=reload,

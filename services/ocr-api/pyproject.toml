@@ -13,13 +13,13 @@ dependencies = [
   "opencv-python-headless>=4.9.0",
   "numpy>=1.26.0,<2.0.0",
   "pydantic>=2.10.0",
-  # Outbound async call to the LLM gateway in app/receipt_understanding.py —
+  # Outbound async call to the LLM gateway in ocr_api/receipt_understanding.py —
   # also used by FastAPI's TestClient in dev, hence still listed there too.
   "httpx>=0.28.0",
 ]
 
 [project.scripts]
-ocr-api = "app.__main__:main"
+ocr-api = "ocr_api.__main__:main"
 
 [project.optional-dependencies]
 dev = [
@@ -34,7 +34,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["ocr_api"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -48,4 +48,4 @@ line-length = 88
 select = ["E", "F", "I", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app"]
+known-first-party = ["ocr_api"]

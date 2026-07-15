@@ -4,8 +4,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
-from app.receipt_understanding import (
+from ocr_api.main import app
+from ocr_api.receipt_understanding import (
     ReceiptUnderstandingError,
     call_receipt_understanding,
     parse_receipt_understanding,

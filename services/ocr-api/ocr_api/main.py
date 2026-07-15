@@ -11,11 +11,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.auth import verify_ocr_secret
-from app.models import OcrLine, OcrResponse
-from app.ocr_engine import run_ocr_detailed
-from app.preprocessing import InvalidImageError, preprocess
-from app.receipt_understanding import (
+from ocr_api.auth import verify_ocr_secret
+from ocr_api.models import OcrLine, OcrResponse
+from ocr_api.ocr_engine import run_ocr_detailed
+from ocr_api.preprocessing import InvalidImageError, preprocess
+from ocr_api.receipt_understanding import (
     ReceiptUnderstandingError,
     ReceiptUnderstandingRequest,
     ReceiptUnderstandingResponse,
@@ -120,7 +120,7 @@ async def health() -> dict[str, str]:
 )
 async def ocr(request: Request) -> OcrResponse:
     """Runs Tesseract OCR on the posted image, then — in the same request —
-    the LLM receipt-understanding step (see app/receipt_understanding.py) on
+    the LLM receipt-understanding step (see ocr_api/receipt_understanding.py) on
     whatever text OCR found. The response already contains an interpreted
     receipt (`understanding`), not just raw text: this is the single
     synchronous OCR+LLM pipeline, not a two-stage capture-then-enrich flow.
@@ -221,7 +221,7 @@ async def understand(
     request: Request, body: ReceiptUnderstandingRequest
 ) -> ReceiptUnderstandingResponse:
     """LLM receipt-understanding step: raw OCR text in, structured merchant
-    info out (see app/receipt_understanding.py). No longer the primary path —
+    info out (see ocr_api/receipt_understanding.py). No longer the primary path —
     POST /ocr now runs this same step synchronously right after Tesseract, so
     a client's own /ocr call already gets an interpreted receipt back in one
     round trip. This endpoint survives as: (a) enrich-transaction's fallback

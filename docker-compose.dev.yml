@@ -9,16 +9,16 @@ services:
     environment:
       OCR_LOG_LEVEL: ${OCR_LOG_LEVEL:-INFO}
     volumes:
-      - ./services/ocr-api/app:/app/app
+      - ./services/ocr-api/ocr_api:/app/ocr_api
     command:
       - uvicorn
-      - app.main:app
+      - ocr_api.main:app
       - --host
       - "0.0.0.0"
       - --port
       - "8080"
       - --reload
       - --reload-dir
-      - /app/app
+      - /app/ocr_api
     extra_hosts:
       - "host.docker.internal:host-gateway"

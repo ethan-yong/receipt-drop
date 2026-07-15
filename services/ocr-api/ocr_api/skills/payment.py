@@ -33,12 +33,15 @@ SYSTEM_PROMPT = (
     "government body, or otherwise not a physical venue.\n\n"
     '"amount" (number or null): the actual transaction amount in MYR — '
     "the money that was PAID or DEDUCTED in this transaction. Look for "
-    'labels like "Amount", "Amount Paid", "Total", "Deducted", '
-    '"Transaction Amount". NEVER use the account balance, available '
-    'balance, or "Balance After Transaction" — those describe the wallet '
-    "state after the payment, not the payment itself. If two numbers are "
-    "visible and one is labelled balance/remaining, the other is the "
-    "amount. null if unreadable.\n\n"
+    'labels like "Total Amount Paid", "Amount Paid", "Amount", "Total", '
+    '"Deducted", "Transaction Amount", "Reload Amt". For card reload '
+    'receipts, "Total Amount Paid" is the authoritative field — always '
+    "prefer it over all other labels. NEVER use \"Balance Before\", "
+    "\"Balance After\", \"Account Balance\", or \"Available Balance\" — "
+    "those describe the wallet or card\'s state, not the payment. When "
+    "multiple non-balance amounts are present (e.g. \"Reload Fee\" + "
+    "\"Reload Amt w\\\\Tax\" + \"Total Amount Paid\"), use \"Total Amount "
+    "Paid\" as it is the explicit sum. null if unreadable.\n\n"
     '"payment_method" (string or null): the wallet or payment channel '
     "used — e.g. \"Touch 'n Go eWallet\", \"Maybank2u\", \"GrabPay\", "
     '"Boost\", "DuitNow\", "FPX\", "Visa\", "Mastercard\". Infer from '

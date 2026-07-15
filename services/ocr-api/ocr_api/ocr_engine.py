@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import re
 import statistics
 import time
 from dataclasses import dataclass
@@ -24,6 +25,29 @@ class OcrLineResult:
     # total height. Relative-to-this-receipt, not an absolute pixel
     # threshold, so it's comparable regardless of a given scan's resolution.
     height_ratio: float
+
+
+# Common OCR letter/digit confusions in thermal-receipt fonts.
+# Z→2 is by far the most frequent on Malaysian receipts (thermal dot-matrix
+# fonts render 2 with a flat top that Tesseract reads as Z).
+_OCR_DIGIT_SUBS = str.maketrans("ZzOlI", "22011")
+
+# Matches 'RM' followed by 0-3 optional spaces and then a decimal-number-like
+# string (may contain the above confused letters instead of digits).
+# Substitution is applied only within the numeric portion, leaving all other
+# text (merchant names, labels, etc.) untouched.
+_RM_AMOUNT_RE = re.compile(r"(RM\s{0,3})([0-9ZzOlI]+(?:\.[0-9ZzOlI]{1,2})?)")
+
+
+def _normalize_ocr_amounts(text: str) -> str:
+    """Fix OCR letter/digit confusions in RM currency amount positions."""
+    def _fix(m: re.Match) -> str:
+        return m.group(1) + m.group(2).translate(_OCR_DIGIT_SUBS)
+
+    normalized = _RM_AMOUNT_RE.sub(_fix, text)
+    if normalized != text:
+        logger.debug("normalize_ocr_amounts: corrected letter/digit confusion in RM amounts")
+    return normalized
 
 
 # Windows dev installs typically live outside PATH (e.g. the UB Mannheim
@@ -103,7 +127,7 @@ def _run_tesseract(
     image_height = image.shape[0]
     line_results = [
         OcrLineResult(
-            text=" ".join(words),
+            text=_normalize_ocr_amounts(" ".join(words)),
             height_ratio=(
                 statistics.median(heights[key]) / image_height if image_height else 0.0
             ),
@@ -143,14 +167,14 @@ def run_ocr_detailed(image: np.ndarray) -> tuple[list[OcrLineResult], float]:
     # (useful for manual testing). Otherwise, binarize only appears as an
     # automatic retry below when the plain pass scores low.
     if os.environ.get("PREPROCESS_ADAPTIVE_BINARIZE"):
-        from app.preprocessing import shadow_binarize  # lazy import avoids cycle
+        from ocr_api.preprocessing import shadow_binarize  # lazy import avoids cycle
 
         logger.info("adaptive binarize forced on (PREPROCESS_ADAPTIVE_BINARIZE set)")
         return _run_tesseract(shadow_binarize(image), label="forced-binarize")
 
     lines, confidence = _run_tesseract(image, label="plain")
     if confidence < _LOW_CONFIDENCE_RETRY_THRESHOLD:
-        from app.preprocessing import shadow_binarize  # lazy import avoids cycle
+        from ocr_api.preprocessing import shadow_binarize  # lazy import avoids cycle
 
         logger.info(
             "plain pass confidence %.0f%% is below the %.0f%% retry threshold "

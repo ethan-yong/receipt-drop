@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.global_leaderboard import compute_leaderboard_score
-from app.main import app, lifespan
+from leaderboard_api.global_leaderboard import compute_leaderboard_score
+from leaderboard_api.main import app, lifespan
 
 
 @pytest.mark.asyncio
@@ -42,8 +42,8 @@ async def test_global_leaderboard_zrevrange_order():
     }
 
     with (
-        patch("app.main.verify_bearer") as mock_verify,
-        patch("app.main.build_global_entries", new_callable=AsyncMock) as mock_build,
+        patch("leaderboard_api.main.verify_bearer") as mock_verify,
+        patch("leaderboard_api.main.build_global_entries", new_callable=AsyncMock) as mock_build,
     ):
         mock_verify.return_value = type("U", (), {"user_id": me_id})()
         mock_build.return_value = [
@@ -70,11 +70,11 @@ async def test_score_upsert_reads_postgres():
     me_id = "11111111-1111-1111-1111-111111111111"
 
     with (
-        patch("app.main.verify_bearer") as mock_verify,
+        patch("leaderboard_api.main.verify_bearer") as mock_verify,
         patch(
-            "app.main.fetch_caller_profile_scores", new_callable=AsyncMock
+            "leaderboard_api.main.fetch_caller_profile_scores", new_callable=AsyncMock
         ) as mock_scores,
-        patch("app.main.upsert_user_score", new_callable=AsyncMock) as mock_upsert,
+        patch("leaderboard_api.main.upsert_user_score", new_callable=AsyncMock) as mock_upsert,
     ):
         mock_verify.return_value = type("U", (), {"user_id": me_id})()
         mock_scores.return_value = (7, 3)
@@ -98,12 +98,12 @@ async def test_rebuild_on_empty_zset():
     from fastapi import FastAPI
 
     with (
-        patch("app.main.zset_cardinality", new_callable=AsyncMock, return_value=0),
+        patch("leaderboard_api.main.zset_cardinality", new_callable=AsyncMock, return_value=0),
         patch(
-            "app.main.rebuild_from_postgres", new_callable=AsyncMock, return_value=2
+            "leaderboard_api.main.rebuild_from_postgres", new_callable=AsyncMock, return_value=2
         ) as mock_rebuild,
-        patch("app.main.close_redis", new_callable=AsyncMock),
-        patch("app.main.close_pool", new_callable=AsyncMock),
+        patch("leaderboard_api.main.close_redis", new_callable=AsyncMock),
+        patch("leaderboard_api.main.close_pool", new_callable=AsyncMock),
     ):
         async with lifespan(FastAPI()):
             pass

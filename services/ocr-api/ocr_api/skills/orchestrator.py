@@ -63,6 +63,11 @@ _SIGNALS: dict[str, list[tuple[str, float]]] = {
         ("destination", 1.5),
         ("seat no", 2.0),
         ("gate", 1.5),
+        ("rapid rail", 3.0),
+        ("prasarana", 2.5),
+        ("rapid kl", 2.5),
+        ("myrapid", 2.0),
+        ("card reload", 2.5),
     ],
     "grocery": [
         ("qty", 2.5),

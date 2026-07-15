@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from app.preprocessing import (
+from ocr_api.preprocessing import (
     InvalidImageError,
     _skew_angle,
     binarize,
