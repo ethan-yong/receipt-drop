@@ -82,6 +82,12 @@ Repositories that only talk to Supabase over HTTP (`avatar_repository.dart`, `ba
 - **CARTO Voyager raster tiles** (via `flutter_map`) — free, no key, for the spend map. Explicitly flagged in code (`spend_map_screen.dart`) to swap for a keyed provider before production scale.
 - **Redis** — self-hosted/dockerized, for the global leaderboard only.
 
+## Production hosting
+
+`services/ocr-api`, `services/leaderboard-api`, and Redis run on a single-node MicroK8s cluster (Ubuntu 22.04 VM, containerd runtime — no Docker on the server) deployed from a Windows dev machine via `deploy/scripts/deploy.ps1` (`.\deploy.ps1 <version>`): build locally with Docker, `docker save` to a tarball, ship it over SSH, `microk8s ctr image import` into containerd, `kubectl apply` the manifests in `deploy/k8s/`, then verify the rollout. No image registry is involved — Deployments use `imagePullPolicy: Never` and rely on the image already being present in containerd from the import step. See `deploy/k8s/` for manifests and `docs/decisions.md` for why this shape was chosen over alternatives (Kustomize/Helm, a registry, nginx-ingress).
+
+This is the only part of the system deployed this way. The 3 Supabase Edge Functions (`enrich-transaction`, `ocr-proxy`, `places-proxy`) remain deployed via `supabase functions deploy <name>`, on Supabase's own infrastructure — not part of the k8s system. Postgres/Auth/Storage remain fully Supabase-managed, never containerized here (no StatefulSet, no DB PVC). There is no separate "backend API" or "worker" service to deploy: the two Python services above are the entire self-hosted server-side surface; the Flutter app's background sync worker is an on-device task, not a server process.
+
 ## Design patterns worth knowing
 
 - **Denormalize onto `profiles` for RLS-friendly fan-out**: `current_mood`/`current_streak`/`badge_count`/`avatar_config` are pushed by the owning user so friends' feed/leaderboard/map queries never need cross-user access to `transactions`.

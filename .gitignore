@@ -232,3 +232,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Deployment: real secrets and rendered (version-substituted) manifests —
+# only deploy/k8s/secrets.yaml.example is meant to be committed.
+/deploy/k8s/secrets.yaml
+/deploy/k8s/.rendered/

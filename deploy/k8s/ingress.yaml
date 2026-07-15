@@ -1,0 +1,70 @@
+# MicroK8s >=1.35's `ingress` addon runs Traefik (nginx-ingress was retired
+# industry-wide); `ingressClassName: public` is the addon's default
+# IngressClass, all backed by the same Traefik controller. Prefix stripping
+# uses Traefik's native Middleware CRD rather than nginx annotations, which
+# aren't a reliable target on Traefik's nginx-compat shim.
+#
+# OCR_SERVICE_URL (supabase/functions/.env, consumed by ocr-proxy) and
+# LEADERBOARD_API_URL (Flutter .env) are both *base URLs* the caller appends
+# real paths to (e.g. `${url}/ocr`, `${url}/friends-leaderboard`) — set them
+# to http://<node-ip>/ocr-api and http://<node-ip>/leaderboard-api so the
+# appended path lines up with what these Middlewares forward after stripping.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ocrapi-strip
+  namespace: receipt-drop
+spec:
+  stripPrefix:
+    prefixes:
+      - /ocr-api
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: leaderboardapi-strip
+  namespace: receipt-drop
+spec:
+  stripPrefix:
+    prefixes:
+      - /leaderboard-api
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ocr-api-ingress
+  namespace: receipt-drop
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: receipt-drop-ocrapi-strip@kubernetescrd
+spec:
+  ingressClassName: public
+  rules:
+    - http:
+        paths:
+          - path: /ocr-api
+            pathType: Prefix
+            backend:
+              service:
+                name: ocr-api
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: leaderboard-api-ingress
+  namespace: receipt-drop
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: receipt-drop-leaderboardapi-strip@kubernetescrd
+spec:
+  ingressClassName: public
+  rules:
+    - http:
+        paths:
+          - path: /leaderboard-api
+            pathType: Prefix
+            backend:
+              service:
+                name: leaderboard-api
+                port:
+                  number: 8080

@@ -96,6 +96,22 @@ Verify: `curl http://localhost:8080/health`. Full manual verification steps (cac
 
 Tests: `cd services/leaderboard-api && pip install -e ".[dev]" && pytest`.
 
+## Deploy: production (MicroK8s)
+
+```powershell
+.\deploy\scripts\deploy.ps1 1.0.0
+```
+
+Builds `services/ocr-api` and `services/leaderboard-api`, ships them to the MicroK8s VM, imports into containerd, applies `deploy/k8s/`, restarts + verifies the rollout. Redis is a public image, not built. No manual SSH needed — the script handles it.
+
+Required env vars: `DEPLOY_HOST`, `DEPLOY_USER`. Optional: `SSH_PASSWORD` (uses `SSH_ASKPASS`; omit to use key-based auth via `DEPLOY_SSH_KEY` or the default agent/key).
+
+One-time local setup: copy `deploy/k8s/secrets.yaml.example` → `deploy/k8s/secrets.yaml` and fill in real values (production `DATABASE_URL`, `SUPABASE_JWT_SECRET`, `OCR_SHARED_SECRET`, LLM provider creds) — gitignored, the script refuses to run without it.
+
+One-time server setup (`ubuntu-ethan`): `microk8s enable ingress` (Traefik-backed on MicroK8s ≥1.35, not nginx) and `microk8s enable hostpath-storage` (needed for Redis's PVC — no storage provisioner is enabled by default).
+
+Only `ocr-api`, `leaderboard-api`, and `redis` are deployed here. Edge Functions (`enrich-transaction`, `ocr-proxy`, `places-proxy`) deploy separately via `supabase functions deploy <name>` (see above) — they're not part of this k8s system. See `docs/architecture.md`'s "Production hosting" section and `docs/decisions.md` for the full design/tradeoffs.
+
 ## CI
 
 `.github/workflows/python-ci.yml` — runs `ruff check` + `ruff format --check` + `pytest` for both `ocr-api` and `leaderboard-api` on every push/PR that touches `services/**` (any branch). No Flutter/Dart CI workflow exists yet — Flutter tests are run manually via the scripts above.
