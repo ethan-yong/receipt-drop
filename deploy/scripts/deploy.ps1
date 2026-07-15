@@ -208,9 +208,23 @@ microk8s kubectl get ingress -n receipt-drop
 '@
 
 $RemoteScript = $RemoteScriptTemplate -replace '__REMOTE_DIR__', $RemoteDir -replace '__VERSION__', $Version
+# Force LF line endings and no BOM: this is executed on Linux via `bash`, and
+# a stray \r or a leading BOM byte both produce confusing shell syntax errors
+# on the first/last line of a script.
+$RemoteScript = $RemoteScript -replace "`r`n", "`n"
+$LocalScriptPath = Join-Path $TmpDir 'remote-deploy.sh'
+[System.IO.File]::WriteAllText($LocalScriptPath, $RemoteScript, (New-Object System.Text.UTF8Encoding($false)))
+
+# Ship the script itself rather than passing it inline as an ssh command-line
+# argument: a large multi-line string full of quotes/parens/`$`-expansions
+# is fragile to marshal correctly through PowerShell -> Win32 process
+# invocation -> ssh.exe -> remote shell (embedded quoting can get mangled
+# along the way). A short, quote-free `bash <path>` command has no such risk.
+Write-Host "== Copying remote-deploy.sh =="
+Copy-ToRemote -LocalPath $LocalScriptPath -RemotePath "$RemoteDir/deploy.sh"
 
 Write-Host "== Running remote deploy sequence =="
-$Output = & ssh.exe @SshOpts $Target $RemoteScript 2>&1
+$Output = & ssh.exe @SshOpts $Target "bash $RemoteDir/deploy.sh" 2>&1
 $Output | ForEach-Object { Write-Host $_ }
 $SshExitCode = $LASTEXITCODE
 
