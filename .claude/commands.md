@@ -104,7 +104,7 @@ Tests: `cd services/leaderboard-api && pip install -e ".[dev]" && pytest`.
 
 Builds `services/ocr-api` and `services/leaderboard-api`, ships them to the MicroK8s VM, imports into containerd, applies `deploy/k8s/`, restarts + verifies the rollout. Redis is a public image, not built. No manual SSH needed — the script handles it.
 
-Required env vars: `DEPLOY_HOST`, `DEPLOY_USER`. Optional: `SSH_PASSWORD` (uses `SSH_ASKPASS`; omit to use key-based auth via `DEPLOY_SSH_KEY` or the default agent/key).
+Required env vars: `DEPLOY_HOST`, `DEPLOY_USER`, `SSH_PASSWORD`. Auth is password-only — the script writes the password to a private per-run temp file and drives a generated `SSH_ASKPASS` helper (never on a command line, never read from the env var by a static script). Both artifacts are scrubbed in a `finally` block whether the deploy succeeds or fails.
 
 One-time local setup: copy `deploy/k8s/secrets.yaml.example` → `deploy/k8s/secrets.yaml` and fill in real values (production `DATABASE_URL`, `SUPABASE_JWT_SECRET`, `OCR_SHARED_SECRET`, LLM provider creds) — gitignored, the script refuses to run without it.
 

@@ -10,8 +10,9 @@
 .ENVIRONMENT
     DEPLOY_HOST     Required. Ubuntu VM hostname/IP (e.g. ubuntu-ethan).
     DEPLOY_USER     Required. SSH user on that VM.
-    SSH_PASSWORD    Optional. If set, auth uses SSH_ASKPASS instead of a key.
-    DEPLOY_SSH_KEY  Optional. Path to a private key for key-based auth.
+    SSH_PASSWORD    Required. Auth is password-only, via a generated
+                    SSH_ASKPASS helper — never placed on a command line or
+                    read directly from the env var by a static script.
 #>
 
 param(
@@ -29,7 +30,6 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..\..')
 $K8sDir = Join-Path $RepoRoot 'deploy\k8s'
 $SecretsFile = Join-Path $K8sDir 'secrets.yaml'
 $RenderedDir = Join-Path $K8sDir '.rendered'
-$AskPassScript = Join-Path $PSScriptRoot 'askpass.cmd'
 $TmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "receipt-drop-deploy-$Version"
 
 $Images = @(
@@ -47,41 +47,73 @@ if (-not (Test-Path $SecretsFile)) {
 
 if (-not $env:DEPLOY_HOST) { throw "DEPLOY_HOST environment variable is not set." }
 if (-not $env:DEPLOY_USER) { throw "DEPLOY_USER environment variable is not set." }
+if (-not $env:SSH_PASSWORD) { throw "SSH_PASSWORD environment variable is not set." }
 
 # ---------------------------------------------------------------------------
-# SSH auth setup
+# SSH auth setup (password-only, via a generated SSH_ASKPASS helper)
 # ---------------------------------------------------------------------------
+#
+# The password is never placed on a command line and never read directly
+# from an env var by a static askpass script (both are avoidable exposure
+# surfaces). Instead: write it to a private per-run temp file, then generate
+# a per-run askpass.cmd that just dumps that file's contents. Windows 11's
+# OpenSSH client ignores SSH_ASKPASS unless SSH_ASKPASS_REQUIRE=force is also
+# set; DISPLAY is a harmless legacy check some builds still make outside X11.
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$PwFile = [System.IO.Path]::GetTempFileName()
+[System.IO.File]::WriteAllText($PwFile, "$($env:SSH_PASSWORD)`n", $Utf8NoBom)
+$GeneratedAskPass = [System.IO.Path]::ChangeExtension([System.IO.Path]::GetTempFileName(), '.cmd')
+[System.IO.File]::WriteAllText($GeneratedAskPass, "@type `"$PwFile`"`r`n", [System.Text.Encoding]::ASCII)
+$env:SSH_ASKPASS = $GeneratedAskPass
+$env:SSH_ASKPASS_REQUIRE = 'force'
+$env:DISPLAY = 'localhost:0'
 
 $SshOpts = @('-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15')
 
-if ($env:SSH_PASSWORD) {
-    Write-Host "Using password auth via SSH_ASKPASS."
-    # Win32-OpenSSH on Windows 11 ignores SSH_ASKPASS unless
-    # SSH_ASKPASS_REQUIRE is also set to force it non-interactively.
-    $env:SSH_ASKPASS = $AskPassScript
-    $env:SSH_ASKPASS_REQUIRE = 'force'
-} else {
-    Write-Host "No SSH_PASSWORD set; using key-based auth."
-    # Fail fast instead of hanging on an interactive prompt if the key/agent
-    # isn't set up.
-    $SshOpts += @('-o', 'BatchMode=yes')
-    if ($env:DEPLOY_SSH_KEY) {
-        $SshOpts += @('-i', $env:DEPLOY_SSH_KEY)
-    }
+$Target = "$($env:DEPLOY_USER)@$($env:DEPLOY_HOST)"
+
+# Plain `& ssh.exe ... 2>&1` lets ssh inherit this process's stdin. In some
+# terminal hosts that leaves ssh unsure whether a real interactive console is
+# attached and it can stall waiting on it rather than proceeding, even with
+# -o BatchMode=yes. Start-Process with stdin explicitly redirected from a
+# genuinely empty file removes that ambiguity — ssh can never treat it as an
+# interactive prompt target.
+$EmptyStdinFile = Join-Path ([System.IO.Path]::GetTempPath()) 'receipt-drop-deploy-empty-stdin'
+if (-not (Test-Path $EmptyStdinFile)) {
+    New-Item -ItemType File -Path $EmptyStdinFile -Force | Out-Null
 }
 
-$Target = "$($env:DEPLOY_USER)@$($env:DEPLOY_HOST)"
+function Invoke-NativeViaStartProcess {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$ArgumentList
+    )
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $p = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList `
+            -RedirectStandardInput $EmptyStdinFile -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
+            -NoNewWindow -Wait -PassThru
+        $stdout = if (Test-Path $outFile) { Get-Content $outFile -Raw -ErrorAction SilentlyContinue } else { '' }
+        $stderr = if (Test-Path $errFile) { Get-Content $errFile -Raw -ErrorAction SilentlyContinue } else { '' }
+        return @{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
+    } finally {
+        Remove-Item $outFile, $errFile -ErrorAction SilentlyContinue
+    }
+}
 
 function Invoke-RemoteCommand {
     param(
         [Parameter(Mandatory = $true)][string]$Command,
         [switch]$AllowFailure
     )
-    & ssh.exe @SshOpts $Target $Command
-    if ($LASTEXITCODE -ne 0 -and -not $AllowFailure) {
-        throw "Remote command failed (exit $LASTEXITCODE): $Command"
+    $result = Invoke-NativeViaStartProcess -FilePath 'ssh.exe' -ArgumentList (@($SshOpts) + @($Target, $Command))
+    if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
+    if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
+    if ($result.ExitCode -ne 0 -and -not $AllowFailure) {
+        throw "Remote command failed (exit $($result.ExitCode)): $Command"
     }
-    return $LASTEXITCODE
+    return $result.ExitCode
 }
 
 function Copy-ToRemote {
@@ -89,11 +121,15 @@ function Copy-ToRemote {
         [Parameter(Mandatory = $true)][string]$LocalPath,
         [Parameter(Mandatory = $true)][string]$RemotePath
     )
-    & scp.exe @SshOpts $LocalPath "${Target}:${RemotePath}"
-    if ($LASTEXITCODE -ne 0) {
+    $result = Invoke-NativeViaStartProcess -FilePath 'scp.exe' -ArgumentList (@($SshOpts) + @($LocalPath, "${Target}:${RemotePath}"))
+    if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
+    if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
+    if ($result.ExitCode -ne 0) {
         throw "scp failed: $LocalPath -> $RemotePath"
     }
 }
+
+try {
 
 # ---------------------------------------------------------------------------
 # 1. Build + save images locally
@@ -224,12 +260,12 @@ Write-Host "== Copying remote-deploy.sh =="
 Copy-ToRemote -LocalPath $LocalScriptPath -RemotePath "$RemoteDir/deploy.sh"
 
 Write-Host "== Running remote deploy sequence =="
-$Output = & ssh.exe @SshOpts $Target "bash $RemoteDir/deploy.sh" 2>&1
-$Output | ForEach-Object { Write-Host $_ }
-$SshExitCode = $LASTEXITCODE
+$DeployResult = Invoke-NativeViaStartProcess -FilePath 'ssh.exe' -ArgumentList (@($SshOpts) + @($Target, "bash $RemoteDir/deploy.sh"))
+$CombinedOutput = "$($DeployResult.StdOut)`n$($DeployResult.StdErr)"
+$CombinedOutput -split "`n" | ForEach-Object { Write-Host $_ }
 
-if ($SshExitCode -ne 0) {
-    throw "Remote deploy sequence exited with code $SshExitCode - see output above."
+if ($DeployResult.ExitCode -ne 0) {
+    throw "Remote deploy sequence exited with code $($DeployResult.ExitCode) - see output above."
 }
 
 # ---------------------------------------------------------------------------
@@ -237,7 +273,7 @@ if ($SshExitCode -ne 0) {
 # ---------------------------------------------------------------------------
 
 $RolloutFailed = $false
-foreach ($line in $Output) {
+foreach ($line in ($CombinedOutput -split "`n")) {
     if ($line -match 'ROLLOUT_STATUS_(\S+)=(\d+)') {
         $name = $Matches[1]
         $code = [int]$Matches[2]
@@ -255,3 +291,10 @@ if ($RolloutFailed) {
 }
 
 Write-Host "== Deploy $Version complete =="
+
+} finally {
+    # Always scrub the password artifacts, whether the deploy succeeded,
+    # failed, or was interrupted.
+    Remove-Item $PwFile, $GeneratedAskPass -ErrorAction SilentlyContinue
+    Remove-Item Env:\SSH_ASKPASS, Env:\SSH_ASKPASS_REQUIRE, Env:\DISPLAY -ErrorAction SilentlyContinue
+}
