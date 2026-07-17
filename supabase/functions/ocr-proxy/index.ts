@@ -57,6 +57,10 @@ Deno.serve(async (req) => {
   if (!ocrServiceUrl || !ocrServiceSecret) {
     return jsonResponse({ error: "server_misconfigured" }, 500);
   }
+  // Optional — only set in production, where ocr.receipt-drop.org is gated by
+  // Cloudflare Access on top of X-OCR-Secret. See docs/decisions.md.
+  const cfAccessClientId = Deno.env.get("CF_ACCESS_CLIENT_ID");
+  const cfAccessClientSecret = Deno.env.get("CF_ACCESS_CLIENT_SECRET");
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
@@ -67,6 +71,12 @@ Deno.serve(async (req) => {
       headers: {
         "Content-Type": contentType,
         "X-OCR-Secret": ocrServiceSecret,
+        ...(cfAccessClientId && cfAccessClientSecret
+          ? {
+            "CF-Access-Client-Id": cfAccessClientId,
+            "CF-Access-Client-Secret": cfAccessClientSecret,
+          }
+          : {}),
       },
       body: imageBytes,
       signal: controller.signal,

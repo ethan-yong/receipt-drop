@@ -237,3 +237,5 @@ __marimo__/
 # only deploy/k8s/secrets.yaml.example is meant to be committed.
 /deploy/k8s/secrets.yaml
 /deploy/k8s/.rendered/
+# Pinned SSH known_hosts for deploy.ps1 (DEPLOY_KNOWN_HOSTS) — machine-local.
+/deploy/known_hosts

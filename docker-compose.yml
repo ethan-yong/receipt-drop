@@ -6,6 +6,8 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    # Must match the redis Deployment's command in deploy/k8s/redis.yaml —
+    # keep both in sync if either changes.
     command: >
       redis-server
       --appendonly yes

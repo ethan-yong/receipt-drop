@@ -36,6 +36,8 @@ spec:
         - name: redis
           image: redis:7-alpine
           imagePullPolicy: IfNotPresent
+          # Must match the redis service's command in docker-compose.yml —
+          # keep both in sync if either changes.
           command:
             - redis-server
             - --appendonly

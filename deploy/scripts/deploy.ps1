@@ -8,11 +8,26 @@
     .\deploy.ps1 1.0.0
 
 .ENVIRONMENT
-    DEPLOY_HOST     Required. Ubuntu VM hostname/IP (e.g. ubuntu-ethan).
-    DEPLOY_USER     Required. SSH user on that VM.
-    SSH_PASSWORD    Required. Auth is password-only, via a generated
-                    SSH_ASKPASS helper — never placed on a command line or
-                    read directly from the env var by a static script.
+    DEPLOY_HOST          Required. Ubuntu VM hostname/IP (e.g. ubuntu-ethan).
+    DEPLOY_USER          Required. SSH user on that VM.
+    SSH_PASSWORD         Required. Auth is password-only, via a generated
+                         SSH_ASKPASS helper — never placed on a command line or
+                         read directly from the env var by a static script.
+    DEPLOY_KNOWN_HOSTS   Required. Path to a known_hosts file that already
+                         contains DEPLOY_HOST's host key. Host keys are pinned
+                         (StrictHostKeyChecking=yes) — never auto-accepted.
+                         Generate once, using Git for Windows' ssh-keyscan
+                         (System32\OpenSSH's build has a known intermittent
+                         bug that can hang or return zero keys against some
+                         servers):
+                           & "$env:ProgramFiles\Git\usr\bin\ssh-keyscan.exe" -H $env:DEPLOY_HOST | Out-File -Encoding ascii deploy\known_hosts
+    CLOUDFLARE_TUNNEL_ID Required. The tunnel ID printed by
+                         `cloudflared tunnel create receipt-drop` — substituted
+                         into deploy/k8s/cloudflared.yaml's ConfigMap. The
+                         matching credentials.json (the tunnel's private key
+                         material, not just its ID) goes in secrets.yaml
+                         instead, applied the same stdin-only way as the rest
+                         of that file.
 #>
 
 param(
@@ -21,6 +36,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# $Version becomes part of a remote path, a Docker tag, and text embedded in
+# a shell command run on the VM (mkdir -p, bash <path>) — constrain it to a
+# safe charset up front rather than escaping at each of those use sites.
+if ($Version -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+    throw "Version '$Version' is invalid. Allowed: letters, digits, '.', '-', '_', starting with a letter or digit."
+}
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -33,8 +55,11 @@ $RenderedDir = Join-Path $K8sDir '.rendered'
 $TmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "receipt-drop-deploy-$Version"
 
 $Images = @(
-    @{ Key = 'ocr-api'; Name = 'receipt-drop-ocr-api'; Context = 'services\ocr-api' },
-    @{ Key = 'leaderboard-api'; Name = 'receipt-drop-leaderboard-api'; Context = 'services\leaderboard-api' }
+    # USE_TESSDATA_BEST=1: services/ocr-api/Dockerfile documents this as "for
+    # production images only" (higher-accuracy LSTM models vs. the faster
+    # default apt models) — this script is the production build path.
+    @{ Key = 'ocr-api'; Name = 'receipt-drop-ocr-api'; Context = 'services\ocr-api'; BuildArgs = @('--build-arg', 'USE_TESSDATA_BEST=1', '--build-arg', 'TESSDATA_DIR=/tessdata') },
+    @{ Key = 'leaderboard-api'; Name = 'receipt-drop-leaderboard-api'; Context = 'services\leaderboard-api'; BuildArgs = @() }
 )
 
 # ---------------------------------------------------------------------------
@@ -48,6 +73,37 @@ if (-not (Test-Path $SecretsFile)) {
 if (-not $env:DEPLOY_HOST) { throw "DEPLOY_HOST environment variable is not set." }
 if (-not $env:DEPLOY_USER) { throw "DEPLOY_USER environment variable is not set." }
 if (-not $env:SSH_PASSWORD) { throw "SSH_PASSWORD environment variable is not set." }
+if (-not $env:DEPLOY_KNOWN_HOSTS) {
+    throw @"
+DEPLOY_KNOWN_HOSTS environment variable is not set.
+
+Pin the VM's SSH host key once (never auto-accept). Use Git for Windows'
+ssh-keyscan, not System32\OpenSSH's - the latter has a known intermittent
+bug that can hang or return zero keys against some servers:
+  & "`$env:ProgramFiles\Git\usr\bin\ssh-keyscan.exe" -H `$env:DEPLOY_HOST | Out-File -Encoding ascii deploy\known_hosts
+  `$env:DEPLOY_KNOWN_HOSTS = (Resolve-Path deploy\known_hosts).Path
+"@
+}
+if (-not (Test-Path $env:DEPLOY_KNOWN_HOSTS)) {
+    throw "DEPLOY_KNOWN_HOSTS file not found: $($env:DEPLOY_KNOWN_HOSTS)"
+}
+if (-not $env:CLOUDFLARE_TUNNEL_ID) {
+    throw @"
+CLOUDFLARE_TUNNEL_ID environment variable is not set.
+
+One-time: cloudflared tunnel login
+          cloudflared tunnel create receipt-drop
+Set `$env:CLOUDFLARE_TUNNEL_ID to the printed tunnel ID, and paste the
+generated credentials.json into secrets.yaml's cloudflared-credentials block.
+"@
+}
+
+# Everything from here on can create secret-bearing temp files (the SSH
+# password file, the generated askpass script) or partially-completed remote
+# state, so it all lives inside one try/finally: an error anywhere past this
+# point — including inside the SSH-auth-setup code below, before any ssh/scp
+# call is even made — still reaches the cleanup in finally.
+try {
 
 # ---------------------------------------------------------------------------
 # SSH auth setup (password-only, via a generated SSH_ASKPASS helper)
@@ -62,22 +118,47 @@ if (-not $env:SSH_PASSWORD) { throw "SSH_PASSWORD environment variable is not se
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $PwFile = [System.IO.Path]::GetTempFileName()
 [System.IO.File]::WriteAllText($PwFile, "$($env:SSH_PASSWORD)`n", $Utf8NoBom)
-$GeneratedAskPass = [System.IO.Path]::ChangeExtension([System.IO.Path]::GetTempFileName(), '.cmd')
+$GeneratedAskPass = Join-Path ([System.IO.Path]::GetTempPath()) "receipt-drop-askpass-$([guid]::NewGuid().ToString('N')).cmd"
 [System.IO.File]::WriteAllText($GeneratedAskPass, "@type `"$PwFile`"`r`n", [System.Text.Encoding]::ASCII)
 $env:SSH_ASKPASS = $GeneratedAskPass
 $env:SSH_ASKPASS_REQUIRE = 'force'
 $env:DISPLAY = 'localhost:0'
 
-$SshOpts = @('-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15')
+# Pin host keys — never accept-new (MITM risk on first connect).
+$SshOpts = @(
+    '-o', 'StrictHostKeyChecking=yes',
+    '-o', "UserKnownHostsFile=$($env:DEPLOY_KNOWN_HOSTS)",
+    '-o', 'ConnectTimeout=15'
+)
 
 $Target = "$($env:DEPLOY_USER)@$($env:DEPLOY_HOST)"
 
-# Plain `& ssh.exe ... 2>&1` lets ssh inherit this process's stdin. In some
-# terminal hosts that leaves ssh unsure whether a real interactive console is
-# attached and it can stall waiting on it rather than proceeding, even with
-# -o BatchMode=yes. Start-Process with stdin explicitly redirected from a
-# genuinely empty file removes that ambiguity — ssh can never treat it as an
-# interactive prompt target.
+# Windows' bundled OpenSSH client (System32\OpenSSH, typically first on PATH)
+# has a known intermittent bug negotiating strict-KEX against some servers -
+# it can hang indefinitely or fail with "choose_kex: unsupported KEX method
+# sntrup761x25519-sha512@openssh.com" on both ssh and ssh-keyscan. Git for
+# Windows ships a newer OpenSSH build that doesn't hit this; prefer it when
+# present, falling back to whatever's on PATH otherwise.
+function Resolve-SshTool {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    $gitPath = Join-Path $env:ProgramFiles "Git\usr\bin\$Name.exe"
+    if (Test-Path $gitPath) { return $gitPath }
+    $cmd = Get-Command "$Name.exe" -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    throw "$Name.exe not found (checked Git for Windows and PATH)."
+}
+
+$SshExe = Resolve-SshTool -Name 'ssh'
+$ScpExe = Resolve-SshTool -Name 'scp'
+
+# This script authenticates with a password (via the askpass helper above),
+# so `-o BatchMode=yes` can't be used here — it disables password auth
+# entirely. Two things instead prevent ssh/scp from silently hanging forever
+# on a stray prompt: (1) stdin is explicitly redirected from a genuinely
+# empty file below, so ssh can never treat an inherited console as an
+# interactive prompt target; (2) Invoke-NativeViaStartProcess enforces a hard
+# timeout (kill + throw) as the actual safety net if ssh or the askpass
+# helper itself ever stalls regardless.
 $EmptyStdinFile = Join-Path ([System.IO.Path]::GetTempPath()) 'receipt-drop-deploy-empty-stdin'
 if (-not (Test-Path $EmptyStdinFile)) {
     New-Item -ItemType File -Path $EmptyStdinFile -Force | Out-Null
@@ -86,14 +167,31 @@ if (-not (Test-Path $EmptyStdinFile)) {
 function Invoke-NativeViaStartProcess {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
-        [Parameter(Mandatory = $true)][string[]]$ArgumentList
+        [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+        [string]$RedirectStandardInputPath = $EmptyStdinFile,
+        [int]$TimeoutSeconds = 120
     )
     $outFile = [System.IO.Path]::GetTempFileName()
     $errFile = [System.IO.Path]::GetTempFileName()
     try {
         $p = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList `
-            -RedirectStandardInput $EmptyStdinFile -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
-            -NoNewWindow -Wait -PassThru
+            -RedirectStandardInput $RedirectStandardInputPath -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
+            -NoNewWindow -PassThru
+        # Touching .Handle before WaitForExit is required here: without it,
+        # Start-Process -PassThru (no -Wait) leaves .ExitCode unreadable
+        # (silently $null) even after the process has exited and
+        # WaitForExit(ms) returns true — a real, reproduced .NET/PowerShell
+        # quirk, not a hypothetical. A $null ExitCode would make every
+        # "-ne 0" check below true, treating every successful call as a
+        # failure.
+        $null = $p.Handle
+        if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
+            & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
+            Start-Sleep -Milliseconds 250
+            $stdout = if (Test-Path $outFile) { Get-Content $outFile -Raw -ErrorAction SilentlyContinue } else { '' }
+            $stderr = if (Test-Path $errFile) { Get-Content $errFile -Raw -ErrorAction SilentlyContinue } else { '' }
+            throw "Timed out after ${TimeoutSeconds}s and was killed: $FilePath $($ArgumentList -join ' ')`nPartial stdout:`n$stdout`nPartial stderr:`n$stderr"
+        }
         $stdout = if (Test-Path $outFile) { Get-Content $outFile -Raw -ErrorAction SilentlyContinue } else { '' }
         $stderr = if (Test-Path $errFile) { Get-Content $errFile -Raw -ErrorAction SilentlyContinue } else { '' }
         return @{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
@@ -105,9 +203,10 @@ function Invoke-NativeViaStartProcess {
 function Invoke-RemoteCommand {
     param(
         [Parameter(Mandatory = $true)][string]$Command,
-        [switch]$AllowFailure
+        [switch]$AllowFailure,
+        [int]$TimeoutSeconds = 120
     )
-    $result = Invoke-NativeViaStartProcess -FilePath 'ssh.exe' -ArgumentList (@($SshOpts) + @($Target, $Command))
+    $result = Invoke-NativeViaStartProcess -FilePath $SshExe -ArgumentList (@($SshOpts) + @($Target, $Command)) -TimeoutSeconds $TimeoutSeconds
     if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
     if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
     if ($result.ExitCode -ne 0 -and -not $AllowFailure) {
@@ -119,9 +218,10 @@ function Invoke-RemoteCommand {
 function Copy-ToRemote {
     param(
         [Parameter(Mandatory = $true)][string]$LocalPath,
-        [Parameter(Mandatory = $true)][string]$RemotePath
+        [Parameter(Mandatory = $true)][string]$RemotePath,
+        [int]$TimeoutSeconds = 600
     )
-    $result = Invoke-NativeViaStartProcess -FilePath 'scp.exe' -ArgumentList (@($SshOpts) + @($LocalPath, "${Target}:${RemotePath}"))
+    $result = Invoke-NativeViaStartProcess -FilePath $ScpExe -ArgumentList (@($SshOpts) + @($LocalPath, "${Target}:${RemotePath}")) -TimeoutSeconds $TimeoutSeconds
     if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
     if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
     if ($result.ExitCode -ne 0) {
@@ -129,7 +229,19 @@ function Copy-ToRemote {
     }
 }
 
-try {
+function Apply-SecretsViaStdin {
+    # Never write secrets.yaml onto the VM filesystem. Pipe the local file
+    # through ssh stdin into `kubectl apply -f -`.
+    Write-Host "== Applying secrets via SSH stdin (not written under /tmp) =="
+    $result = Invoke-NativeViaStartProcess -FilePath $SshExe `
+        -ArgumentList (@($SshOpts) + @($Target, 'microk8s kubectl apply -n receipt-drop -f -')) `
+        -RedirectStandardInputPath $SecretsFile
+    if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
+    if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
+    if ($result.ExitCode -ne 0) {
+        throw "kubectl apply secrets via stdin failed (exit $($result.ExitCode))"
+    }
+}
 
 # ---------------------------------------------------------------------------
 # 1. Build + save images locally
@@ -140,8 +252,9 @@ New-Item -ItemType Directory -Path $TmpDir | Out-Null
 
 foreach ($img in $Images) {
     $tag = "$($img.Name):$Version"
+    $buildArgs = $img.BuildArgs
     Write-Host "== Building $tag =="
-    & docker build -t $tag (Join-Path $RepoRoot $img.Context)
+    & docker build @buildArgs -t $tag (Join-Path $RepoRoot $img.Context)
     if ($LASTEXITCODE -ne 0) { throw "docker build failed for $tag" }
 
     $tarPath = Join-Path $TmpDir "$($img.Key)-$Version.tar"
@@ -152,20 +265,22 @@ foreach ($img in $Images) {
 
 # ---------------------------------------------------------------------------
 # 2. Render manifests (substitute the image-tag placeholder into a temp copy;
-#    source files under deploy\k8s stay generic across versions)
+#    source files under deploy\k8s stay generic across versions).
+#    secrets.yaml is intentionally NOT rendered/copied — applied via stdin only.
 # ---------------------------------------------------------------------------
 
 if (Test-Path $RenderedDir) { Remove-Item -Recurse -Force $RenderedDir }
 New-Item -ItemType Directory -Path $RenderedDir | Out-Null
 
-Get-ChildItem $K8sDir -Filter '*.yaml' | ForEach-Object {
+Get-ChildItem $K8sDir -Filter '*.yaml' | Where-Object { $_.Name -ne 'secrets.yaml' } | ForEach-Object {
     $content = Get-Content $_.FullName -Raw
     $content = $content -replace '__IMAGE_TAG__', $Version
+    $content = $content -replace '__TUNNEL_ID__', $env:CLOUDFLARE_TUNNEL_ID
     Set-Content -Path (Join-Path $RenderedDir $_.Name) -Value $content -NoNewline
 }
 
 # ---------------------------------------------------------------------------
-# 3. Ship tarballs + manifests to the server
+# 3. Ship tarballs + non-secret manifests to the server
 # ---------------------------------------------------------------------------
 
 $RemoteDir = "/tmp/receipt-drop-deploy/$Version"
@@ -184,20 +299,22 @@ Get-ChildItem $RenderedDir -Filter '*.yaml' | ForEach-Object {
 }
 
 # ---------------------------------------------------------------------------
-# 4. Remote apply sequence (single SSH session, ordered, fails fast on
-#    anything except the final rollout-status loop so one hung deployment
-#    doesn't hide the others)
+# 4. Apply secrets (stdin, never on-disk on the VM), then remote apply sequence
 # ---------------------------------------------------------------------------
+
+# Namespace must exist before secrets apply.
+Invoke-RemoteCommand "microk8s kubectl apply -f $RemoteDir/namespace.yaml"
+Apply-SecretsViaStdin
 
 $RemoteScriptTemplate = @'
 set -e
 cd "__REMOTE_DIR__"
 
-echo "== Applying namespace =="
-microk8s kubectl apply -f namespace.yaml
-
-echo "== Applying secrets =="
-microk8s kubectl apply -n receipt-drop -f secrets.yaml
+# Remove the previous public ocr-api Ingress if present (shared-secret OCR must
+# not be internet-reachable; ClusterIP + private path only).
+echo "== Removing public ocr-api ingress (if any) =="
+microk8s kubectl delete ingress ocr-api-ingress -n receipt-drop --ignore-not-found
+microk8s kubectl delete middleware ocrapi-strip -n receipt-drop --ignore-not-found
 
 echo "== Importing images into containerd =="
 microk8s ctr image import ocr-api-__VERSION__.tar
@@ -220,16 +337,21 @@ if ! microk8s kubectl get storageclass -o name | grep -q .; then
 fi
 
 echo "== Applying workload manifests =="
-microk8s kubectl apply -n receipt-drop -f redis.yaml -f ocr-api.yaml -f leaderboard-api.yaml -f ingress.yaml
+microk8s kubectl apply -n receipt-drop -f redis.yaml -f ocr-api.yaml -f leaderboard-api.yaml -f ingress.yaml -f cloudflared.yaml
 
 echo "== Restarting deployments =="
-microk8s kubectl rollout restart deployment/ocr-api deployment/leaderboard-api deployment/redis -n receipt-drop
+microk8s kubectl rollout restart deployment/ocr-api deployment/leaderboard-api deployment/redis deployment/cloudflared -n receipt-drop
 
 echo "== Waiting for rollouts =="
+failed=0
 set +e
-for d in ocr-api leaderboard-api redis; do
+for d in ocr-api leaderboard-api redis cloudflared; do
   microk8s kubectl rollout status deployment/$d -n receipt-drop --timeout=120s
-  echo "ROLLOUT_STATUS_${d}=$?"
+  status=$?
+  echo "ROLLOUT_STATUS_${d}=$status"
+  if [ "$status" -ne 0 ]; then
+    failed=1
+  fi
 done
 set -e
 
@@ -241,6 +363,15 @@ microk8s kubectl get services -n receipt-drop
 
 echo "== Summary: ingress (receipt-drop) =="
 microk8s kubectl get ingress -n receipt-drop
+
+echo "== Scrubbing remote deploy directory =="
+# Image tarballs + manifests (no secrets.yaml — that never landed on disk).
+rm -rf "__REMOTE_DIR__"
+
+# Exit nonzero if any rollout failed — this is the authoritative pass/fail
+# signal the caller checks (not the ROLLOUT_STATUS_ lines above, which are
+# for the human-readable per-deployment breakdown only).
+exit $failed
 '@
 
 $RemoteScript = $RemoteScriptTemplate -replace '__REMOTE_DIR__', $RemoteDir -replace '__VERSION__', $Version
@@ -260,19 +391,19 @@ Write-Host "== Copying remote-deploy.sh =="
 Copy-ToRemote -LocalPath $LocalScriptPath -RemotePath "$RemoteDir/deploy.sh"
 
 Write-Host "== Running remote deploy sequence =="
-$DeployResult = Invoke-NativeViaStartProcess -FilePath 'ssh.exe' -ArgumentList (@($SshOpts) + @($Target, "bash $RemoteDir/deploy.sh"))
+$DeployResult = Invoke-NativeViaStartProcess -FilePath $SshExe -ArgumentList (@($SshOpts) + @($Target, "bash $RemoteDir/deploy.sh")) -TimeoutSeconds 900
 $CombinedOutput = "$($DeployResult.StdOut)`n$($DeployResult.StdErr)"
 $CombinedOutput -split "`n" | ForEach-Object { Write-Host $_ }
 
-if ($DeployResult.ExitCode -ne 0) {
-    throw "Remote deploy sequence exited with code $($DeployResult.ExitCode) - see output above."
-}
-
 # ---------------------------------------------------------------------------
-# 5. Parse rollout results and set the script's own exit code accordingly
+# 5. Display per-deployment rollout results. Informational only — pass/fail
+#    is decided below by $DeployResult.ExitCode, which the remote script now
+#    sets accurately for every failure mode (rollouts included), not by
+#    regex-parsing this output. Shown before the exit-code check so a real
+#    failure's per-deployment breakdown is still visible, not skipped by an
+#    early throw.
 # ---------------------------------------------------------------------------
 
-$RolloutFailed = $false
 foreach ($line in ($CombinedOutput -split "`n")) {
     if ($line -match 'ROLLOUT_STATUS_(\S+)=(\d+)') {
         $name = $Matches[1]
@@ -281,20 +412,23 @@ foreach ($line in ($CombinedOutput -split "`n")) {
             Write-Host "Rollout OK: $name"
         } else {
             Write-Host "Rollout FAILED: $name (exit $code)"
-            $RolloutFailed = $true
         }
     }
 }
 
-if ($RolloutFailed) {
-    throw "One or more deployments failed to roll out - check the summary output above."
+if ($DeployResult.ExitCode -ne 0) {
+    # Best-effort scrub if the remote script failed before its own cleanup.
+    Invoke-RemoteCommand "rm -rf $RemoteDir" -AllowFailure
+    throw "Remote deploy sequence exited with code $($DeployResult.ExitCode) - see output above."
 }
 
 Write-Host "== Deploy $Version complete =="
 
 } finally {
-    # Always scrub the password artifacts, whether the deploy succeeded,
-    # failed, or was interrupted.
+    # Always scrub the password artifacts and local build/render output,
+    # whether the deploy succeeded, failed, or was interrupted.
     Remove-Item $PwFile, $GeneratedAskPass -ErrorAction SilentlyContinue
     Remove-Item Env:\SSH_ASKPASS, Env:\SSH_ASKPASS_REQUIRE, Env:\DISPLAY -ErrorAction SilentlyContinue
+    if (Test-Path $TmpDir) { Remove-Item -Recurse -Force $TmpDir -ErrorAction SilentlyContinue }
+    if (Test-Path $RenderedDir) { Remove-Item -Recurse -Force $RenderedDir -ErrorAction SilentlyContinue }
 }

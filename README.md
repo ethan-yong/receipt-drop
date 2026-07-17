@@ -97,7 +97,10 @@ Optional Redis-backed leaderboard service for the **Ranks** tab (Friends + Globa
    LEADERBOARD_API_URL=http://localhost:8080
    ```
 
-   On a physical device, use your machine's LAN IP instead of `localhost`.
+   On a physical device, use your machine's LAN IP instead of `localhost`. For
+   a release build talking to production, use
+   `LEADERBOARD_API_URL=https://leaderboard.receipt-drop.org` (Cloudflare
+   Tunnel — see `.claude/commands.md`'s deploy section) instead.
 
 ### Verify
 

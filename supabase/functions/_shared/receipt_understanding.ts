@@ -465,6 +465,12 @@ export interface OcrApiUnderstandingConfig {
    * to the vLLM gateway from this edge function. See docs/decisions.md. */
   ocrServiceUrl: string;
   ocrServiceSecret: string;
+  /** Cloudflare Access Service Token, required only when ocrServiceUrl points
+   * at the production Cloudflare Tunnel hostname (ocr.receipt-drop.org),
+   * which Access gates on top of X-OCR-Secret. Undefined in local dev, where
+   * ocr-api isn't behind Access. See docs/decisions.md. */
+  cfAccessClientId?: string;
+  cfAccessClientSecret?: string;
 }
 
 export type ReceiptUnderstandingCallResult =
@@ -498,6 +504,12 @@ export async function callReceiptUnderstanding(
       headers: {
         "Content-Type": "application/json",
         "X-OCR-Secret": cfg.ocrServiceSecret,
+        ...(cfg.cfAccessClientId && cfg.cfAccessClientSecret
+          ? {
+            "CF-Access-Client-Id": cfg.cfAccessClientId,
+            "CF-Access-Client-Secret": cfg.cfAccessClientSecret,
+          }
+          : {}),
       },
       body: JSON.stringify({ ocr_text: ocrText }),
       signal: controller.signal,
