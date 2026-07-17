@@ -98,6 +98,24 @@ generated credentials.json into secrets.yaml's cloudflared-credentials block.
 "@
 }
 
+# secrets.yaml is gitignored and persists across changes to this repo, so its
+# CONTENT can silently drift out of date with secrets.yaml.example (e.g. a
+# pre-existing file from before the cloudflared-credentials block was added,
+# or an unedited "change-me" placeholder copied verbatim) even though the
+# Test-Path check above passes. Catching that here, at deploy time, beats
+# discovering it later as a confusing CreateContainerConfigError deep in the
+# rollout wait.
+if ((Get-Content $SecretsFile -Raw) -match 'change-me') {
+    throw "$SecretsFile still contains a 'change-me' placeholder value - fill in every real secret (see deploy\k8s\secrets.yaml.example for the full list, including the cloudflared-credentials block) before deploying."
+}
+
+# ocr-api's public hostname (ocr.receipt-drop.org, via cloudflared.yaml) is
+# only safe because Cloudflare Access gates it in the Zero Trust dashboard -
+# nothing in this repo can verify that policy actually exists or is still
+# correct, since it isn't config-as-code. Printed every run as a reminder,
+# not a hard gate (there's no API credential here to check it programmatically).
+Write-Host "== Reminder: verify the Cloudflare Access Service Token policy for ocr.receipt-drop.org is still in place (Zero Trust dashboard) before this completes - X-OCR-Secret alone is not sufficient for an internet-facing endpoint. See docs/decisions.md. =="
+
 # Everything from here on can create secret-bearing temp files (the SSH
 # password file, the generated askpass script) or partially-completed remote
 # state, so it all lives inside one try/finally: an error anywhere past this
@@ -144,7 +162,10 @@ function Resolve-SshTool {
     $gitPath = Join-Path $env:ProgramFiles "Git\usr\bin\$Name.exe"
     if (Test-Path $gitPath) { return $gitPath }
     $cmd = Get-Command "$Name.exe" -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
+    if ($cmd) {
+        Write-Warning "Git for Windows' $Name.exe not found at $gitPath - falling back to $($cmd.Source), which may be the known-buggy Windows OpenSSH build described above."
+        return $cmd.Source
+    }
     throw "$Name.exe not found (checked Git for Windows and PATH)."
 }
 
@@ -185,15 +206,16 @@ function Invoke-NativeViaStartProcess {
         # "-ne 0" check below true, treating every successful call as a
         # failure.
         $null = $p.Handle
-        if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
+        $timedOut = -not $p.WaitForExit($TimeoutSeconds * 1000)
+        if ($timedOut) {
             & taskkill.exe /PID $p.Id /T /F 2>$null | Out-Null
             Start-Sleep -Milliseconds 250
-            $stdout = if (Test-Path $outFile) { Get-Content $outFile -Raw -ErrorAction SilentlyContinue } else { '' }
-            $stderr = if (Test-Path $errFile) { Get-Content $errFile -Raw -ErrorAction SilentlyContinue } else { '' }
-            throw "Timed out after ${TimeoutSeconds}s and was killed: $FilePath $($ArgumentList -join ' ')`nPartial stdout:`n$stdout`nPartial stderr:`n$stderr"
         }
         $stdout = if (Test-Path $outFile) { Get-Content $outFile -Raw -ErrorAction SilentlyContinue } else { '' }
         $stderr = if (Test-Path $errFile) { Get-Content $errFile -Raw -ErrorAction SilentlyContinue } else { '' }
+        if ($timedOut) {
+            throw "Timed out after ${TimeoutSeconds}s and was killed: $FilePath $($ArgumentList -join ' ')`nPartial stdout:`n$stdout`nPartial stderr:`n$stderr"
+        }
         return @{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
     } finally {
         Remove-Item $outFile, $errFile -ErrorAction SilentlyContinue
@@ -231,10 +253,13 @@ function Copy-ToRemote {
 
 function Apply-SecretsViaStdin {
     # Never write secrets.yaml onto the VM filesystem. Pipe the local file
-    # through ssh stdin into `kubectl apply -f -`.
-    Write-Host "== Applying secrets via SSH stdin (not written under /tmp) =="
+    # through ssh stdin into `kubectl apply -f -`. Namespace apply (no secret
+    # material, already copied to $RemoteDir) is chained into this same SSH
+    # session rather than getting its own connection - it only needs to run
+    # before the secrets apply, not in a separate call.
+    Write-Host "== Applying namespace + secrets via SSH stdin (not written under /tmp) =="
     $result = Invoke-NativeViaStartProcess -FilePath $SshExe `
-        -ArgumentList (@($SshOpts) + @($Target, 'microk8s kubectl apply -n receipt-drop -f -')) `
+        -ArgumentList (@($SshOpts) + @($Target, "microk8s kubectl apply -f $RemoteDir/namespace.yaml && microk8s kubectl apply -n receipt-drop -f -")) `
         -RedirectStandardInputPath $SecretsFile
     if ($result.StdOut) { Write-Host $result.StdOut.TrimEnd() }
     if ($result.StdErr) { Write-Host $result.StdErr.TrimEnd() }
@@ -302,8 +327,8 @@ Get-ChildItem $RenderedDir -Filter '*.yaml' | ForEach-Object {
 # 4. Apply secrets (stdin, never on-disk on the VM), then remote apply sequence
 # ---------------------------------------------------------------------------
 
-# Namespace must exist before secrets apply.
-Invoke-RemoteCommand "microk8s kubectl apply -f $RemoteDir/namespace.yaml"
+# Namespace must exist before secrets apply - handled inside
+# Apply-SecretsViaStdin, chained into the same SSH session.
 Apply-SecretsViaStdin
 
 $RemoteScriptTemplate = @'
@@ -366,6 +391,10 @@ microk8s kubectl get ingress -n receipt-drop
 
 echo "== Scrubbing remote deploy directory =="
 # Image tarballs + manifests (no secrets.yaml — that never landed on disk).
+# cd out first: this script's own cwd is __REMOTE_DIR__ (set at the top), and
+# rm -rf-ing your own cwd relies on fragile shell-fd-lifetime behavior rather
+# than being structurally safe for whatever runs after it.
+cd /tmp
 rm -rf "__REMOTE_DIR__"
 
 # Exit nonzero if any rollout failed — this is the authoritative pass/fail
@@ -396,34 +425,32 @@ $CombinedOutput = "$($DeployResult.StdOut)`n$($DeployResult.StdErr)"
 $CombinedOutput -split "`n" | ForEach-Object { Write-Host $_ }
 
 # ---------------------------------------------------------------------------
-# 5. Display per-deployment rollout results. Informational only — pass/fail
-#    is decided below by $DeployResult.ExitCode, which the remote script now
-#    sets accurately for every failure mode (rollouts included), not by
-#    regex-parsing this output. Shown before the exit-code check so a real
-#    failure's per-deployment breakdown is still visible, not skipped by an
-#    early throw.
+# 5. Pass/fail is $DeployResult.ExitCode, which the remote script sets
+#    accurately for every failure mode (rollouts included). The per-deployment
+#    ROLLOUT_STATUS_ lines are already visible verbatim in the raw output
+#    streamed above — no need to re-parse and reprint them here.
 # ---------------------------------------------------------------------------
 
-foreach ($line in ($CombinedOutput -split "`n")) {
-    if ($line -match 'ROLLOUT_STATUS_(\S+)=(\d+)') {
-        $name = $Matches[1]
-        $code = [int]$Matches[2]
-        if ($code -eq 0) {
-            Write-Host "Rollout OK: $name"
-        } else {
-            Write-Host "Rollout FAILED: $name (exit $code)"
-        }
-    }
-}
-
 if ($DeployResult.ExitCode -ne 0) {
-    # Best-effort scrub if the remote script failed before its own cleanup.
-    Invoke-RemoteCommand "rm -rf $RemoteDir" -AllowFailure
     throw "Remote deploy sequence exited with code $($DeployResult.ExitCode) - see output above."
 }
 
 Write-Host "== Deploy $Version complete =="
 
+} catch {
+    # Best-effort remote scrub on ANY failure past this point, including a
+    # local timeout (Invoke-NativeViaStartProcess throws directly, bypassing
+    # the exit-code check above entirely) as well as the explicit throw above.
+    # $RemoteDir may not exist yet if the failure happened before step 3.
+    if ($RemoteDir) {
+        Write-Host "== Attempting best-effort remote cleanup of $RemoteDir after failure =="
+        try {
+            Invoke-RemoteCommand "rm -rf $RemoteDir" -AllowFailure -TimeoutSeconds 30 | Out-Null
+        } catch {
+            Write-Host "Remote cleanup also failed (leaving $RemoteDir on the VM): $_"
+        }
+    }
+    throw
 } finally {
     # Always scrub the password artifacts and local build/render output,
     # whether the deploy succeeded, failed, or was interrupted.

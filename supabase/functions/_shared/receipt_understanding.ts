@@ -1,4 +1,5 @@
 import { DEFAULT_NEARBY_TYPES, normalizeForCompare } from "./place_matching.ts";
+import { cfAccessHeaders } from "./cf_access.ts";
 
 /** Hard ceiling on the ocr-api /understand round-trip — enrich-transaction is
  * invoked fire-and-forget from the sync worker, but edge functions still have
@@ -504,12 +505,7 @@ export async function callReceiptUnderstanding(
       headers: {
         "Content-Type": "application/json",
         "X-OCR-Secret": cfg.ocrServiceSecret,
-        ...(cfg.cfAccessClientId && cfg.cfAccessClientSecret
-          ? {
-            "CF-Access-Client-Id": cfg.cfAccessClientId,
-            "CF-Access-Client-Secret": cfg.cfAccessClientSecret,
-          }
-          : {}),
+        ...cfAccessHeaders(cfg.cfAccessClientId, cfg.cfAccessClientSecret),
       },
       body: JSON.stringify({ ocr_text: ocrText }),
       signal: controller.signal,
