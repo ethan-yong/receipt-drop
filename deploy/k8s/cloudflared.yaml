@@ -1,0 +1,109 @@
+# Public HTTPS ingress via Cloudflare Tunnel (receipt-drop.org). This is a
+# locally-managed tunnel: the tunnel identity lives in the
+# `cloudflared-credentials` Secret (see secrets.yaml.example — the file
+# `cloudflared tunnel create` generates, pasted in as-is), and __TUNNEL_ID__
+# below is substituted by deploy.ps1 from $env:CLOUDFLARE_TUNNEL_ID, same as
+# __IMAGE_TAG__ elsewhere in this directory.
+#
+# cloudflared dials out to Cloudflare's edge (no inbound port-forwarding, no
+# router config) and proxies straight to each Service's in-cluster DNS name —
+# it does NOT go through the Traefik Ingress in ingress.yaml, which stays in
+# place only as a LAN-only fallback path.
+#
+# ocr-api's hostname is additionally gated by Cloudflare Access (configured
+# in the Zero Trust dashboard, not here) requiring a Service Token — on top
+# of, not instead of, the existing X-OCR-Secret shared-secret auth. Only
+# leaderboard-api is meant to be reachable with no additional Cloudflare-side
+# gate.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: receipt-drop
+data:
+  config.yml: |
+    tunnel: __TUNNEL_ID__
+    credentials-file: /etc/cloudflared/creds/credentials.json
+    ingress:
+      - hostname: leaderboard.receipt-drop.org
+        service: http://leaderboard-api.receipt-drop.svc.cluster.local:8080
+      - hostname: ocr.receipt-drop.org
+        service: http://ocr-api.receipt-drop.svc.cluster.local:8080
+      - service: http_status:404
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: receipt-drop
+  labels:
+    app: cloudflared
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+        - name: cloudflared
+          # Public image pulled from Docker Hub — unlike ocr-api/leaderboard-api
+          # this is not built locally, so it's deliberately excluded from
+          # deploy.ps1's $Images build/import loop and its imagePullPolicy: Never
+          # verification step.
+          image: cloudflare/cloudflared:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - tunnel
+            - --config
+            - /etc/cloudflared/config.yml
+            # Default metrics/readiness bind is 127.0.0.1-only — not reachable
+            # for the livenessProbe below, which hits the pod IP.
+            - --metrics
+            - 0.0.0.0:2000
+            - run
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared
+              readOnly: true
+            - name: creds
+              mountPath: /etc/cloudflared/creds
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          # Without this, Kubernetes marks the pod Ready as soon as the
+          # process starts, regardless of whether cloudflared has actually
+          # registered the tunnel with Cloudflare's edge — which let
+          # `kubectl rollout status` (deploy.ps1) report success on a tunnel
+          # that's silently non-functional (bad credentials.json, blocked
+          # egress). /ready only returns 200 once at least one edge
+          # connection is established.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap:
+            name: cloudflared-config
+        - name: creds
+          secret:
+            secretName: cloudflared-credentials

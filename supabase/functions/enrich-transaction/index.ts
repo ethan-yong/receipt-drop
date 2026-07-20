@@ -228,6 +228,10 @@ Deno.serve(async (req) => {
     // a failed LLM call fails the whole enrichment.
     const ocrServiceUrl = Deno.env.get("OCR_SERVICE_URL");
     const ocrServiceSecret = Deno.env.get("OCR_SERVICE_SECRET");
+    // Optional — only set in production, where ocr.receipt-drop.org is
+    // gated by Cloudflare Access on top of X-OCR-Secret. See docs/decisions.md.
+    const cfAccessClientId = Deno.env.get("CF_ACCESS_CLIENT_ID");
+    const cfAccessClientSecret = Deno.env.get("CF_ACCESS_CLIENT_SECRET");
 
     if (!ocrServiceUrl || !ocrServiceSecret) {
       console.error(
@@ -254,7 +258,7 @@ Deno.serve(async (req) => {
     );
 
     const llmResult = await callReceiptUnderstanding(
-      { ocrServiceUrl, ocrServiceSecret },
+      { ocrServiceUrl, ocrServiceSecret, cfAccessClientId, cfAccessClientSecret },
       ocrText,
     );
 

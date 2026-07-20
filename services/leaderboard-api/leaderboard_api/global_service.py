@@ -1,8 +1,14 @@
 from typing import Any
 
 from leaderboard_api.cache import get_redis
-from leaderboard_api.db import fetch_all_leaderboard_scores, fetch_profiles_by_ids_as_user
-from leaderboard_api.global_leaderboard import GLOBAL_ZSET_KEY, compute_leaderboard_score
+from leaderboard_api.db import (
+    fetch_all_leaderboard_scores,
+    fetch_profiles_by_ids_as_user,
+)
+from leaderboard_api.global_leaderboard import (
+    GLOBAL_ZSET_KEY,
+    compute_leaderboard_score,
+)
 
 
 async def zset_cardinality() -> int:

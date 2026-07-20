@@ -1,3 +1,4 @@
+import asyncio
 import contextvars
 import logging
 import os
@@ -134,7 +135,7 @@ async def ocr(request: Request) -> OcrResponse:
     logger.info("received receipt image (%.1f KB)", len(body) / 1024)
 
     try:
-        processed = preprocess(body)
+        processed = await asyncio.to_thread(preprocess, body)
     except InvalidImageError:
         logger.warning(
             "rejected: could not decode %d bytes (%.1f KB) as an image",
@@ -144,7 +145,7 @@ async def ocr(request: Request) -> OcrResponse:
         raise HTTPException(status_code=400, detail="invalid_image")
 
     try:
-        lines, confidence = run_ocr_detailed(processed)
+        lines, confidence = await asyncio.to_thread(run_ocr_detailed, processed)
     except Exception:
         logger.exception(
             "OCR processing failed after %.2fs", time.perf_counter() - start

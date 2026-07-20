@@ -1,0 +1,53 @@
+# MicroK8s >=1.35's `ingress` addon runs Traefik (nginx-ingress was retired
+# industry-wide); `ingressClassName: public` is the addon's default
+# IngressClass, all backed by the same Traefik controller. Prefix stripping
+# uses Traefik's native Middleware CRD rather than nginx annotations, which
+# aren't a reliable target on Traefik's nginx-compat shim.
+#
+# Security boundary:
+# - ocr-api is NOT on Ingress. It stays ClusterIP-only (shared-secret auth is
+#   designed for a private BFF/proxy trust zone, not a public endpoint). Edge
+#   Functions reach it via a private path (VPN / Tailscale / SSH tunnel /
+#   kubectl port-forward). Set OCR_SERVICE_URL to that private base URL.
+# - leaderboard-api IS on Ingress for Flutter clients (JWT-authenticated).
+#   HTTP on the node IP is trusted-LAN-only — do not port-forward it to the
+#   public internet. To enable TLS, create Secret `receipt-drop-tls` and add:
+#     spec:
+#       tls:
+#         - secretName: receipt-drop-tls
+#   under this Ingress (see .claude/commands.md).
+#
+# LEADERBOARD_API_URL (Flutter .env) is a *base URL* the caller appends paths
+# to (e.g. `${url}/friends-leaderboard`) — set it to
+# http://<node-ip>/leaderboard-api (trusted LAN) or https://<host>/leaderboard-api
+# once TLS is configured, so the appended path lines up with what the
+# Middleware forwards after stripping.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: leaderboardapi-strip
+  namespace: receipt-drop
+spec:
+  stripPrefix:
+    prefixes:
+      - /leaderboard-api
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: leaderboard-api-ingress
+  namespace: receipt-drop
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: receipt-drop-leaderboardapi-strip@kubernetescrd
+spec:
+  ingressClassName: public
+  rules:
+    - http:
+        paths:
+          - path: /leaderboard-api
+            pathType: Prefix
+            backend:
+              service:
+                name: leaderboard-api
+                port:
+                  number: 8080

@@ -1,4 +1,5 @@
 import { DEFAULT_NEARBY_TYPES, normalizeForCompare } from "./place_matching.ts";
+import { cfAccessHeaders } from "./cf_access.ts";
 
 /** Hard ceiling on the ocr-api /understand round-trip — enrich-transaction is
  * invoked fire-and-forget from the sync worker, but edge functions still have
@@ -465,6 +466,12 @@ export interface OcrApiUnderstandingConfig {
    * to the vLLM gateway from this edge function. See docs/decisions.md. */
   ocrServiceUrl: string;
   ocrServiceSecret: string;
+  /** Cloudflare Access Service Token, required only when ocrServiceUrl points
+   * at the production Cloudflare Tunnel hostname (ocr.receipt-drop.org),
+   * which Access gates on top of X-OCR-Secret. Undefined in local dev, where
+   * ocr-api isn't behind Access. See docs/decisions.md. */
+  cfAccessClientId?: string;
+  cfAccessClientSecret?: string;
 }
 
 export type ReceiptUnderstandingCallResult =
@@ -498,6 +505,7 @@ export async function callReceiptUnderstanding(
       headers: {
         "Content-Type": "application/json",
         "X-OCR-Secret": cfg.ocrServiceSecret,
+        ...cfAccessHeaders(cfg.cfAccessClientId, cfg.cfAccessClientSecret),
       },
       body: JSON.stringify({ ocr_text: ocrText }),
       signal: controller.signal,

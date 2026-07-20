@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { cfAccessHeaders } from "../_shared/cf_access.ts";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +9,15 @@ const corsHeaders: Record<string, string> = {
 };
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const UPSTREAM_TIMEOUT_MS = 8000;
+// ocr-api's /ocr now runs Tesseract (up to ~20s across its confidence-based
+// retry pass) AND the synchronous LLM understanding step (up to
+// LLM_TIMEOUT_SECONDS=25s, see services/ocr-api/ocr_api/receipt_understanding.py)
+// in the same request — this must stay comfortably above OCR + LLM combined,
+// not just the LLM step alone (contrast UNDERSTAND_TIMEOUT_MS in
+// _shared/receipt_understanding.ts, which only wraps the LLM-only /understand
+// call). A too-short timeout here aborts before ocr-api can ever respond, so
+// the client gets nothing back at all — not even the raw OCR text.
+const UPSTREAM_TIMEOUT_MS = 60_000;
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -57,6 +66,10 @@ Deno.serve(async (req) => {
   if (!ocrServiceUrl || !ocrServiceSecret) {
     return jsonResponse({ error: "server_misconfigured" }, 500);
   }
+  // Optional — only set in production, where ocr.receipt-drop.org is gated by
+  // Cloudflare Access on top of X-OCR-Secret. See docs/decisions.md.
+  const cfAccessClientId = Deno.env.get("CF_ACCESS_CLIENT_ID");
+  const cfAccessClientSecret = Deno.env.get("CF_ACCESS_CLIENT_SECRET");
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
@@ -67,6 +80,7 @@ Deno.serve(async (req) => {
       headers: {
         "Content-Type": contentType,
         "X-OCR-Secret": ocrServiceSecret,
+        ...cfAccessHeaders(cfAccessClientId, cfAccessClientSecret),
       },
       body: imageBytes,
       signal: controller.signal,

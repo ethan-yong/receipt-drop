@@ -96,6 +96,42 @@ Verify: `curl http://localhost:8080/health`. Full manual verification steps (cac
 
 Tests: `cd services/leaderboard-api && pip install -e ".[dev]" && pytest`.
 
+## Deploy: production (MicroK8s)
+
+```powershell
+.\deploy\scripts\deploy.ps1 1.0.0
+.\deploy\scripts\deploy.ps1              # omit the version to auto-generate a timestamp tag
+```
+
+Builds `services/ocr-api` and `services/leaderboard-api`, ships them to the MicroK8s VM, imports into containerd, applies `deploy/k8s/`, restarts + verifies the rollout. Redis is a public image, not built. No manual SSH needed — the script handles it. The version arg is optional — every run forces `kubectl rollout restart` regardless of tag, so an auto-generated tag is just as safe as a manual one; pass an explicit version for a real release you want to track by name.
+
+Required env vars: `DEPLOY_HOST`, `DEPLOY_USER`, `SSH_PASSWORD`, `DEPLOY_KNOWN_HOSTS` (path to a pinned `known_hosts` file — host keys are never auto-accepted), `CLOUDFLARE_TUNNEL_ID` (the tunnel ID printed by `cloudflared tunnel create receipt-drop`). Auth is password-only — the script writes the password to a private per-run temp file and drives a generated `SSH_ASKPASS` helper (never on a command line, never read from the env var by a static script). Both artifacts are scrubbed in a `finally` block whether the deploy succeeds or fails. `secrets.yaml` is applied over SSH stdin and is never written under `/tmp` on the VM; the remote deploy directory is deleted at the end of the run.
+
+One-time local setup:
+
+```powershell
+Copy-Item deploy\k8s\secrets.yaml.example deploy\k8s\secrets.yaml
+# fill in production DATABASE_URL, SUPABASE_JWT_SECRET, OCR_SHARED_SECRET, LLM creds
+
+ssh-keyscan -H $env:DEPLOY_HOST | Out-File -Encoding ascii deploy\known_hosts
+$env:DEPLOY_KNOWN_HOSTS = (Resolve-Path deploy\known_hosts).Path
+
+# Cloudflare Tunnel (one-time, needs a browser + the receipt-drop.org zone
+# already on Cloudflare): cloudflared tunnel login
+#                         cloudflared tunnel create receipt-drop
+#                         cloudflared tunnel route dns receipt-drop leaderboard.receipt-drop.org
+#                         cloudflared tunnel route dns receipt-drop ocr.receipt-drop.org
+# Paste the generated <TUNNEL_ID>.json into secrets.yaml's cloudflared-credentials
+# block, and set:
+$env:CLOUDFLARE_TUNNEL_ID = "<tunnel-id-printed-above>"
+```
+
+One-time server setup (`ubuntu-ethan`): `microk8s enable ingress` (Traefik-backed on MicroK8s ≥1.35, not nginx) and `microk8s enable hostpath-storage` (needed for Redis's PVC — no storage provisioner is enabled by default).
+
+**Ingress / URLs:** a `cloudflared` Deployment tunnels both services to real HTTPS hostnames — `https://leaderboard.receipt-drop.org` and `https://ocr.receipt-drop.org` — dialing out to Cloudflare's edge (no port-forwarding, no router config, TLS terminated at Cloudflare). `ocr-api`'s hostname is additionally gated by **Cloudflare Access** (Zero Trust dashboard → Access → Applications: a Self-hosted app for `ocr.receipt-drop.org`, policy = allow a Service Token) on top of its existing shared-secret auth — generate the token under Access → Service Auth, then `supabase secrets set CF_ACCESS_CLIENT_ID=... CF_ACCESS_CLIENT_SECRET=...` and redeploy `ocr-proxy`/`enrich-transaction` (both attach it as `CF-Access-Client-Id`/`CF-Access-Client-Secret` headers automatically when set — see `docs/decisions.md`). The old Traefik Ingress (`/leaderboard-api/*`, `deploy/k8s/ingress.yaml`) still exists and still works as a LAN-only fallback, but `cloudflared` bypasses it — set Flutter `LEADERBOARD_API_URL` to `https://leaderboard.receipt-drop.org` (root path, no `/leaderboard-api` prefix) for production builds, and `OCR_SERVICE_URL` to `https://ocr.receipt-drop.org` in `supabase/functions/.env`/`supabase secrets set` for production Edge Functions.
+
+`ocr-api`, `leaderboard-api`, `redis`, and `cloudflared` are deployed here. Edge Functions (`enrich-transaction`, `ocr-proxy`, `places-proxy`) deploy separately via `supabase functions deploy <name>` (see above) — they're not part of this k8s system. See `docs/architecture.md`'s "Production hosting" section and `docs/decisions.md` for the full design/tradeoffs.
+
 ## CI
 
 `.github/workflows/python-ci.yml` — runs `ruff check` + `ruff format --check` + `pytest` for both `ocr-api` and `leaderboard-api` on every push/PR that touches `services/**` (any branch). No Flutter/Dart CI workflow exists yet — Flutter tests are run manually via the scripts above.

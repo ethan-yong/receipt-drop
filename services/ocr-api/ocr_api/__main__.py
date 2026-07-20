@@ -1,4 +1,4 @@
-"""Local dev server: ``uv run ocr-api`` from repo root, or ``python -m ocr_api`` here."""
+"""Local dev server: ``uv run ocr-api`` from repo root, or ``python -m ocr_api``."""
 
 from __future__ import annotations
 
