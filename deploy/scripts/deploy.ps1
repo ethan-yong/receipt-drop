@@ -6,6 +6,7 @@
 
 .USAGE
     .\deploy.ps1 1.0.0
+    .\deploy.ps1              # omit the version to auto-generate a timestamp tag
 
 .ENVIRONMENT
     DEPLOY_HOST          Required. Ubuntu VM hostname/IP (e.g. ubuntu-ethan).
@@ -31,11 +32,20 @@
 #>
 
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
+    [Parameter(Mandatory = $false, Position = 0)]
     [string]$Version
 )
 
 $ErrorActionPreference = 'Stop'
+
+# No version given — auto-generate a sortable, always-unique tag. Safe to
+# reuse across runs regardless: the rollout below always runs `kubectl
+# rollout restart`, so pods are recreated (and pull the freshly-imported
+# image) every deploy no matter what the tag is.
+if (-not $Version) {
+    $Version = Get-Date -Format 'yyyyMMddHHmmss'
+    Write-Host "No version given - auto-generated tag: $Version"
+}
 
 # $Version becomes part of a remote path, a Docker tag, and text embedded in
 # a shell command run on the VM (mkdir -p, bash <path>) — constrain it to a

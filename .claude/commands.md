@@ -100,9 +100,10 @@ Tests: `cd services/leaderboard-api && pip install -e ".[dev]" && pytest`.
 
 ```powershell
 .\deploy\scripts\deploy.ps1 1.0.0
+.\deploy\scripts\deploy.ps1              # omit the version to auto-generate a timestamp tag
 ```
 
-Builds `services/ocr-api` and `services/leaderboard-api`, ships them to the MicroK8s VM, imports into containerd, applies `deploy/k8s/`, restarts + verifies the rollout. Redis is a public image, not built. No manual SSH needed — the script handles it.
+Builds `services/ocr-api` and `services/leaderboard-api`, ships them to the MicroK8s VM, imports into containerd, applies `deploy/k8s/`, restarts + verifies the rollout. Redis is a public image, not built. No manual SSH needed — the script handles it. The version arg is optional — every run forces `kubectl rollout restart` regardless of tag, so an auto-generated tag is just as safe as a manual one; pass an explicit version for a real release you want to track by name.
 
 Required env vars: `DEPLOY_HOST`, `DEPLOY_USER`, `SSH_PASSWORD`, `DEPLOY_KNOWN_HOSTS` (path to a pinned `known_hosts` file — host keys are never auto-accepted), `CLOUDFLARE_TUNNEL_ID` (the tunnel ID printed by `cloudflared tunnel create receipt-drop`). Auth is password-only — the script writes the password to a private per-run temp file and drives a generated `SSH_ASKPASS` helper (never on a command line, never read from the env var by a static script). Both artifacts are scrubbed in a `finally` block whether the deploy succeeds or fails. `secrets.yaml` is applied over SSH stdin and is never written under `/tmp` on the VM; the remote deploy directory is deleted at the end of the run.
 
