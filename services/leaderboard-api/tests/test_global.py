@@ -43,7 +43,9 @@ async def test_global_leaderboard_zrevrange_order():
 
     with (
         patch("leaderboard_api.main.verify_bearer") as mock_verify,
-        patch("leaderboard_api.main.build_global_entries", new_callable=AsyncMock) as mock_build,
+        patch(
+            "leaderboard_api.main.build_global_entries", new_callable=AsyncMock
+        ) as mock_build,
     ):
         mock_verify.return_value = type("U", (), {"user_id": me_id})()
         mock_build.return_value = [
@@ -74,7 +76,9 @@ async def test_score_upsert_reads_postgres():
         patch(
             "leaderboard_api.main.fetch_caller_profile_scores", new_callable=AsyncMock
         ) as mock_scores,
-        patch("leaderboard_api.main.upsert_user_score", new_callable=AsyncMock) as mock_upsert,
+        patch(
+            "leaderboard_api.main.upsert_user_score", new_callable=AsyncMock
+        ) as mock_upsert,
     ):
         mock_verify.return_value = type("U", (), {"user_id": me_id})()
         mock_scores.return_value = (7, 3)
@@ -98,9 +102,15 @@ async def test_rebuild_on_empty_zset():
     from fastapi import FastAPI
 
     with (
-        patch("leaderboard_api.main.zset_cardinality", new_callable=AsyncMock, return_value=0),
         patch(
-            "leaderboard_api.main.rebuild_from_postgres", new_callable=AsyncMock, return_value=2
+            "leaderboard_api.main.zset_cardinality",
+            new_callable=AsyncMock,
+            return_value=0,
+        ),
+        patch(
+            "leaderboard_api.main.rebuild_from_postgres",
+            new_callable=AsyncMock,
+            return_value=2,
         ) as mock_rebuild,
         patch("leaderboard_api.main.close_redis", new_callable=AsyncMock),
         patch("leaderboard_api.main.close_pool", new_callable=AsyncMock),

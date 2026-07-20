@@ -6,10 +6,10 @@ Usage in receipt_understanding.py:
     prompt = SKILL_PROMPTS[classification.receipt_type]
 """
 
-from ocr_api.skills.orchestrator import ClassificationResult, classify_receipt
-from ocr_api.skills.restaurant import SYSTEM_PROMPT as RESTAURANT_PROMPT
-from ocr_api.skills.payment import SYSTEM_PROMPT as PAYMENT_PROMPT
 from ocr_api.skills.grocery import SYSTEM_PROMPT as GROCERY_PROMPT
+from ocr_api.skills.orchestrator import ClassificationResult, classify_receipt
+from ocr_api.skills.payment import SYSTEM_PROMPT as PAYMENT_PROMPT
+from ocr_api.skills.restaurant import SYSTEM_PROMPT as RESTAURANT_PROMPT
 from ocr_api.skills.transport import SYSTEM_PROMPT as TRANSPORT_PROMPT
 
 RECEIPT_TYPES = [

@@ -156,6 +156,7 @@ ALLOWED_PLACE_TYPES = {
     "barber_shop",
 }
 
+
 class ReceiptUnderstandingConfidence(BaseModel):
     merchant: float
     address: float
@@ -188,7 +189,7 @@ class ReceiptUnderstandingResponse(BaseModel):
     # Skill-specific optional fields (payment, grocery, transport skills).
     # All None for restaurant/cafe receipts.
     transaction_date: str | None = None
-    amount: float | None = None          # LLM-extracted total (payment/transport)
+    amount: float | None = None  # LLM-extracted total (payment/transport)
     payment_method: str | None = None
     transaction_id: str | None = None
     booking_reference: str | None = None
@@ -348,8 +349,14 @@ def parse_receipt_understanding(raw: str) -> ReceiptUnderstandingResponse | None
     destination = _as_str_or_none(obj.get("destination"))
 
     actionable = bool(
-        merchant_name or queries or address_text or location_clues or line_items
-        or amount or transaction_id or booking_reference
+        merchant_name
+        or queries
+        or address_text
+        or location_clues
+        or line_items
+        or amount
+        or transaction_id
+        or booking_reference
     )
     if not actionable:
         return None

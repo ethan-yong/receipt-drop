@@ -176,7 +176,8 @@ def classify_receipt(ocr_text: str) -> ClassificationResult:
 
     if best_score < _MIN_CONFIDENCE_THRESHOLD:
         logger.info(
-            "classifier: no type cleared threshold (best=%r score=%.3f) → fallback to restaurant",
+            "classifier: no type cleared threshold "
+            "(best=%r score=%.3f) → fallback to restaurant",
             best_type,
             best_score,
         )

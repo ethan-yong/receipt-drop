@@ -41,12 +41,15 @@ _RM_AMOUNT_RE = re.compile(r"(RM\s{0,3})([0-9ZzOlI]+(?:\.[0-9ZzOlI]{1,2})?)")
 
 def _normalize_ocr_amounts(text: str) -> str:
     """Fix OCR letter/digit confusions in RM currency amount positions."""
+
     def _fix(m: re.Match) -> str:
         return m.group(1) + m.group(2).translate(_OCR_DIGIT_SUBS)
 
     normalized = _RM_AMOUNT_RE.sub(_fix, text)
     if normalized != text:
-        logger.debug("normalize_ocr_amounts: corrected letter/digit confusion in RM amounts")
+        logger.debug(
+            "normalize_ocr_amounts: corrected letter/digit confusion in RM amounts"
+        )
     return normalized
 
 
