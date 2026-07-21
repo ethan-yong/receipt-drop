@@ -92,6 +92,17 @@ def _config() -> str:
 # score well under this on the first pass.
 _LOW_CONFIDENCE_RETRY_THRESHOLD = 0.4
 
+# If the plain pass alone already took this long, skip the confidence-triggered
+# binarize retry rather than unconditionally doubling an already-slow request.
+# A production incident saw a 51.04s plain pass (calibrated confidence 9%)
+# followed by a 70.22s binarize retry that made confidence *worse* (6%) and
+# was discarded anyway — 122.53s total OCR time for zero benefit. Budget
+# chosen so plain-pass-already-slow cases skip straight to the LLM step,
+# keeping combined OCR+LLM time under the ~90s ocr-proxy/Cloudflare-tunnel
+# ceiling with room to spare. Tune via scripts/process_receipts.ps1 against
+# the fixture set before changing.
+_RETRY_TIME_BUDGET_SECONDS = 20.0
+
 
 def _run_tesseract(
     image: np.ndarray, *, label: str
@@ -175,8 +186,23 @@ def run_ocr_detailed(image: np.ndarray) -> tuple[list[OcrLineResult], float]:
         logger.info("adaptive binarize forced on (PREPROCESS_ADAPTIVE_BINARIZE set)")
         return _run_tesseract(shadow_binarize(image), label="forced-binarize")
 
+    plain_start = time.perf_counter()
     lines, confidence = _run_tesseract(image, label="plain")
+    plain_elapsed = time.perf_counter() - plain_start
+
     if confidence < _LOW_CONFIDENCE_RETRY_THRESHOLD:
+        if plain_elapsed >= _RETRY_TIME_BUDGET_SECONDS:
+            logger.info(
+                "plain pass confidence %.0f%% is below the %.0f%% retry threshold "
+                "but took %.2fs (>= %.0fs budget) — skipping binarize retry to "
+                "protect the request's overall latency budget",
+                confidence * 100,
+                _LOW_CONFIDENCE_RETRY_THRESHOLD * 100,
+                plain_elapsed,
+                _RETRY_TIME_BUDGET_SECONDS,
+            )
+            return lines, confidence
+
         from ocr_api.preprocessing import shadow_binarize  # lazy import avoids cycle
 
         logger.info(

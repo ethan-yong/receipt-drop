@@ -9,15 +9,21 @@ const corsHeaders: Record<string, string> = {
 };
 
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-// ocr-api's /ocr now runs Tesseract (up to ~20s across its confidence-based
-// retry pass) AND the synchronous LLM understanding step (up to
-// LLM_TIMEOUT_SECONDS=25s, see services/ocr-api/ocr_api/receipt_understanding.py)
-// in the same request — this must stay comfortably above OCR + LLM combined,
-// not just the LLM step alone (contrast UNDERSTAND_TIMEOUT_MS in
-// _shared/receipt_understanding.ts, which only wraps the LLM-only /understand
-// call). A too-short timeout here aborts before ocr-api can ever respond, so
-// the client gets nothing back at all — not even the raw OCR text.
-const UPSTREAM_TIMEOUT_MS = 60_000;
+// ocr-api's /ocr runs Tesseract (a single plain pass, commonly 10-55s on this
+// deployment's 1-core CPU quota — see _RETRY_TIME_BUDGET_SECONDS in
+// ocr_engine.py, which skips the confidence-triggered binarize retry once the
+// plain pass alone has already eaten most of the latency budget) AND the
+// synchronous LLM understanding step (up to LLM_TIMEOUT_SECONDS=25s, see
+// services/ocr-api/ocr_api/receipt_understanding.py) in the same request —
+// this must stay comfortably above OCR + LLM combined, not just the LLM step
+// alone (contrast UNDERSTAND_TIMEOUT_MS in _shared/receipt_understanding.ts,
+// which only wraps the LLM-only /understand call). A too-short timeout here
+// aborts before ocr-api can ever respond, so the client gets nothing back at
+// all — not even the raw OCR text. Also must stay under Cloudflare's ~100s
+// default tunnel response-wait ceiling (deploy/k8s/cloudflared.yaml has no
+// originRequest override, and it can't be raised from this repo) — see
+// docs/decisions.md for the incident this was tuned against.
+const UPSTREAM_TIMEOUT_MS = 90_000;
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
