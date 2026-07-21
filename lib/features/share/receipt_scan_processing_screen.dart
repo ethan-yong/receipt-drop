@@ -3,21 +3,39 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../core/platform/platform_feedback.dart';
 import '../../domain/models/ocr_progress_event.dart';
+import 'batch_scan_progress.dart';
 import 'ocr_progress_notifier.dart';
 import 'receipt_ingest_draft.dart';
 
+/// A live OCR attempt: the event stream to listen to, and how to tear it
+/// down. Built fresh by [OcrAttemptFactory] each time — once at first show,
+/// and again on every Retry — so a retry actually re-runs ingest rather than
+/// just re-subscribing to a stream that already finished.
+typedef OcrAttemptHandle = ({Stream<OcrProgressEvent> stream, VoidCallback dispose});
+typedef OcrAttemptFactory = OcrAttemptHandle Function();
+
 /// Full-screen animated receipt processing view.
 ///
-/// Driven by [OcrProgressNotifier.stream] — each real pipeline milestone
-/// (OCR start, merchant extraction, total extraction, category prediction)
-/// advances the log and animates the receipt card. Pops with the
-/// [ReceiptIngestDraft] on success, or with null on failure/cancel.
+/// Driven by real pipeline milestones (OCR start, merchant extraction, total
+/// extraction, category prediction) via [attemptFactory] — each call starts
+/// a fresh OCR attempt. Pops with the [ReceiptIngestDraft] on success, or
+/// with null if the user backs out (cancel, or "Skip for now" after a
+/// failure). On failure the screen stays open with an inline retry state
+/// instead of popping immediately.
+///
+/// When [batchProgress] is supplied with more than one receipt in the
+/// batch, a progress footer ("N of M completed") is shown below the log
+/// panel; omit it (or leave totalCount at 1) for a single-receipt scan.
 class ReceiptScanProcessingScreen extends StatefulWidget {
-  const ReceiptScanProcessingScreen({super.key, required this.stream});
+  const ReceiptScanProcessingScreen({
+    super.key,
+    required this.attemptFactory,
+    this.batchProgress,
+  });
 
-  final Stream<OcrProgressEvent> stream;
+  final OcrAttemptFactory attemptFactory;
+  final BatchScanProgress? batchProgress;
 
   @override
   State<ReceiptScanProcessingScreen> createState() =>
@@ -30,6 +48,7 @@ class _ReceiptScanProcessingScreenState
   static const _kBg = Color(0xFFF4E8D6);
   static const _kCardSurface = Color(0xFFFFFDF8);
   static const _kText = Color(0xFF5A4632);
+  static const _kError = Color(0xFFB23A2E);
   static const _kHighlightColor = Color(0x8DE2885C);
   static const _kHighlightDuration = Duration(milliseconds: 300);
 
@@ -46,6 +65,12 @@ class _ReceiptScanProcessingScreenState
   String? _categoryName;
   bool _showSuccess = false;
 
+  // Failure / retry state
+  bool _failed = false;
+  bool _retrying = false;
+  int _failedStepIndex = -1;
+
+  OcrAttemptHandle? _attempt;
   StreamSubscription<OcrProgressEvent>? _sub;
 
   // Fixed item row widths for variety (name bar width, price bar width)
@@ -84,12 +109,13 @@ class _ReceiptScanProcessingScreenState
       duration: const Duration(milliseconds: 1200),
     );
 
-    _sub = widget.stream.listen(_handleEvent, onError: _handleError);
+    _startAttempt();
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _attempt?.dispose();
     _entranceCtrl.dispose();
     _floatCtrl.dispose();
     _breatheCtrl.dispose();
@@ -97,9 +123,36 @@ class _ReceiptScanProcessingScreenState
     super.dispose();
   }
 
+  // ── Attempt lifecycle ─────────────────────────────────────────────────────
+
+  void _startAttempt() {
+    _attempt = widget.attemptFactory();
+    _sub = _attempt!.stream.listen(_handleEvent, onError: _handleError);
+  }
+
+  void _retry() {
+    _sub?.cancel();
+    _attempt?.dispose();
+    setState(() {
+      _failed = false;
+      _retrying = true;
+      _failedStepIndex = -1;
+      _stage = OcrProcessingStage.uploading;
+      _merchantName = null;
+      _totalAmount = null;
+      _categoryName = null;
+      _showSuccess = false;
+    });
+    _breatheCtrl.reset();
+    _startAttempt();
+  }
+
+  void _skip() => Navigator.of(context).pop();
+
   // ── Event handling ────────────────────────────────────────────────────────
 
   void _handleEvent(OcrProgressEvent event) {
+    _retrying = false;
     switch (event) {
       case ReceiptUploadedEvent():
         setState(() => _stage = OcrProcessingStage.uploading);
@@ -148,13 +201,30 @@ class _ReceiptScanProcessingScreenState
 
   void _handleFailed(Object error) {
     if (!mounted) return;
-    PlatformFeedback.showError(context, 'Could not read receipt: $error');
-    Navigator.of(context).pop();
+    final idx = _currentActiveStepIndex();
+    setState(() {
+      _failed = true;
+      _retrying = false;
+      _failedStepIndex = idx;
+    });
+    _breatheCtrl.stop();
   }
 
   // ── Log step helpers ──────────────────────────────────────────────────────
 
-  _LogItemState _stepState(int i) => switch (i) {
+  int _currentActiveStepIndex() {
+    for (var i = 0; i < 5; i++) {
+      if (_baseStepState(i) == _LogItemState.active) return i;
+    }
+    return -1;
+  }
+
+  _LogItemState _stepState(int i) {
+    if (_failed && i == _failedStepIndex) return _LogItemState.error;
+    return _baseStepState(i);
+  }
+
+  _LogItemState _baseStepState(int i) => switch (i) {
         0 => switch (_stage) {
             OcrProcessingStage.uploading => _LogItemState.idle,
             OcrProcessingStage.scanning ||
@@ -190,17 +260,28 @@ class _ReceiptScanProcessingScreenState
         _ => _LogItemState.idle,
       };
 
-  String _stepText(int i) => switch (i) {
-        0 => 'Reading receipt…',
-        1 => _merchantName != null
-            ? 'Detected: $_merchantName'
-            : 'Identifying merchant…',
-        2 => _totalAmount != null
-            ? 'Found total: RM${_totalAmount!.toStringAsFixed(2)}'
-            : 'Extracting totals…',
-        3 => 'Understanding spending type…',
-        4 => 'Analysing receipt type…',
-        _ => '',
+  String _stepText(int i) {
+    if (_failed && i == _failedStepIndex) return _failureTextFor(i);
+    return switch (i) {
+      0 => 'Reading receipt…',
+      1 => _merchantName != null
+          ? 'Detected: $_merchantName'
+          : 'Identifying merchant…',
+      2 => _totalAmount != null
+          ? 'Found total: RM${_totalAmount!.toStringAsFixed(2)}'
+          : 'Extracting totals…',
+      3 => 'Understanding spending type…',
+      4 => 'Analysing receipt type…',
+      _ => '',
+    };
+  }
+
+  String _failureTextFor(int i) => switch (i) {
+        0 => "Couldn't read the receipt",
+        1 => "Couldn't identify the merchant",
+        2 => "Couldn't extract totals",
+        3 => "Couldn't classify spending type",
+        _ => 'Something went wrong',
       };
 
   // ── Row highlight helpers ─────────────────────────────────────────────────
@@ -225,6 +306,9 @@ class _ReceiptScanProcessingScreenState
     return (1.0 - dist / 0.18).clamp(0.0, 0.75);
   }
 
+  bool get _showBatchFooter =>
+      widget.batchProgress != null && widget.batchProgress!.totalCount > 1;
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -232,42 +316,60 @@ class _ReceiptScanProcessingScreenState
     return Scaffold(
       backgroundColor: _kBg,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            Expanded(
-              child: Center(
-                child: AnimatedBuilder(
-                  animation: Listenable.merge(
-                      [_entranceCtrl, _floatCtrl, _rowScanCtrl]),
-                  builder: (context, _) {
-                    final floatOffset =
-                        math.sin(_floatCtrl.value * 2 * math.pi) * 3.0;
-                    final tiltAngle =
-                        (1.0 - _entranceCtrl.value) * -0.07;
-                    return FadeTransition(
-                      opacity: CurvedAnimation(
-                        parent: _entranceCtrl,
-                        curve: Curves.easeOut,
-                      ),
-                      child: Transform.translate(
-                        offset: Offset(0, floatOffset),
-                        child: Transform.rotate(
-                          angle: tiltAngle,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              _receiptCard(),
-                              if (_showSuccess) _successOverlay(),
-                            ],
-                          ),
+            Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        AnimatedBuilder(
+                          animation: Listenable.merge(
+                              [_entranceCtrl, _floatCtrl, _rowScanCtrl]),
+                          builder: (context, _) {
+                            final floatOffset =
+                                math.sin(_floatCtrl.value * 2 * math.pi) * 3.0;
+                            final tiltAngle =
+                                (1.0 - _entranceCtrl.value) * -0.07;
+                            return FadeTransition(
+                              opacity: CurvedAnimation(
+                                parent: _entranceCtrl,
+                                curve: Curves.easeOut,
+                              ),
+                              child: Transform.translate(
+                                offset: Offset(0, floatOffset),
+                                child: Transform.rotate(
+                                  angle: tiltAngle,
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      _failed
+                                          ? _dimmedReceiptCard()
+                                          : _receiptCard(),
+                                      if (_showSuccess) _successOverlay(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
+                        if (_failed) _failedOverlay(),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
+                _processingPanel(),
+              ],
             ),
-            _logPanel(),
+            if (_failed)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: _CloseButton(onTap: _skip),
+              ),
           ],
         ),
       ),
@@ -341,6 +443,21 @@ class _ReceiptScanProcessingScreenState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _dimmedReceiptCard() {
+    return Opacity(
+      opacity: 0.55,
+      child: ColorFiltered(
+        colorFilter: const ColorFilter.matrix(<double>[
+          0.2126, 0.7152, 0.0722, 0, 0, //
+          0.2126, 0.7152, 0.0722, 0, 0, //
+          0.2126, 0.7152, 0.0722, 0, 0, //
+          0, 0, 0, 1, 0, //
+        ]),
+        child: _receiptCard(),
       ),
     );
   }
@@ -430,7 +547,74 @@ class _ReceiptScanProcessingScreenState
     );
   }
 
-  Widget _logPanel() {
+  Widget _failedOverlay() {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 260),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _kError.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.error_outline, color: _kError, size: 22),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            "Couldn't read this receipt",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _kText,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'The image is too blurry to extract details. Try retaking the photo in better lighting.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _kText.withValues(alpha: 0.75),
+              fontSize: 12.5,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              FilledButton(
+                onPressed: _retrying ? null : _retry,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF2C2C33),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                child: Text(_retrying ? 'Retrying…' : 'Retry scan'),
+              ),
+              if (_showBatchFooter)
+                TextButton(
+                  onPressed: _skip,
+                  child: Text(
+                    'Skip for now',
+                    style: TextStyle(color: _kText.withValues(alpha: 0.7)),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _processingPanel() {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -444,12 +628,23 @@ class _ReceiptScanProcessingScreenState
           ),
         ],
       ),
-      padding: EdgeInsets.fromLTRB(
-        20,
-        16,
-        20,
-        20 + MediaQuery.paddingOf(context).bottom,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _logContent(),
+            if (_showBatchFooter) _BatchFooter(progress: widget.batchProgress!),
+            SizedBox(height: MediaQuery.paddingOf(context).bottom),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _logContent() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -479,7 +674,172 @@ class _ReceiptScanProcessingScreenState
 
 // ── Supporting widgets ────────────────────────────────────────────────────────
 
-enum _LogItemState { idle, active, done }
+class _CloseButton extends StatelessWidget {
+  const _CloseButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.35),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.all(8),
+          child: Icon(Icons.close, color: Colors.white, size: 18),
+        ),
+      ),
+    );
+  }
+}
+
+class _BatchFooter extends StatefulWidget {
+  const _BatchFooter({required this.progress});
+
+  final BatchScanProgress progress;
+
+  @override
+  State<_BatchFooter> createState() => _BatchFooterState();
+}
+
+class _BatchFooterState extends State<_BatchFooter>
+    with SingleTickerProviderStateMixin {
+  static const _kAccent = Color(0xFFE2885C);
+  static const _kText = Color(0xFF5A4632);
+  static const _kFooterBg = Color(0xFFF5E9D6);
+  static const _kFooterBorder = Color(0xFFEADFC5);
+
+  bool _expanded = false;
+  late final AnimationController _pulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = widget.progress;
+    return Container(
+      decoration: const BoxDecoration(
+        color: _kFooterBg,
+        border: Border(top: BorderSide(color: _kFooterBorder)),
+      ),
+      child: Column(
+        children: [
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            child: _expanded ? _expandedList(progress) : const SizedBox.shrink(),
+          ),
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  FadeTransition(
+                    opacity: Tween<double>(begin: 0.35, end: 1.0).animate(_pulseCtrl),
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: _kAccent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      progress.lastCompletedName != null
+                          ? '${progress.completedCount} of ${progress.totalCount} completed · last: ${progress.lastCompletedName}'
+                          : '${progress.completedCount} of ${progress.totalCount} completed',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2C2C33),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 220),
+                    child: const Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 18,
+                      color: Color(0xFF8A8170),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _expandedList(BatchScanProgress progress) {
+    if (progress.completedNames.isEmpty) return const SizedBox.shrink();
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 150),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: _kFooterBorder)),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        itemCount: progress.completedNames.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (context, i) {
+          final name = progress.completedNames[i];
+          return Row(
+            children: [
+              Container(
+                width: 15,
+                height: 15,
+                decoration: const BoxDecoration(
+                  color: _kAccent,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check, size: 9, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: _kText,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+enum _LogItemState { idle, active, done, error }
 
 class _LogItem extends StatelessWidget {
   const _LogItem({
@@ -496,6 +856,7 @@ class _LogItem extends StatelessWidget {
 
   static const _kAccent = Color(0xFFE2885C);
   static const _kText = Color(0xFF5A4632);
+  static const _kError = Color(0xFFB23A2E);
 
   @override
   Widget build(BuildContext context) {
@@ -532,6 +893,27 @@ class _LogItem extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: const Icon(Icons.check, color: Colors.white, size: 10),
+      );
+    }
+    if (state == _LogItemState.error) {
+      return Container(
+        width: 16,
+        height: 16,
+        decoration: const BoxDecoration(
+          color: _kError,
+          shape: BoxShape.circle,
+        ),
+        child: const Center(
+          child: Text(
+            '!',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              height: 1,
+            ),
+          ),
+        ),
       );
     }
     if (state == _LogItemState.active) {
@@ -587,7 +969,7 @@ class _LogItem extends StatelessWidget {
         text,
         style: TextStyle(
           fontSize: 13,
-          color: _kText,
+          color: state == _LogItemState.error ? _kError : _kText,
           fontWeight: state == _LogItemState.done
               ? FontWeight.w500
               : FontWeight.w400,

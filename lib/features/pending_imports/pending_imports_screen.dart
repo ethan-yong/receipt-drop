@@ -7,6 +7,7 @@ import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/models/pending_import_model.dart';
 import '../../widgets/skeleton.dart';
+import '../share/batch_scan_progress.dart';
 import 'pending_import_service.dart';
 
 class PendingImportsScreen extends StatelessWidget {
@@ -69,9 +70,15 @@ class PendingImportsScreen extends StatelessWidget {
     BuildContext context,
     List<PendingImportModel> imports,
   ) async {
+    var progress = BatchScanProgress(totalCount: imports.length);
     for (final import in imports) {
       if (!context.mounted) return;
-      await PendingImportService.processImport(context, import);
+      progress = await PendingImportService.processImport(
+            context,
+            import,
+            batchProgress: progress,
+          ) ??
+          progress;
     }
   }
 }
