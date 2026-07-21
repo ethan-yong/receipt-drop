@@ -16,6 +16,7 @@ import '../../domain/models/pending_import_model.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../features/share/receipt_capture_flow.dart';
 import '../../widgets/adaptive_sync_banner.dart';
+import '../../widgets/pending_drop_indicator.dart';
 import '../../widgets/receipt_card_carousel.dart';
 import '../../widgets/share_coach_mark.dart';
 import '../../widgets/top_badges_grid.dart';
@@ -85,8 +86,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   builder: (context, pendingSnapshot) {
                     final pending = pendingSnapshot.data ?? const [];
                     if (pending.isEmpty) return const SizedBox.shrink();
-                    return _PendingImportsBanner(
-                      count: pending.length,
+                    return PendingDropIndicator(
+                      pending: pending,
                       onTap: () => context.pushNamed('pending-imports'),
                     );
                   },
@@ -208,64 +209,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             );
           },
-        ),
-      ),
-    );
-  }
-}
-
-class _PendingImportsBanner extends StatelessWidget {
-  const _PendingImportsBanner({required this.count, required this.onTap});
-
-  final int count;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.xs,
-        AppSpacing.md,
-        0,
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: AppSpacing.chipBorderRadius,
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            color: AppColors.badgePendingBg,
-            borderRadius: AppSpacing.chipBorderRadius,
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.inbox_outlined,
-                size: 18,
-                color: AppColors.badgePendingText,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  count == 1
-                      ? '1 receipt waiting to be processed'
-                      : '$count receipts waiting to be processed',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.badgePendingText,
-                      ),
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right,
-                size: 18,
-                color: AppColors.badgePendingText,
-              ),
-            ],
-          ),
         ),
       ),
     );
