@@ -70,12 +70,7 @@ class ReceiptCaptureFlow {
     }
   }
 
-  static Future<void> ingestSharedPath(
-    BuildContext context, {
-    required String path,
-    required String mimeType,
-  }) async {
-    PlatformFeedback.lightTap();
+  static OcrAttemptHandle _startPathAttempt(String path, String mimeType) {
     final notifier = OcrProgressNotifier();
     unawaited(Future<void>(() async {
       try {
@@ -88,26 +83,10 @@ class ReceiptCaptureFlow {
         await notifier.emit(ProcessingFailedEvent(error: e));
       }
     }));
-    if (!context.mounted) {
-      notifier.dispose();
-      return;
-    }
-    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
-      MaterialPageRoute<ReceiptIngestDraft>(
-        builder: (_) =>
-            ReceiptScanProcessingScreen(stream: notifier.stream),
-      ),
-    );
-    notifier.dispose();
-    if (draft == null || !context.mounted) return;
-    await _showSaveSheet(context, draft, fromShareIntent: true);
+    return (stream: notifier.stream, dispose: notifier.dispose);
   }
 
-  static Future<void> _ingestAndSave(
-    BuildContext context, {
-    required Uint8List bytes,
-    required String mimeType,
-  }) async {
+  static OcrAttemptHandle _startBytesAttempt(Uint8List bytes, String mimeType) {
     final notifier = OcrProgressNotifier();
     unawaited(Future<void>(() async {
       try {
@@ -120,17 +99,39 @@ class ReceiptCaptureFlow {
         await notifier.emit(ProcessingFailedEvent(error: e));
       }
     }));
-    if (!context.mounted) {
-      notifier.dispose();
-      return;
-    }
+    return (stream: notifier.stream, dispose: notifier.dispose);
+  }
+
+  static Future<void> ingestSharedPath(
+    BuildContext context, {
+    required String path,
+    required String mimeType,
+  }) async {
+    PlatformFeedback.lightTap();
+    if (!context.mounted) return;
     final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
       MaterialPageRoute<ReceiptIngestDraft>(
-        builder: (_) =>
-            ReceiptScanProcessingScreen(stream: notifier.stream),
+        builder: (_) => ReceiptScanProcessingScreen(
+          attemptFactory: () => _startPathAttempt(path, mimeType),
+        ),
       ),
     );
-    notifier.dispose();
+    if (draft == null || !context.mounted) return;
+    await _showSaveSheet(context, draft, fromShareIntent: true);
+  }
+
+  static Future<void> _ingestAndSave(
+    BuildContext context, {
+    required Uint8List bytes,
+    required String mimeType,
+  }) async {
+    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+      MaterialPageRoute<ReceiptIngestDraft>(
+        builder: (_) => ReceiptScanProcessingScreen(
+          attemptFactory: () => _startBytesAttempt(bytes, mimeType),
+        ),
+      ),
+    );
     if (draft == null || !context.mounted) return;
     await _showSaveSheet(context, draft);
   }

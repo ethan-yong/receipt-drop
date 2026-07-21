@@ -9,12 +9,16 @@ import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../data/repositories/social_repository.dart';
+import '../../domain/models/ocr_progress_event.dart';
 import '../../domain/models/pending_import_model.dart';
 import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/models/transaction_view.dart';
+import '../share/batch_scan_progress.dart';
+import '../share/ocr_progress_notifier.dart';
 import '../share/receipt_confirm_sheet.dart';
 import '../share/receipt_ingest_draft.dart';
 import '../share/receipt_ingest_service.dart';
+import '../share/receipt_scan_processing_screen.dart';
 
 abstract final class PendingImportService {
   static String _resolveUserId() {
@@ -41,34 +45,64 @@ abstract final class PendingImportService {
     unawaited(AppServices.pendingImports.syncToSupabase(import));
   }
 
-  /// Runs the OCR pipeline on [import] and shows the confirm sheet. On
-  /// success the pending import is deleted; on failure or cancel it is kept.
-  static Future<void> processImport(
+  /// Runs the OCR pipeline on [import] via the animated processing screen,
+  /// then shows the confirm sheet. On success the pending import is
+  /// deleted; on failure or cancel it is kept.
+  ///
+  /// When part of a "Process all" batch, [batchProgress] threads the
+  /// running completed-count/names through so the processing screen's
+  /// footer stays accurate across the sequence; the updated snapshot is
+  /// returned so the caller can pass it into the next call in the loop.
+  static Future<BatchScanProgress?> processImport(
     BuildContext context,
-    PendingImportModel import,
-  ) async {
+    PendingImportModel import, {
+    BatchScanProgress? batchProgress,
+  }) async {
     await AppServices.pendingImports.updateStatus(import.id, 'processing');
-
+    if (!context.mounted) return batchProgress;
     PlatformFeedback.lightTap();
-    PlatformFeedback.showOcrProgress(context);
 
-    final draft = await _runOcr(context, import);
-    if (draft == null) return;
+    OcrAttemptHandle startAttempt() {
+      final notifier = OcrProgressNotifier();
+      unawaited(Future<void>(() async {
+        try {
+          await ReceiptIngestService.ingestPath(
+            path: import.localFilePath,
+            mimeType: import.mimeType,
+            notifier: notifier,
+          );
+        } catch (e) {
+          await AppServices.pendingImports.updateStatus(import.id, 'failed');
+          await notifier.emit(ProcessingFailedEvent(error: e));
+        }
+      }));
+      return (stream: notifier.stream, dispose: notifier.dispose);
+    }
 
-    PlatformFeedback.hideOcrProgress();
+    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+      MaterialPageRoute<ReceiptIngestDraft>(
+        builder: (_) => ReceiptScanProcessingScreen(
+          attemptFactory: startAttempt,
+          batchProgress: batchProgress,
+        ),
+      ),
+    );
+    if (draft == null) return batchProgress;
+
     if (!context.mounted) {
       await AppServices.pendingImports.updateStatus(import.id, 'local');
       await ReceiptIngestService.discardDraft(draft);
-      return;
+      return batchProgress;
     }
 
     TransactionView? savedTx;
+    var completedThisReceipt = false;
 
     final categories = await loadBundledCategoryConfig();
     if (!context.mounted) {
       await AppServices.pendingImports.updateStatus(import.id, 'local');
       await ReceiptIngestService.discardDraft(draft);
-      return;
+      return batchProgress;
     }
 
     final saved = await ReceiptConfirmSheet.show(
@@ -84,7 +118,10 @@ abstract final class PendingImportService {
           ),
         );
         final tx = savedTx;
-        if (tx != null) SocialRepository.createFeedPost(tx);
+        if (tx != null) {
+          SocialRepository.createFeedPost(tx);
+          completedThisReceipt = true;
+        }
       },
       onSaveForLater: (editedDraft) async {
         await AppServices.transactions.ingestReceipt(
@@ -92,6 +129,7 @@ abstract final class PendingImportService {
         );
         // Receipt is now in the review queue — remove from pending inbox.
         await AppServices.pendingImports.delete(import.id);
+        completedThisReceipt = true;
       },
       onCancel: (cancelledDraft) async {
         // Delete the OCR copy; keep the pending import for retry.
@@ -100,7 +138,11 @@ abstract final class PendingImportService {
       },
     );
 
-    if (!saved || savedTx == null) return;
+    final nextProgress = completedThisReceipt
+        ? batchProgress?.withCompleted(draft.merchantRaw ?? 'Receipt')
+        : batchProgress;
+
+    if (!saved || savedTx == null) return nextProgress;
 
     // Delete the pending import now that a full transaction exists.
     await AppServices.pendingImports.delete(import.id);
@@ -116,27 +158,6 @@ abstract final class PendingImportService {
     if (context.mounted) {
       context.pushNamed('ritual');
     }
-  }
-
-  static Future<ReceiptIngestDraft?> _runOcr(
-    BuildContext context,
-    PendingImportModel import,
-  ) async {
-    try {
-      return await ReceiptIngestService.ingestPath(
-        path: import.localFilePath,
-        mimeType: import.mimeType,
-      );
-    } catch (e) {
-      PlatformFeedback.hideOcrProgress();
-      await AppServices.pendingImports.updateStatus(import.id, 'failed');
-      if (context.mounted) {
-        PlatformFeedback.showError(
-          context,
-          'Could not read receipt — tap Retry to try again',
-        );
-      }
-      return null;
-    }
+    return nextProgress;
   }
 }
