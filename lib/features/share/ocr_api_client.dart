@@ -47,7 +47,7 @@ Future<OcrApiResult?> runOcrApi({
   required String mimeType,
   required Uri ocrUrl,
   required String secret,
-  Duration timeout = const Duration(seconds: 65),
+  Duration timeout = const Duration(seconds: 100),
   http.Client? client,
 }) async {
   if (!ocrApiAllowedMimeTypes.contains(mimeType.toLowerCase())) {

@@ -161,6 +161,61 @@ def test_run_ocr_keeps_first_pass_when_retry_is_not_better(
     assert confidence == pytest.approx(ocr_engine._calibrate_confidence(0.20))
 
 
+def test_run_ocr_skips_retry_when_plain_pass_is_already_slow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    low_conf_data = _fake_data([("blah", 20, (1, 1, 1))])
+    calls = []
+
+    def fake_image_to_data(image, **_kwargs):
+        calls.append(image)
+        return low_conf_data
+
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
+    monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
+
+    # plain_start=0.0, _run_tesseract's own start/elapsed=0.0 (unused by the
+    # budget check), plain_elapsed = 25.0 - 0.0 = 25.0s >= the 20s budget.
+    perf_values = iter([0.0, 0.0, 0.0, 25.0])
+    monkeypatch.setattr(ocr_engine.time, "perf_counter", lambda: next(perf_values))
+
+    text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
+
+    assert len(calls) == 1  # binarize retry never ran
+    assert text == "blah"
+    assert confidence == pytest.approx(ocr_engine._calibrate_confidence(0.20))
+
+
+def test_run_ocr_still_retries_when_plain_pass_is_fast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    low_conf_data = _fake_data([("blah", 20, (1, 1, 1))])
+    high_conf_data = _fake_data([("ITEM", 90, (1, 1, 1)), ("7.00", 90, (1, 1, 2))])
+    calls = []
+
+    def fake_image_to_data(image, **_kwargs):
+        calls.append(image)
+        return low_conf_data if len(calls) == 1 else high_conf_data
+
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
+    monkeypatch.setattr(
+        "ocr_api.preprocessing.shadow_binarize", lambda image: image + 1
+    )
+    monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
+
+    # plain_elapsed = 5.0 - 0.0 = 5.0s, under the 20s budget, so retry proceeds
+    # same as today's behavior. Two extra values (5.0, 6.0) cover the retry
+    # pass's own start/elapsed perf_counter() calls.
+    perf_values = iter([0.0, 0.0, 0.0, 5.0, 5.0, 6.0])
+    monkeypatch.setattr(ocr_engine.time, "perf_counter", lambda: next(perf_values))
+
+    text, confidence = ocr_engine.run_ocr(np.zeros((10, 10), dtype=np.uint8))
+
+    assert len(calls) == 2  # binarize retry did run
+    assert text == "ITEM\n7.00"
+    assert confidence == pytest.approx(ocr_engine._calibrate_confidence(0.90))
+
+
 def test_run_ocr_detailed_computes_height_ratio(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
