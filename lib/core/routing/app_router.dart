@@ -18,9 +18,11 @@ import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/places/place_picker_screen.dart';
 import '../../features/places/places_search_screen.dart';
 import '../../domain/logic/merchant_extractor.dart';
+import '../../domain/models/transaction_view.dart';
 import '../../features/pending_imports/pending_imports_screen.dart';
 import '../../features/review/receipt_review_screen.dart';
 import '../../features/ritual/ritual_screen.dart';
+import '../../features/save_success/save_success_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/share/share_hint_screen.dart';
 import '../../features/summary/summary_screen.dart';
@@ -136,6 +138,15 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/badges',
         name: 'badges',
         builder: (context, state) => const BadgesScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/save-success',
+        name: 'save-success',
+        builder: (context, state) {
+          final tx = state.extra as TransactionView?;
+          return SaveSuccessScreen(savedTx: tx);
+        },
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

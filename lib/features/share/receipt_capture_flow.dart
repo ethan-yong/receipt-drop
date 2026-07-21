@@ -182,6 +182,6 @@ class ReceiptCaptureFlow {
 
     if (!context.mounted) return;
 
-    context.pushNamed('ritual');
+    context.pushNamed('save-success', extra: savedTx);
   }
 }
