@@ -8,6 +8,7 @@ import '../../domain/logic/avatar_mood.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/pixel_avatar.dart';
+import '../../widgets/skeleton.dart';
 
 enum _Tab { color, eyes, hat }
 
@@ -56,7 +57,7 @@ class _AvatarCustomizerScreenState extends State<AvatarCustomizerScreen> {
       backgroundColor: AppColors.scaffold,
       body: SafeArea(
         child: draft == null
-            ? const Center(child: CircularProgressIndicator())
+            ? const _AvatarCustomizerSkeleton()
             : Column(
                 children: [
                   Padding(
@@ -166,6 +167,89 @@ class _AvatarCustomizerScreenState extends State<AvatarCustomizerScreen> {
                   ),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _AvatarCustomizerSkeleton extends StatelessWidget {
+  const _AvatarCustomizerSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.sm,
+              AppSpacing.md,
+              AppSpacing.sm,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [
+                SkeletonCircle(size: 40),
+                SkeletonBox(width: 110, height: 20),
+                SkeletonCircle(size: 40),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: SkeletonBox(
+                width: double.infinity,
+                height: double.infinity,
+                radius: AppSpacing.heroRadius,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              AppSpacing.lg,
+              AppSpacing.md,
+              0,
+            ),
+            child: const Row(
+              children: [
+                Expanded(child: SkeletonBox(height: 36, radius: 8)),
+                SizedBox(width: 8),
+                Expanded(child: SkeletonBox(height: 36, radius: 8)),
+                SizedBox(width: 8),
+                Expanded(child: SkeletonBox(height: 36, radius: 8)),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.md,
+                AppSpacing.md,
+                AppSpacing.md,
+                AppSpacing.lg,
+              ),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: const [
+                    SkeletonCircle(size: 64),
+                    SkeletonCircle(size: 64),
+                    SkeletonCircle(size: 64),
+                    SkeletonCircle(size: 64),
+                    SkeletonCircle(size: 64),
+                    SkeletonCircle(size: 64),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

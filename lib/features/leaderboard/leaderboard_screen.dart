@@ -8,6 +8,7 @@ import '../../domain/logic/badge_catalog.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../widgets/badge_hex.dart';
 import '../../widgets/blob_avatar.dart';
+import '../../widgets/skeleton.dart';
 
 const _medals = ['🥇', '🥈', '🥉'];
 
@@ -76,10 +77,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               _ModeToggle(mode: _mode, onChanged: _setMode),
               const SizedBox(height: AppSpacing.lg),
               if (entries == null)
-                const Padding(
-                  padding: EdgeInsets.only(top: AppSpacing.xl),
-                  child: Center(child: CircularProgressIndicator()),
-                )
+                const _LeaderboardSkeleton()
               else if (_mode == _LeaderboardMode.global &&
                   !Env.hasLeaderboardApiConfig)
                 const _GlobalApiRequiredNotice()
@@ -255,6 +253,62 @@ class _LeaderboardRow extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaderboardSkeleton extends StatelessWidget {
+  const _LeaderboardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: Column(
+        children: [
+          for (var i = 0; i < 5; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.sm),
+            const _LeaderboardRowSkeleton(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaderboardRowSkeleton extends StatelessWidget {
+  const _LeaderboardRowSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: AppSpacing.cardBorderRadius,
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: const Row(
+        children: [
+          SkeletonBox(width: 22, height: 22, radius: 4),
+          SizedBox(width: 8),
+          SkeletonCircle(size: 44),
+          SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkeletonBox(width: 110, height: 14),
+                SizedBox(height: 6),
+                SkeletonBox(width: 70, height: 11),
+              ],
+            ),
+          ),
+          SkeletonBox(width: 44, height: 12),
         ],
       ),
     );

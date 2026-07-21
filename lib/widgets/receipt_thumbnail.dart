@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import 'receipt_thumbnail_file.dart'
     if (dart.library.html) 'receipt_thumbnail_file_web.dart' as file_image;
+import 'skeleton.dart';
 
 class ReceiptThumbnail extends StatelessWidget {
   const ReceiptThumbnail({
@@ -47,7 +48,7 @@ class ReceiptThumbnail extends StatelessWidget {
       return CachedNetworkImage(
         imageUrl: imageUrl!,
         fit: BoxFit.cover,
-        placeholder: (_, _) => _placeholder(),
+        placeholder: (_, _) => _loadingPlaceholder(),
         errorWidget: (_, _, _) => _placeholder(),
       );
     }
@@ -70,6 +71,15 @@ class ReceiptThumbnail extends StatelessWidget {
         color: AppColors.textMuted,
         size: 24,
       ),
+    );
+  }
+
+  /// Shown only while the network image is in flight — genuinely transient,
+  /// unlike [_placeholder] which also covers permanent "nothing to show"
+  /// states (error, no image at all).
+  Widget _loadingPlaceholder() {
+    return const Skeleton(
+      child: SkeletonBox(width: double.infinity, height: double.infinity, radius: 0),
     );
   }
 }

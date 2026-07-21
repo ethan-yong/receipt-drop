@@ -16,6 +16,7 @@ import '../../widgets/place_block.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
 import '../../widgets/receipt_strip.dart';
 import '../../widgets/receipt_thumbnail.dart';
+import '../../widgets/skeleton.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
   const TransactionDetailScreen({super.key, required this.transactionId});
@@ -203,7 +204,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: SafeArea(child: _TxDetailSkeleton()),
       );
     }
 
@@ -338,6 +339,94 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               child: const Text(
                 'Delete transaction',
                 style: TextStyle(color: AppColors.destructive),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TxDetailSkeleton extends StatelessWidget {
+  const _TxDetailSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Center(
+              child: SkeletonBox(
+                width: 200,
+                height: 200,
+                radius: AppSpacing.cardRadius,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Card(
+              child: Padding(
+                padding: AppSpacing.cardPadding,
+                child: const SkeletonBox(width: 140, height: 40),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Card(
+              child: Padding(
+                padding: AppSpacing.cardPadding,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SkeletonBox(width: 60, height: 12),
+                    const SizedBox(height: AppSpacing.sm),
+                    for (var i = 0; i < 3; i++) ...[
+                      if (i > 0) const SizedBox(height: 8),
+                      Row(
+                        children: const [
+                          Expanded(child: SkeletonBox(height: 12)),
+                          SizedBox(width: AppSpacing.sm),
+                          SkeletonBox(width: 40, height: 12),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            const SkeletonBox(width: 60, height: 14),
+            const SizedBox(height: AppSpacing.sm),
+            const Row(
+              children: [
+                Expanded(child: SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
+                SizedBox(width: AppSpacing.sm),
+                Expanded(child: SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
+                SizedBox(width: AppSpacing.sm),
+                Expanded(child: SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Card(
+              child: Padding(
+                padding: AppSpacing.cardPadding,
+                child: const SkeletonBox(width: double.infinity, height: 20),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Card(
+              child: Padding(
+                padding: AppSpacing.cardPadding,
+                child: const SkeletonBox(width: double.infinity, height: 20),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Card(
+              child: Padding(
+                padding: AppSpacing.cardPadding,
+                child: const SkeletonBox(width: double.infinity, height: 20),
               ),
             ),
           ],

@@ -8,6 +8,7 @@ import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/places_repository.dart';
 import '../../domain/logic/merchant_extractor.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
+import '../../widgets/skeleton.dart';
 
 /// Signature of the nearby-candidate fetch function. Matches
 /// [PlacesRepository.fetchNearbyCandidates] exactly so tests can inject a
@@ -624,82 +625,27 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
 /// Skeleton placeholder shown in the sheet while candidates are loading,
 /// shaped like [_browseBody]'s header + [_CandidateRow]s so the real content
 /// doesn't visually "pop in" once it arrives.
-class _CandidateListSkeleton extends StatefulWidget {
+class _CandidateListSkeleton extends StatelessWidget {
   const _CandidateListSkeleton();
 
   @override
-  State<_CandidateListSkeleton> createState() =>
-      _CandidateListSkeletonState();
-}
-
-class _CandidateListSkeletonState extends State<_CandidateListSkeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _shimmerController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _shimmerController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _shimmerController,
-      builder: (context, child) {
-        return ShaderMask(
-          blendMode: BlendMode.srcATop,
-          shaderCallback: (bounds) {
-            final dx = -1.5 + 3.0 * _shimmerController.value;
-            return LinearGradient(
-              colors: const [
-                ReceiptSheetColors.tile,
-                Colors.white,
-                ReceiptSheetColors.tile,
-              ],
-              stops: const [0.4, 0.5, 0.6],
-              begin: Alignment(dx - 0.3, 0),
-              end: Alignment(dx + 0.3, 0),
-            ).createShader(bounds);
-          },
-          child: child,
-        );
-      },
+    return const Skeleton(
+      palette: SkeletonPalette.receiptSheet,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SkeletonBar(width: 150, height: 20),
-          const SizedBox(height: 8),
-          _SkeletonBar(width: 120, height: 13),
-          const SizedBox(height: 14),
-          for (var i = 0; i < 3; i++) ...[
-            if (i > 0) const SizedBox(height: 10),
-            const _SkeletonCandidateRow(),
-          ],
+          SkeletonBox(width: 150, height: 20),
+          SizedBox(height: 8),
+          SkeletonBox(width: 120, height: 13),
+          SizedBox(height: 14),
+          _SkeletonCandidateRow(),
+          SizedBox(height: 10),
+          _SkeletonCandidateRow(),
+          SizedBox(height: 10),
+          _SkeletonCandidateRow(),
         ],
-      ),
-    );
-  }
-}
-
-class _SkeletonBar extends StatelessWidget {
-  const _SkeletonBar({required this.width, required this.height});
-
-  final double width;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: ReceiptSheetColors.tile,
-        borderRadius: BorderRadius.circular(6),
       ),
     );
   }
@@ -717,24 +663,17 @@ class _SkeletonCandidateRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: ReceiptSheetColors.rowBorder, width: 2),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: ReceiptSheetColors.tile,
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          const SizedBox(width: 12),
+          SkeletonBox(width: 38, height: 38, radius: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _SkeletonBar(width: 130, height: 14),
-                const SizedBox(height: 6),
-                _SkeletonBar(width: 90, height: 11),
+                SkeletonBox(width: 130, height: 14),
+                SizedBox(height: 6),
+                SkeletonBox(width: 90, height: 11),
               ],
             ),
           ),
