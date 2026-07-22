@@ -156,7 +156,7 @@ abstract final class PendingImportService {
     await AppPrefs.setShareCoachMarkPending();
 
     if (context.mounted) {
-      context.pushNamed('ritual');
+      context.pushNamed('save-success', extra: tx);
     }
     return nextProgress;
   }

@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Ritual screen removed; SaveSuccessScreen is the post-save celebration (2026-07-22)
+
+**Decision**: deleted `RitualScreen` and the `/ritual` route. After a confirmed save (in-app camera, gallery/file capture, or pending-import Process), the app now shows `SaveSuccessScreen` (pigeon + mailbox animation) and then navigates directly to `SummaryScreen` ("Today's Awareness"). Removed the local-only `OutboxTransactions.ritualledAt` column (Drift schema v9), plus `TransactionRepository.watchUnritualled()` / `markAsRitualled()` and the `TransactionView.ritualledAt` field — they existed solely to batch unshown receipts through the ritual animation.
+
+**Reason**: the pigeon save-success animation was intended to replace the older ritual drop animation; running both in sequence was confusing and the ritual queue added complexity with no remaining product purpose.
+
+**Alternatives considered**: keep ritual for pending-import saves only (rejected — one consistent post-save path is simpler); skip animation entirely and go straight to summary (rejected — save-success is the designed celebration moment).
+
+**Tradeoffs**: users who had receipts with `ritualled_at` set locally lose that bookkeeping on upgrade (it was never synced to Postgres anyway). `ReceiptStrip` widget remains — still used on transaction detail, unrelated to the removed screen.
+
+---
+
 ## Documentation folder reorganized (2026-07-21)
 
 **Decision**: moved flat `docs/*.md` into nested folders — `docs/system/` (this file + architecture), `docs/api/`, `docs/database/`, `docs/plans/`, `docs/archive/superpowers/` — with a `docs/README.md` index. Left thin redirect stubs at legacy top-level paths (`docs/architecture.md`, `docs/api.md`, etc.) so existing code-comment links keep working.

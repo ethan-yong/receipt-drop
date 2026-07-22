@@ -13,7 +13,7 @@ import '../../widgets/receipt_card.dart';
 import 'save_success_painters.dart';
 
 /// 3-second pigeon + mailbox micro-interaction played after a receipt is saved.
-/// Navigates to the ritual screen when the animation completes (or on Skip).
+/// Navigates to the summary screen when the animation completes (or on Skip).
 class SaveSuccessScreen extends StatefulWidget {
   const SaveSuccessScreen({super.key, this.savedTx});
 
@@ -140,7 +140,7 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
 
   void _navigateAway() {
     if (!mounted) return;
-    context.pushNamed('ritual');
+    context.goNamed('summary');
   }
 
   void _skip() {

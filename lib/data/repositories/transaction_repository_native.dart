@@ -54,23 +54,6 @@ class TransactionRepository {
     return _mapRow(row, path, items);
   }
 
-  Stream<List<TransactionView>> watchUnritualled() {
-    return (_db.select(_db.outboxTransactions)
-          ..where((t) => t.ritualledAt.isNull())
-          ..orderBy([(t) => OrderingTerm.asc(t.occurredAt)]))
-        .watch()
-        .asyncMap(_rowsToViews);
-  }
-
-  Future<void> markAsRitualled(List<String> ids) async {
-    if (ids.isEmpty) return;
-    final now = DateTime.now();
-    for (final id in ids) {
-      await (_db.update(_db.outboxTransactions)..where((t) => t.id.equals(id)))
-          .write(OutboxTransactionsCompanion(ritualledAt: Value(now)));
-    }
-  }
-
   Future<TransactionView> ingestReceipt(IngestReceiptRequest request) async {
     final id = _uuid.v4();
     final artifactId = _uuid.v4();
@@ -193,7 +176,6 @@ class TransactionRepository {
       localThumbnailPath: request.localFilePath,
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
-      ritualledAt: null,
       lineItems: request.lineItems,
       rawOcrText: request.rawOcrText,
       ocrConfidence: request.ocrConfidence,
@@ -415,7 +397,6 @@ class TransactionRepository {
       pipelineStatus: row.pipelineStatus,
       localThumbnailPath: localPath,
       impactUser: row.impactUser,
-      ritualledAt: row.ritualledAt,
       lineItems: lineItems,
       rawOcrText: row.rawOcrText,
       ocrConfidence: row.ocrConfidence,

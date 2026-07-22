@@ -21,7 +21,6 @@ import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../features/pending_imports/pending_imports_screen.dart';
 import '../../features/review/receipt_review_screen.dart';
-import '../../features/ritual/ritual_screen.dart';
 import '../../features/save_success/save_success_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/share/share_hint_screen.dart';
@@ -147,12 +146,6 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
           final tx = state.extra as TransactionView?;
           return SaveSuccessScreen(savedTx: tx);
         },
-      ),
-      GoRoute(
-        parentNavigatorKey: rootNavigatorKey,
-        path: '/ritual',
-        name: 'ritual',
-        builder: (context, state) => const RitualScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

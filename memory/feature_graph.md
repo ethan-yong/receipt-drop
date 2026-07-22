@@ -31,7 +31,7 @@ Files:
 - `services/ocr-api/ocr_api/*.py`
 - Downstream consumer: `lib/domain/models/transaction_view.dart` (every other feature reads through this)
 
-**Fan-out**: nearly everything else (dashboard, map, feed, badges, ritual) consumes `TransactionView` rows produced here. Changing `TransactionView`'s shape or `ingestReceipt`'s side effects (feed post creation, sync trigger) has wide blast radius.
+**Fan-out**: nearly everything else (dashboard, map, feed, badges, save-success) consumes `TransactionView` rows produced here. Changing `TransactionView`'s shape or `ingestReceipt`'s side effects (feed post creation, sync trigger) has wide blast radius.
 
 ---
 
@@ -170,18 +170,6 @@ Files:
 - `supabase/migrations/20260626000003_leaderboard.sql`, `20260630000000_leaderboard_api.sql`, `20260630100000_global_leaderboard.sql`
 - `services/leaderboard-api/leaderboard_api/*.py`
 - `docker-compose.yml`
-
----
-
-## Feature: Ritual (drop animation)
-
-Depends on:
-- Receipt capture & OCR ingest (batches unritualled transactions — `OutboxTransactions.ritualledAt`)
-- Impact Drops prototype (`ritual.tsx` was the design source)
-
-Files:
-- `lib/features/ritual/ritual_screen.dart`
-- `lib/data/local/tables.dart` (`ritualledAt` column)
 
 ---
 

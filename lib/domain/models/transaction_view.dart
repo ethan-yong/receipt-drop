@@ -22,7 +22,6 @@ class TransactionView {
     required this.localThumbnailPath,
     this.thumbnailBytes,
     this.impactUser,
-    this.ritualledAt,
     this.lineItems,
     this.rawOcrText,
     this.ocrConfidence,
@@ -46,7 +45,6 @@ class TransactionView {
   final String? localThumbnailPath;
   final Uint8List? thumbnailBytes;
   final String? impactUser;
-  final DateTime? ritualledAt;
   final List<ReceiptLineItem>? lineItems;
 
   /// Raw OCR text kept as evidence on failed/low-confidence parses; shown on
@@ -120,7 +118,6 @@ class TransactionView {
     required String syncStatus,
     required String pipelineStatus,
     String? impactUser,
-    DateTime? ritualledAt,
     List<ReceiptLineItem>? lineItems,
     double? shareLocationLat,
     double? shareLocationLng,
@@ -141,7 +138,6 @@ class TransactionView {
       pipelineStatus: pipelineStatus,
       localThumbnailPath: null,
       impactUser: impactUser,
-      ritualledAt: ritualledAt,
       lineItems: lineItems,
       shareLocationLat: shareLocationLat,
       shareLocationLng: shareLocationLng,
@@ -158,7 +154,6 @@ class TransactionView {
     double? placeLng,
     DateTime? occurredAt,
     String? impactUser,
-    DateTime? ritualledAt,
     List<ReceiptLineItem>? lineItems,
   }) {
     return TransactionView(
@@ -179,7 +174,6 @@ class TransactionView {
       localThumbnailPath: localThumbnailPath,
       thumbnailBytes: thumbnailBytes,
       impactUser: impactUser ?? this.impactUser,
-      ritualledAt: ritualledAt ?? this.ritualledAt,
       lineItems: lineItems ?? this.lineItems,
       rawOcrText: rawOcrText,
       ocrConfidence: ocrConfidence,

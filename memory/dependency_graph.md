@@ -26,7 +26,6 @@ graph TD
         Badges[Badges]
         Social[Friends / Feed]
         Leaderboard[Leaderboard]
-        Ritual[Ritual]
     end
 
     subgraph Domain["Domain logic (lib/domain/*) — pure, no I/O"]
@@ -90,7 +89,6 @@ graph TD
     Leaderboard --> SocialRepo
     Leaderboard --> LbApi --> Redis
     LbApi --> PG
-    Ritual --> Repo
     EF_Places --> GPlaces
     PlacesRepo --> EF_Places
 
@@ -297,23 +295,6 @@ Global tier: POST /leaderboard/score (per home-screen open) → Redis ZSET upser
 
 ---
 
-### Ritual (drop animation)
-
-**Purpose**: batch "drop" animation for unritualled receipts.
-
-**Entry points**: `lib/features/ritual/ritual_screen.dart`
-
-**Depends on**: Receipt Capture (`OutboxTransactions.ritualledAt`), Impact Drops prototype (`ritual.tsx` design source)
-
-**Files**: `lib/features/ritual/ritual_screen.dart`, `lib/data/local/tables.dart`
-
-**Data flow**:
-```
-TransactionRepository.watchUnritualled() → RitualScreen animation → mark ritualledAt
-```
-
----
-
 ### Batch/CLI Receipt Processing (dev tooling)
 
 **Purpose**: run the same OCR+parse pipeline against a folder of receipt images for fixture/regression testing, no Supabase needed.
@@ -346,7 +327,7 @@ Format: Responsibility / Imports / Used by / Risk / Reason. "Used by" counts are
 ### `lib/domain/models/transaction_view.dart`
 **Responsibility**: unified UI-facing receipt row; merges outbox fields with derived getters (`effectiveCategory`, `effectiveImpactLevel`, `includeInCharts`, `needsReview`).
 **Imports**: `lib/domain/logic/impact_level.dart`, `receipt_line_item.dart`.
-**Used by** (24 files): nearly every feature screen (`tx_detail`, `map`, `review`, `home`, `dashboard`, `avatar`, `badges`, `summary`, `ritual`) plus several `widgets/*` and `domain/logic/*` files (`dashboard_aggregates.dart`, `feed_line_generator.dart`, `badge_progress.dart`, `avatar_mood.dart`, `awareness.dart`) and both repository variants.
+**Used by** (24 files): nearly every feature screen (`tx_detail`, `map`, `review`, `home`, `dashboard`, `avatar`, `badges`, `summary`, `save_success`) plus several `widgets/*` and `domain/logic/*` files (`dashboard_aggregates.dart`, `feed_line_generator.dart`, `badge_progress.dart`, `avatar_mood.dart`, `awareness.dart`) and both repository variants.
 **Risk**: High.
 **Reason**: single highest blast-radius file in the repo — any shape change here needs a sweep across nearly every feature.
 

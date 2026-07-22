@@ -84,9 +84,6 @@ class OutboxTransactions extends Table {
   IntColumn get retryCount =>
       integer().withDefault(const Constant(0))();
 
-  /// Set after the receipt has been shown in the ritual animation.
-  DateTimeColumn get ritualledAt => dateTime().nullable()();
-
   /// Ranked merchant-name candidates (JSON-encoded `MerchantCandidate` list),
   /// synced to `transactions.merchant_candidates` (jsonb) so enrichment can
   /// try more than one Places text-search query.

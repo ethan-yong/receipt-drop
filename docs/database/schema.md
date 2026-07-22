@@ -156,7 +156,7 @@ Not part of Postgres; the outbox mirrors the cloud schema plus sync bookkeeping.
 
 | Table | Mirrors | Extra fields |
 |---|---|---|
-| `OutboxTransactions` | `transactions` | `syncStatus` (`pending\|syncing\|synced\|stuck`), `lastError`, `retryCount`, `ritualledAt` (v3), `impactUser` (v2), `rawOcrText`/`ocrServiceConfidence`/`lineItemsConfidence`/`parseFailureReason` (v5, mirrors the Postgres v3 columns), `merchantCandidatesJson`/`ocrHeaderText` (v6, mirrors `transactions.merchant_candidates`/`ocr_header_text`), `llmUnderstandingJson` (v7, mirrors `transactions.llm_understanding` — populated at capture time by the synchronous OCR+LLM call, see `docs/decisions.md`) |
+| `OutboxTransactions` | `transactions` | `syncStatus` (`pending\|syncing\|synced\|stuck`), `lastError`, `retryCount`, `impactUser` (v2), `rawOcrText`/`ocrServiceConfidence`/`lineItemsConfidence`/`parseFailureReason` (v5, mirrors the Postgres v3 columns), `merchantCandidatesJson`/`ocrHeaderText` (v6, mirrors `transactions.merchant_candidates`/`ocr_header_text`), `llmUnderstandingJson` (v7, mirrors `transactions.llm_understanding` — populated at capture time by the synchronous OCR+LLM call, see `docs/decisions.md`) |
 | `OutboxArtifacts` | `receipt_artifacts` | `localFilePath` |
 | `OutboxLineItems` (v4) | `receipt_line_items` | — |
 | `CategoryConfigCache` | remote categories JSON | etag/version — **scaffolded but not actively fetched at runtime**; categories are loaded only from the bundled asset (`assets/config/categories-v1.json`). Don't assume remote refresh works. |
