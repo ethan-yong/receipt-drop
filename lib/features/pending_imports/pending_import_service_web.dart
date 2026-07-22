@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/models/pending_import_model.dart';
+import '../share/batch_scan_progress.dart';
 
 abstract final class PendingImportService {
   static Future<void> saveSharedReceipt({
@@ -11,10 +12,12 @@ abstract final class PendingImportService {
     throw UnsupportedError('Pending imports are not supported on web');
   }
 
-  static Future<void> processImport(
+  static Future<ProcessImportResult> processImport(
     BuildContext context,
-    PendingImportModel import,
-  ) async {
+    PendingImportModel import, {
+    BatchScanProgress? batchProgress,
+    bool deferSaveSuccessNav = false,
+  }) async {
     throw UnsupportedError('Pending imports are not supported on web');
   }
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../domain/models/transaction_view.dart';
+
 /// Snapshot of how far a sequential batch of receipt scans has gotten.
 ///
 /// Threaded through [ReceiptScanProcessingScreen] instances one at a time —
@@ -28,3 +30,11 @@ class BatchScanProgress {
         completedNames: [...completedNames, name],
       );
 }
+
+/// Result of [PendingImportService.processImport]: the updated batch
+/// progress snapshot (if any), plus the transaction saved this call, if
+/// the confirm sheet resulted in an actual save.
+typedef ProcessImportResult = ({
+  BatchScanProgress? progress,
+  TransactionView? savedTx,
+});

@@ -12,12 +12,27 @@ import '../../domain/models/transaction_view.dart';
 import '../../widgets/receipt_card.dart';
 import 'save_success_painters.dart';
 
-/// 3-second pigeon + mailbox micro-interaction played after a receipt is saved.
-/// Navigates to the summary screen when the animation completes (or on Skip).
-class SaveSuccessScreen extends StatefulWidget {
-  const SaveSuccessScreen({super.key, this.savedTx});
+/// Cargo the pigeon carries, chosen purely by how many receipts were saved
+/// together: 1 → a single slip, 2-5 → a small fanned stack, 6+ → a bag
+/// (grouped, not itemized) — never a widget per receipt.
+enum CargoVariant { single, stack, bag }
 
-  final TransactionView? savedTx;
+CargoVariant variantForReceiptCount(int n) {
+  if (n <= 1) return CargoVariant.single;
+  if (n <= 5) return CargoVariant.stack;
+  return CargoVariant.bag;
+}
+
+String savedLabelForReceiptCount(int n) =>
+    n <= 1 ? 'Saved' : '$n receipts saved';
+
+/// 3-second pigeon + mailbox micro-interaction played after receipt(s) are
+/// saved. Navigates to the summary screen when the animation completes (or
+/// on Skip).
+class SaveSuccessScreen extends StatefulWidget {
+  const SaveSuccessScreen({super.key, required this.savedTxs});
+
+  final List<TransactionView> savedTxs;
 
   @override
   State<SaveSuccessScreen> createState() => _SaveSuccessScreenState();
@@ -42,11 +57,18 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
   late final Animation<double> _mbSquashRaw;
   late final Animation<double> _cargoFade;
 
+  // 3 staggered drop animations for the fanned-stack variant — a fixed
+  // illustrative fan size, not scaled to the real receipt count (per the
+  // mockup: never build a widget per receipt).
+  late final List<Animation<double>> _dropYStack;
+
   Timer? _hapticFlagTimer;
   Timer? _hapticBadgeTimer;
   Timer? _navTimer;
 
   bool _reduceMotion = false;
+
+  late final CargoVariant _variant = variantForReceiptCount(widget.savedTxs.length);
 
   @override
   void initState() {
@@ -97,6 +119,18 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
       parent: _mainCtrl,
       curve: const Interval(0.28, 0.45, curve: Curves.easeOut),
     );
+    _dropYStack = List.generate(3, (i) {
+      const stagger = 100 / 3000; // ~100ms per slip over the 3000ms timeline
+      final shift = i * stagger;
+      return CurvedAnimation(
+        parent: _mainCtrl,
+        curve: Interval(
+          (0.33 + shift).clamp(0.0, 1.0),
+          (0.53 + shift).clamp(0.0, 1.0),
+          curve: Curves.easeOut,
+        ),
+      );
+    });
 
     // Stop wing/bob when pigeon exits (past 70% of main controller).
     _mainCtrl.addListener(() {
@@ -161,7 +195,88 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
     super.dispose();
   }
 
-  String get _savedLabel => 'Saved';
+  String get _savedLabel => savedLabelForReceiptCount(widget.savedTxs.length);
+
+  ({double dy, double opacity}) _dropMetrics(double drop) {
+    if (drop <= 0.35) {
+      final t = drop == 0 ? 0.0 : drop / 0.35;
+      return (dy: lerpDouble(-16, 8, t)!, opacity: t);
+    }
+    final t = (drop - 0.35) / 0.65;
+    return (dy: lerpDouble(8, 34, t)!, opacity: lerpDouble(1.0, 0.0, t)!);
+  }
+
+  double _fanOffsetX(int idx) => (idx - 1) * 9.0;
+
+  Widget _buildCargoVisual() {
+    switch (_variant) {
+      case CargoVariant.single:
+        return const CustomPaint(size: Size(22, 28), painter: ReceiptSlipPainter());
+      case CargoVariant.stack:
+        return SizedBox(
+          width: 40,
+          height: 28,
+          child: Stack(
+            children: [
+              for (var i = 0; i < 3; i++)
+                Positioned(
+                  left: 9 + _fanOffsetX(i),
+                  child: const CustomPaint(
+                    size: Size(22, 28),
+                    painter: ReceiptSlipPainter(),
+                  ),
+                ),
+            ],
+          ),
+        );
+      case CargoVariant.bag:
+        return const CustomPaint(size: Size(28, 34), painter: BagPainter());
+    }
+  }
+
+  List<Widget> _buildFallingItems(double mbCenterX, double mbTop) {
+    switch (_variant) {
+      case CargoVariant.single:
+      case CargoVariant.bag:
+        final show = _mainCtrl.value >= 0.33 && _mainCtrl.value <= 0.56;
+        if (!show) return const [];
+        final m = _dropMetrics(_dropY.value);
+        final isBag = _variant == CargoVariant.bag;
+        return [
+          Positioned(
+            left: mbCenterX - (isBag ? 14 : 11),
+            top: mbTop - 20 + m.dy,
+            child: Opacity(
+              opacity: m.opacity.clamp(0.0, 1.0),
+              child: isBag
+                  ? const CustomPaint(size: Size(28, 34), painter: BagPainter())
+                  : const CustomPaint(size: Size(22, 28), painter: ReceiptSlipPainter()),
+            ),
+          ),
+        ];
+      case CargoVariant.stack:
+        final items = <Widget>[];
+        for (var i = 0; i < 3; i++) {
+          final value = _dropYStack[i].value;
+          if (value <= 0 || value >= 1) continue;
+          final m = _dropMetrics(value);
+          items.add(
+            Positioned(
+              left: mbCenterX - 11 + _fanOffsetX(i),
+              top: mbTop - 20 + m.dy,
+              child: Opacity(
+                opacity: m.opacity.clamp(0.0, 1.0),
+                child: const CustomPaint(
+                  size: Size(22, 28),
+                  painter: ReceiptSlipPainter(),
+                ),
+              ),
+            ),
+          );
+        }
+        return items;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -222,20 +337,6 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
     // Badge
     final badgeOpacity = _badge.value.clamp(0.0, 1.0);
     final badgeScale = _badge.value.clamp(0.0, 1.2);
-
-    // Drop: receipt falls toward mailbox
-    final drop = _dropY.value;
-    final showDrop = _mainCtrl.value >= 0.33 && _mainCtrl.value <= 0.56;
-    double dropDy, dropOpacity;
-    if (drop <= 0.35) {
-      final t = drop == 0 ? 0.0 : drop / 0.35;
-      dropDy = lerpDouble(-16, 8, t)!;
-      dropOpacity = t;
-    } else {
-      final t = (drop - 0.35) / 0.65;
-      dropDy = lerpDouble(8, 34, t)!;
-      dropOpacity = lerpDouble(1.0, 0.0, t)!;
-    }
 
     // Cargo (receipt in pigeon feet) fades out as drop starts
     final cargoOpacity = (1.0 - _cargoFade.value).clamp(0.0, 1.0);
@@ -301,15 +402,12 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
                         size: const Size(80, 52),
                         painter: PigeonPainter(wingAngleDeg: wingDeg),
                       ),
-                      // Receipt dangling from feet
+                      // Receipt(s)/bag dangling from feet
                       Opacity(
                         opacity: cargoOpacity,
-                        child: const Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: CustomPaint(
-                            size: Size(22, 28),
-                            painter: ReceiptSlipPainter(),
-                          ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: _buildCargoVisual(),
                         ),
                       ),
                     ],
@@ -319,19 +417,8 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
             ),
           ),
 
-        // --- Falling receipt (drop phase) ---
-        if (showDrop)
-          Positioned(
-            left: mbCenterX - 11,
-            top: mbTop - 20 + dropDy,
-            child: Opacity(
-              opacity: dropOpacity.clamp(0.0, 1.0),
-              child: const CustomPaint(
-                size: Size(22, 28),
-                painter: ReceiptSlipPainter(),
-              ),
-            ),
-          ),
+        // --- Falling receipt(s)/bag (drop phase) ---
+        ..._buildFallingItems(mbCenterX, mbTop),
 
         // --- "Saved" badge ---
         if (badgeOpacity > 0.01)
@@ -364,7 +451,7 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
               offset: Offset(0, stripDy),
               child: IgnorePointer(
                 ignoring: _mainCtrl.isAnimating,
-                child: _TodayStrip(savedTx: widget.savedTx),
+                child: _TodayStrip(savedTxs: widget.savedTxs),
               ),
             ),
           ),
@@ -461,9 +548,9 @@ class _SavedBadge extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _TodayStrip extends StatelessWidget {
-  const _TodayStrip({this.savedTx});
+  const _TodayStrip({required this.savedTxs});
 
-  final TransactionView? savedTx;
+  final List<TransactionView> savedTxs;
 
   @override
   Widget build(BuildContext context) {
@@ -487,7 +574,7 @@ class _TodayStrip extends StatelessWidget {
           StreamBuilder<List<TransactionView>>(
             stream: AppServices.transactions.watchAll(),
             builder: (context, snap) {
-              final all = snap.data ?? (savedTx != null ? [savedTx!] : const <TransactionView>[]);
+              final all = snap.data ?? savedTxs;
               final now = DateTime.now();
               final today = all
                   .where((t) =>
@@ -495,7 +582,10 @@ class _TodayStrip extends StatelessWidget {
                       t.occurredAt.month == now.month &&
                       t.occurredAt.day == now.day)
                   .toList();
-              if (today.isEmpty && savedTx != null) today.insert(0, savedTx!);
+              final savedIds = savedTxs.map((t) => t.id).toSet();
+              for (final tx in savedTxs.reversed) {
+                if (!today.any((t) => t.id == tx.id)) today.insert(0, tx);
+              }
 
               return SizedBox(
                 height: 90,
@@ -505,7 +595,7 @@ class _TodayStrip extends StatelessWidget {
                   separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, i) {
                     final tx = today[i];
-                    final isNew = tx.id == savedTx?.id;
+                    final isNew = savedIds.contains(tx.id);
                     final palette = receiptPaletteForCategory(tx.effectiveCategory);
                     return Opacity(
                       opacity: isNew ? 1.0 : 0.35,

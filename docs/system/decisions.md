@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Save-success animation gets count-based variants; batch imports show one celebration, not N (2026-07-22)
+
+**Decision**: `SaveSuccessScreen` now takes `List<TransactionView> savedTxs` (was a single nullable `TransactionView?`) and branches its cargo visual into three variants purely by count — 1 → single receipt slip (unchanged), 2–5 → a **fixed** 3-slip fanned stack (not scaled to the real count) with a staggered drop, 6+ → a single "bag" asset (`BagPainter`) — while keeping the existing single `AnimationController` + `Interval` timeline as the sole driver (no widget-per-receipt, no `Timer`-based stagger; the 3 staggered slip animations are additional `Interval`-scoped `CurvedAnimation`s parented to the same controller). `PendingImportService.processImport` gained a `deferSaveSuccessNav` param and a `ProcessImportResult` record return type (`lib/features/share/batch_scan_progress.dart`) so `_processAll` (the "Process all" batch button in `pending_imports_screen.dart`) keeps its existing per-receipt OCR-animation → confirm-sheet interleaving unchanged, but now defers navigation and fires the save-success screen exactly once at the end of the batch with every receipt actually saved, instead of showing N single-receipt celebrations back to back.
+
+**Reason**: a real multi-receipt "Process all" batch previously played the identical single-receipt celebration N times in a row — reads as broken/spammy. Users should see one badge reading "N receipts saved," not a flipbook of N "Saved" screens. Implements the `Save Success Animation.dc.html` Claude Design mockup's count-based variant system, which was otherwise unreachable from any real call site.
+
+**Alternatives considered**: (a) add variant-rendering capability only, without any caller ever passing >1 tx — rejected; an unreachable path can't be verified and doesn't fix the actual N-celebrations behavior. (b) collapse the per-receipt confirm-sheet loop into one multi-review sheet — out of scope, and would rework the deliberate interleaved-confirm-sheet decision (2026-07-21 entry below) this builds on top of, not replaces.
+
+**Tradeoffs**: both existing `SaveSuccessScreen` callers (`receipt_capture_flow.dart`, `pending_import_service_io.dart`) now wrap a single tx in a one-item list — trivial, but a real signature break for any future direct caller. The "bag" variant (6+) intentionally shows a grouped total, not itemized slips; the corresponding Home-carousel/`_TodayStrip` grouped-card treatment is deliberately out of scope here (see `pending-tasks.md`), so a 6+ batch's save-success badge groups the count while downstream surfaces still list each transaction individually — a known, intentional inconsistency until that follow-up lands. `pending_import_service_web.dart`'s stub (already out of sync with `_io.dart` before this change — missing `batchProgress`, wrong return type) was brought into signature parity while touched, but pending imports remain entirely unsupported on web.
+
+---
+
 ## Ritual screen removed; SaveSuccessScreen is the post-save celebration (2026-07-22)
 
 **Decision**: deleted `RitualScreen` and the `/ritual` route. After a confirmed save (in-app camera, gallery/file capture, or pending-import Process), the app now shows `SaveSuccessScreen` (pigeon + mailbox animation) and then navigates directly to `SummaryScreen` ("Today's Awareness"). Removed the local-only `OutboxTransactions.ritualledAt` column (Drift schema v9), plus `TransactionRepository.watchUnritualled()` / `markAsRitualled()` and the `TransactionView.ritualledAt` field — they existed solely to batch unshown receipts through the ritual animation.

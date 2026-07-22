@@ -51,15 +51,24 @@ abstract final class PendingImportService {
   ///
   /// When part of a "Process all" batch, [batchProgress] threads the
   /// running completed-count/names through so the processing screen's
-  /// footer stays accurate across the sequence; the updated snapshot is
-  /// returned so the caller can pass it into the next call in the loop.
-  static Future<BatchScanProgress?> processImport(
+  /// footer stays accurate across the sequence, returned in the result's
+  /// `progress` field for the caller to pass into the next call in the loop.
+  ///
+  /// By default a successful save navigates straight to the save-success
+  /// screen. Pass [deferSaveSuccessNav] true to suppress that (e.g. a batch
+  /// loop that wants to show one consolidated celebration at the end
+  /// instead of one per receipt) — the saved transaction is always
+  /// returned in the result's `savedTx` field so the caller can collect it.
+  static Future<ProcessImportResult> processImport(
     BuildContext context,
     PendingImportModel import, {
     BatchScanProgress? batchProgress,
+    bool deferSaveSuccessNav = false,
   }) async {
     await AppServices.pendingImports.updateStatus(import.id, 'processing');
-    if (!context.mounted) return batchProgress;
+    if (!context.mounted) {
+      return (progress: batchProgress, savedTx: null);
+    }
     PlatformFeedback.lightTap();
 
     OcrAttemptHandle startAttempt() {
@@ -87,12 +96,12 @@ abstract final class PendingImportService {
         ),
       ),
     );
-    if (draft == null) return batchProgress;
+    if (draft == null) return (progress: batchProgress, savedTx: null);
 
     if (!context.mounted) {
       await AppServices.pendingImports.updateStatus(import.id, 'local');
       await ReceiptIngestService.discardDraft(draft);
-      return batchProgress;
+      return (progress: batchProgress, savedTx: null);
     }
 
     TransactionView? savedTx;
@@ -102,7 +111,7 @@ abstract final class PendingImportService {
     if (!context.mounted) {
       await AppServices.pendingImports.updateStatus(import.id, 'local');
       await ReceiptIngestService.discardDraft(draft);
-      return batchProgress;
+      return (progress: batchProgress, savedTx: null);
     }
 
     final saved = await ReceiptConfirmSheet.show(
@@ -142,7 +151,9 @@ abstract final class PendingImportService {
         ? batchProgress?.withCompleted(draft.merchantRaw ?? 'Receipt')
         : batchProgress;
 
-    if (!saved || savedTx == null) return nextProgress;
+    if (!saved || savedTx == null) {
+      return (progress: nextProgress, savedTx: null);
+    }
 
     // Delete the pending import now that a full transaction exists.
     await AppServices.pendingImports.delete(import.id);
@@ -155,9 +166,9 @@ abstract final class PendingImportService {
 
     await AppPrefs.setShareCoachMarkPending();
 
-    if (context.mounted) {
-      context.pushNamed('save-success', extra: tx);
+    if (context.mounted && !deferSaveSuccessNav) {
+      context.pushNamed('save-success', extra: [tx]);
     }
-    return nextProgress;
+    return (progress: nextProgress, savedTx: tx);
   }
 }

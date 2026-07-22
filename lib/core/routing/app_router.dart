@@ -143,8 +143,8 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/save-success',
         name: 'save-success',
         builder: (context, state) {
-          final tx = state.extra as TransactionView?;
-          return SaveSuccessScreen(savedTx: tx);
+          final txs = state.extra as List<TransactionView>?;
+          return SaveSuccessScreen(savedTxs: txs ?? const []);
         },
       ),
       GoRoute(

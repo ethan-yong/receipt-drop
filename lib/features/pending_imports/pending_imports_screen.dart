@@ -1,11 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/models/pending_import_model.dart';
+import '../../domain/models/transaction_view.dart';
 import '../../widgets/skeleton.dart';
 import '../share/batch_scan_progress.dart';
 import 'pending_import_service.dart';
@@ -71,14 +73,20 @@ class PendingImportsScreen extends StatelessWidget {
     List<PendingImportModel> imports,
   ) async {
     var progress = BatchScanProgress(totalCount: imports.length);
+    final savedTxs = <TransactionView>[];
     for (final import in imports) {
       if (!context.mounted) return;
-      progress = await PendingImportService.processImport(
-            context,
-            import,
-            batchProgress: progress,
-          ) ??
-          progress;
+      final result = await PendingImportService.processImport(
+        context,
+        import,
+        batchProgress: progress,
+        deferSaveSuccessNav: true,
+      );
+      progress = result.progress ?? progress;
+      if (result.savedTx != null) savedTxs.add(result.savedTx!);
+    }
+    if (savedTxs.isNotEmpty && context.mounted) {
+      context.pushNamed('save-success', extra: savedTxs);
     }
   }
 }

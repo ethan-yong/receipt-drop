@@ -289,3 +289,58 @@ class ReceiptSlipPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter old) => false;
 }
+
+// ---------------------------------------------------------------------------
+// Delivery bag painter — a small sack with a strap, used for 6+ receipt
+// batches instead of itemized slips.
+// ---------------------------------------------------------------------------
+
+class BagPainter extends CustomPainter {
+  const BagPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    const strapH = 8.0;
+
+    // Strap/handle — small rounded bar above the body.
+    final strapRect = Rect.fromLTWH(w * 0.5 - 6.5, 0, 13, strapH);
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        strapRect,
+        topLeft: const Radius.circular(4),
+        topRight: const Radius.circular(4),
+      ),
+      Paint()..color = const Color(0xFF8A6438),
+    );
+
+    // Body — asymmetric rounding: very rounded top, tight bottom corners.
+    final bodyRect = Rect.fromLTWH(0, strapH - 2, w, h - strapH + 2);
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        bodyRect,
+        topLeft: Radius.circular(w * 0.40),
+        topRight: Radius.circular(w * 0.40),
+        bottomLeft: const Radius.circular(12),
+        bottomRight: const Radius.circular(12),
+      ),
+      Paint()
+        ..color = const Color(0xFFC9915A)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        bodyRect,
+        topLeft: Radius.circular(w * 0.40),
+        topRight: Radius.circular(w * 0.40),
+        bottomLeft: const Radius.circular(12),
+        bottomRight: const Radius.circular(12),
+      ),
+      Paint()..color = const Color(0xFFC9915A),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
+}

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/platform/platform_feedback.dart';
 import '../../domain/models/ocr_progress_event.dart';
 import 'batch_scan_progress.dart';
 import 'ocr_progress_notifier.dart';
@@ -49,7 +50,6 @@ class _ReceiptScanProcessingScreenState
   static const _kCardSurface = Color(0xFFFFFDF8);
   static const _kText = Color(0xFF5A4632);
   static const _kError = Color(0xFFB23A2E);
-  static const _kHighlightColor = Color(0x8DE2885C);
   static const _kHighlightDuration = Duration(milliseconds: 300);
 
   // Animation controllers
@@ -57,6 +57,7 @@ class _ReceiptScanProcessingScreenState
   late final AnimationController _floatCtrl;
   late final AnimationController _breatheCtrl;
   late final AnimationController _rowScanCtrl;
+  late final AnimationController _rippleCtrl;
 
   // Pipeline state
   OcrProcessingStage _stage = OcrProcessingStage.uploading;
@@ -69,6 +70,15 @@ class _ReceiptScanProcessingScreenState
   bool _failed = false;
   bool _retrying = false;
   int _failedStepIndex = -1;
+
+  // Tap-to-pause: freezes the ambient chrome animations (float/breathe/row
+  // sweep) so a slow step keeps visibly looping instead of sitting idle,
+  // and lets the user freeze-frame the card to read it. The underlying OCR
+  // attempt keeps running in the background regardless — there's nothing to
+  // actually pause there, so incoming pipeline events still update state.
+  bool _paused = false;
+  Offset? _rippleOrigin;
+  bool _breathingActive = false;
 
   OcrAttemptHandle? _attempt;
   StreamSubscription<OcrProgressEvent>? _sub;
@@ -96,17 +106,22 @@ class _ReceiptScanProcessingScreenState
 
     _floatCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1800),
+      duration: const Duration(milliseconds: 2200),
     )..repeat();
 
     _breatheCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1100),
+      duration: const Duration(milliseconds: 1300),
     );
 
     _rowScanCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1450),
+    );
+
+    _rippleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
     );
 
     _startAttempt();
@@ -120,6 +135,7 @@ class _ReceiptScanProcessingScreenState
     _floatCtrl.dispose();
     _breatheCtrl.dispose();
     _rowScanCtrl.dispose();
+    _rippleCtrl.dispose();
     super.dispose();
   }
 
@@ -142,12 +158,55 @@ class _ReceiptScanProcessingScreenState
       _totalAmount = null;
       _categoryName = null;
       _showSuccess = false;
+      _paused = false;
+      _rippleOrigin = null;
+      _breathingActive = false;
     });
     _breatheCtrl.reset();
+    _syncAmbientAnimations();
     _startAttempt();
   }
 
   void _skip() => Navigator.of(context).pop();
+
+  // ── Tap-to-pause / haptic ripple ──────────────────────────────────────────
+
+  void _handleFrameTapDown(TapDownDetails details) {
+    if (_failed || _showSuccess) return;
+    PlatformFeedback.selectionTap();
+    setState(() {
+      _paused = !_paused;
+      _rippleOrigin = details.localPosition;
+    });
+    _rippleCtrl.forward(from: 0);
+    _syncAmbientAnimations();
+  }
+
+  /// Keeps the ambient chrome controllers (float/row-sweep/breathe) in sync
+  /// with pause state and the current stage. A stuck step keeps its visual
+  /// looping because these controllers repeat indefinitely rather than
+  /// playing once — they only stop for [_paused] or once a step is behind us.
+  void _syncAmbientAnimations() {
+    if (_paused) {
+      _floatCtrl.stop();
+      _rowScanCtrl.stop();
+      _breatheCtrl.stop();
+      return;
+    }
+    if (!_floatCtrl.isAnimating) _floatCtrl.repeat();
+    final scanning = _stage == OcrProcessingStage.scanning ||
+        _stage == OcrProcessingStage.extracting;
+    if (scanning) {
+      if (!_rowScanCtrl.isAnimating) _rowScanCtrl.repeat();
+    } else {
+      _rowScanCtrl.stop();
+    }
+    if (_breathingActive) {
+      if (!_breatheCtrl.isAnimating) _breatheCtrl.repeat(reverse: true);
+    } else {
+      _breatheCtrl.stop();
+    }
+  }
 
   // ── Event handling ────────────────────────────────────────────────────────
 
@@ -158,8 +217,7 @@ class _ReceiptScanProcessingScreenState
         setState(() => _stage = OcrProcessingStage.uploading);
       case OcrStartedEvent():
         setState(() => _stage = OcrProcessingStage.scanning);
-        _rowScanCtrl.forward(from: 0);
-        _breatheCtrl.repeat(reverse: true);
+        _breathingActive = true;
       case OcrCompletedEvent():
         setState(() => _stage = OcrProcessingStage.extracting);
       case MerchantIdentifiedEvent(:final merchant):
@@ -180,10 +238,13 @@ class _ReceiptScanProcessingScreenState
           _categoryName = category;
         });
       case ProcessingCompletedEvent(:final draft):
+        _breathingActive = false;
         _handleCompleted(draft);
       case ProcessingFailedEvent(:final error):
+        _breathingActive = false;
         _handleFailed(error);
     }
+    _syncAmbientAnimations();
   }
 
   void _handleError(Object error) => _handleFailed(error);
@@ -294,6 +355,14 @@ class _ReceiptScanProcessingScreenState
       _stage == OcrProcessingStage.total ||
       _stage == OcrProcessingStage.category;
 
+  // Breathes with _breatheCtrl rather than sitting at a flat tint, so a step
+  // that's taking longer than usual keeps visibly looping instead of idling.
+  Color _rowHighlightColor(bool highlighted) {
+    if (!highlighted) return Colors.transparent;
+    final breathe = _breatheCtrl.isAnimating ? _breatheCtrl.value : 1.0;
+    return _kAccent.withValues(alpha: 0.28 + 0.35 * breathe);
+  }
+
   // During scanning a lit window sweeps down over item rows.
   double _scanRowOpacity(int index) {
     if (_stage != OcrProcessingStage.scanning &&
@@ -322,42 +391,52 @@ class _ReceiptScanProcessingScreenState
               children: [
                 Expanded(
                   child: Center(
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        AnimatedBuilder(
-                          animation: Listenable.merge(
-                              [_entranceCtrl, _floatCtrl, _rowScanCtrl]),
-                          builder: (context, _) {
-                            final floatOffset =
-                                math.sin(_floatCtrl.value * 2 * math.pi) * 3.0;
-                            final tiltAngle =
-                                (1.0 - _entranceCtrl.value) * -0.07;
-                            return FadeTransition(
-                              opacity: CurvedAnimation(
-                                parent: _entranceCtrl,
-                                curve: Curves.easeOut,
-                              ),
-                              child: Transform.translate(
-                                offset: Offset(0, floatOffset),
-                                child: Transform.rotate(
-                                  angle: tiltAngle,
-                                  child: Stack(
-                                    alignment: Alignment.center,
-                                    children: [
-                                      _failed
-                                          ? _dimmedReceiptCard()
-                                          : _receiptCard(),
-                                      if (_showSuccess) _successOverlay(),
-                                    ],
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: _handleFrameTapDown,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          AnimatedBuilder(
+                            animation: Listenable.merge([
+                              _entranceCtrl,
+                              _floatCtrl,
+                              _rowScanCtrl,
+                              _breatheCtrl,
+                            ]),
+                            builder: (context, _) {
+                              final floatOffset =
+                                  math.sin(_floatCtrl.value * 2 * math.pi) *
+                                      3.0;
+                              final tiltAngle =
+                                  (1.0 - _entranceCtrl.value) * -0.07;
+                              return FadeTransition(
+                                opacity: CurvedAnimation(
+                                  parent: _entranceCtrl,
+                                  curve: Curves.easeOut,
+                                ),
+                                child: Transform.translate(
+                                  offset: Offset(0, floatOffset),
+                                  child: Transform.rotate(
+                                    angle: tiltAngle,
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        _failed
+                                            ? _dimmedReceiptCard()
+                                            : _receiptCard(),
+                                        if (_showSuccess) _successOverlay(),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                        if (_failed) _failedOverlay(),
-                      ],
+                              );
+                            },
+                          ),
+                          if (_failed) _failedOverlay(),
+                          if (_rippleOrigin != null) _hapticRipple(),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -370,7 +449,72 @@ class _ReceiptScanProcessingScreenState
                 left: 4,
                 child: _CloseButton(onTap: _skip),
               ),
+            _pausedBadge(),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _hapticRipple() {
+    return AnimatedBuilder(
+      animation: _rippleCtrl,
+      builder: (context, _) {
+        final t = _rippleCtrl.value;
+        return Positioned(
+          left: _rippleOrigin!.dx - 32,
+          top: _rippleOrigin!.dy - 32,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: (1.0 - t).clamp(0.0, 1.0) * 0.5,
+              child: Transform.scale(
+                scale: 0.3 + 0.7 * t,
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2C2C33).withValues(alpha: 0.14),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _pausedBadge() {
+    return Positioned(
+      top: 12,
+      right: 16,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 200),
+          opacity: _paused ? 1 : 0,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.pause, size: 13, color: Colors.white),
+                SizedBox(width: 6),
+                Text(
+                  'Paused',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -402,7 +546,7 @@ class _ReceiptScanProcessingScreenState
               padding:
                   const EdgeInsets.symmetric(vertical: 7, horizontal: 6),
               decoration: BoxDecoration(
-                color: _merchantHighlighted ? _kHighlightColor : Colors.transparent,
+                color: _rowHighlightColor(_merchantHighlighted),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Row(
@@ -430,7 +574,7 @@ class _ReceiptScanProcessingScreenState
               padding:
                   const EdgeInsets.symmetric(vertical: 7, horizontal: 6),
               decoration: BoxDecoration(
-                color: _totalHighlighted ? _kHighlightColor : Colors.transparent,
+                color: _rowHighlightColor(_totalHighlighted),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Row(
@@ -659,13 +803,35 @@ class _ReceiptScanProcessingScreenState
             ),
           ),
           const SizedBox(height: 14),
-          for (var i = 0; i < 5; i++)
-            _LogItem(
-              state: _stepState(i),
-              text: _stepText(i),
-              categoryName: i == 4 ? _categoryName : null,
-              breathe: _breatheCtrl,
+          AnimatedSize(
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < 5; i++)
+                  // Idle (not-yet-reached) steps collapse out of layout
+                  // entirely instead of reserving blank space below the
+                  // step that's currently stuck — maintainState/Animation
+                  // keep the item mounted so its own fade-in still plays
+                  // once it stops being idle, rather than popping in flat.
+                  Visibility(
+                    visible: _stepState(i) != _LogItemState.idle,
+                    maintainState: true,
+                    maintainAnimation: true,
+                    maintainSize: false,
+                    child: _LogItem(
+                      state: _stepState(i),
+                      text: _stepText(i),
+                      categoryName: i == 4 ? _categoryName : null,
+                      breathe: _breatheCtrl,
+                    ),
+                  ),
+              ],
             ),
+          ),
         ],
       ),
     );
