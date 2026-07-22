@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -20,6 +21,28 @@ _MAX_DESKEW_ANGLE_DEG = 15.0
 # through, calibrated confidence 0.337 -> 0.362. Cost: Tesseract time scales
 # ~with pixel area, so narrow images OCR ~2.8x slower than at 1500.
 _MIN_OCR_WIDTH = int(os.environ.get("MIN_OCR_WIDTH", "2500"))
+
+# Document-detection confidence gate defaults (read at call time for monkeypatch).
+_DEFAULT_MIN_DOCUMENT_AREA_RATIO = 0.2
+_DEFAULT_MAX_DOCUMENT_AREA_RATIO = 0.98
+# Reject quads whose corners hug the frame border (Canny false positive on noise).
+_BORDER_MARGIN_PX = 4.0
+
+# CLAHE fires only when grayscale std-dev is below this threshold. Tune against
+# real fixtures via scripts/process_receipts.ps1 before changing.
+_CLAHE_CONTRAST_STD_THRESHOLD = float(
+    os.environ.get("PREPROCESS_CLAHE_CONTRAST_THRESHOLD", "45.0")
+)
+
+# Unsharp-mask defaults — mild, controlled sharpening (opt-in via PREPROCESS_SHARPEN=1).
+_SHARPEN_AMOUNT = float(os.environ.get("PREPROCESS_SHARPEN_AMOUNT", "0.6"))
+_SHARPEN_SIGMA = float(os.environ.get("PREPROCESS_SHARPEN_SIGMA", "1.0"))
+
+# Adaptive threshold degeneracy band — outside this white-pixel ratio, use OTSU.
+_ADAPTIVE_WHITE_RATIO_MIN = 0.02
+_ADAPTIVE_WHITE_RATIO_MAX = 0.98
+
+_DEFAULT_DEBUG_DIR = Path(__file__).resolve().parent.parent / ".debug"
 
 
 class InvalidImageError(ValueError):
@@ -115,10 +138,24 @@ def upscale_for_ocr(image: np.ndarray, min_width: int = _MIN_OCR_WIDTH) -> np.nd
     return cv2.resize(image, (min_width, new_h), interpolation=cv2.INTER_CUBIC)
 
 
+def _is_low_contrast(gray: np.ndarray) -> bool:
+    """True when the image's grayscale std-dev suggests CLAHE may help."""
+    return float(gray.std()) < _CLAHE_CONTRAST_STD_THRESHOLD
+
+
 def enhance_contrast(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     return clahe.apply(gray)
+
+
+def sharpen(gray: np.ndarray) -> np.ndarray:
+    """Mild unsharp mask — opt-in via PREPROCESS_SHARPEN=1."""
+    if gray.ndim == 3:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (0, 0), _SHARPEN_SIGMA)
+    amount = _SHARPEN_AMOUNT
+    return cv2.addWeighted(gray, 1.0 + amount, blurred, -amount, 0)
 
 
 def binarize(gray: np.ndarray) -> np.ndarray:
@@ -126,18 +163,34 @@ def binarize(gray: np.ndarray) -> np.ndarray:
     return binary
 
 
+def _adaptive_output_is_degenerate(binary: np.ndarray) -> bool:
+    white_ratio = float(np.mean(binary == 255))
+    return (
+        white_ratio < _ADAPTIVE_WHITE_RATIO_MIN
+        or white_ratio > _ADAPTIVE_WHITE_RATIO_MAX
+    )
+
+
 def shadow_binarize(gray: np.ndarray) -> np.ndarray:
     """Adaptive threshold for scans with uneven lighting (e.g. phone-flash shadows).
 
     Uses a large block size (51) to handle gradients across the receipt.
-    Opt-in only — can hurt clean thermal-print receipts. Enable via
-    PREPROCESS_ADAPTIVE_BINARIZE=1 (applied in ocr_engine.run_ocr, not here).
+    Falls back to OTSU when the adaptive output is degenerate (near all-white
+    or all-black). Opt-in force via PREPROCESS_ADAPTIVE_BINARIZE=1 in ocr_engine.
     """
     if gray.ndim == 3:
         gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
-    return cv2.adaptiveThreshold(
+    adaptive = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 11
     )
+    if _adaptive_output_is_degenerate(adaptive):
+        logger.info(
+            "shadow_binarize: adaptive output degenerate (white ratio %.3f) — "
+            "falling back to OTSU",
+            float(np.mean(adaptive == 255)),
+        )
+        return binarize(gray)
+    return adaptive
 
 
 def _order_points(pts: np.ndarray) -> np.ndarray:
@@ -155,57 +208,120 @@ def _order_points(pts: np.ndarray) -> np.ndarray:
     )
 
 
-def perspective_correct(image: np.ndarray) -> np.ndarray:
-    """Correct keystoning by detecting the receipt's 4 corners and applying a
-    homography (getPerspectiveTransform + warpPerspective).
+def _document_area_bounds() -> tuple[float, float]:
+    min_ratio = float(
+        os.environ.get("MIN_DOCUMENT_AREA_RATIO", str(_DEFAULT_MIN_DOCUMENT_AREA_RATIO))
+    )
+    max_ratio = float(
+        os.environ.get("MAX_DOCUMENT_AREA_RATIO", str(_DEFAULT_MAX_DOCUMENT_AREA_RATIO))
+    )
+    return min_ratio, max_ratio
 
-    Returns the original image unchanged when no clean 4-sided contour is
-    found — corner detection is unreliable on cluttered backgrounds (receipt
-    on a patterned tablecloth, crumpled paper, etc.). Enable via
-    PREPROCESS_PERSPECTIVE=1; off by default.
-    """
+
+def _quad_is_frame_border(pts: np.ndarray, width: int, height: int) -> bool:
+    """True when all corners sit on the image border — not a real document."""
+    margin = _BORDER_MARGIN_PX
+    xs = pts[:, 0]
+    ys = pts[:, 1]
+    on_border = (
+        (xs <= margin)
+        | (xs >= width - 1 - margin)
+        | (ys <= margin)
+        | (ys >= height - 1 - margin)
+    )
+    return bool(np.all(on_border))
+
+
+def detect_document_corners(image: np.ndarray) -> np.ndarray | None:
+    """Find a confident 4-corner document quad, or None if none qualifies."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    height, width = gray.shape[:2]
+    frame_area = float(height * width)
+    if frame_area <= 0:
+        return None
+
+    min_area_ratio, max_area_ratio = _document_area_bounds()
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     edges = cv2.Canny(blurred, 50, 150)
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    edges = cv2.dilate(edges, kernel, iterations=1)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        logger.info("perspective: skipped (no contours found)")
-        return image
+        return None
+
     for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:5]:
+        area_ratio = cv2.contourArea(contour) / frame_area
+        if area_ratio < min_area_ratio or area_ratio > max_area_ratio:
+            continue
         peri = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
         if len(approx) != 4:
             continue
+        if not cv2.isContourConvex(approx):
+            continue
         pts = approx.reshape(4, 2).astype(np.float32)
         rect = _order_points(pts)
+        if _quad_is_frame_border(rect, width, height):
+            continue
         tl, tr, br, bl = rect
         w = int(max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl)))
         h = int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl)))
         if w < 10 or h < 10:
             continue
-        logger.info("perspective: correcting to %dx%d quad", w, h)
-        dst = np.array(
-            [[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32
-        )
-        M = cv2.getPerspectiveTransform(rect, dst)
-        return cv2.warpPerspective(image, M, (w, h))
-    logger.info("perspective: skipped (no clean 4-point contour among top candidates)")
-    return image
+        return rect
+    return None
+
+
+def perspective_correct(image: np.ndarray) -> np.ndarray:
+    """Correct keystoning when a confident document quad is detected.
+
+    Returns the original image unchanged when [detect_document_corners] finds
+    nothing reliable. Enable via PREPROCESS_PERSPECTIVE=1; off by default.
+    """
+    rect = detect_document_corners(image)
+    if rect is None:
+        logger.info("perspective: skipped (no confident document quad found)")
+        return image
+    tl, tr, br, bl = rect
+    w = int(max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl)))
+    h = int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl)))
+    logger.info("perspective: correcting to %dx%d quad", w, h)
+    dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
+    M = cv2.getPerspectiveTransform(rect, dst)
+    return cv2.warpPerspective(image, M, (w, h))
+
+
+def _debug_dir() -> Path:
+    return Path(os.environ.get("PREPROCESS_DEBUG_DIR", str(_DEFAULT_DEBUG_DIR)))
+
+
+def _dump_debug_image(step: str, image: np.ndarray) -> None:
+    """Write an intermediate pipeline stage to disk when PREPROCESS_DEBUG is set."""
+    if not os.environ.get("PREPROCESS_DEBUG"):
+        return
+    debug_dir = _debug_dir()
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    path = debug_dir / f"{time.time_ns()}_{step}.png"
+    cv2.imwrite(str(path), image)
+    logger.debug("debug dump: wrote %s", path)
 
 
 def preprocess(image_bytes: bytes) -> np.ndarray:
-    """Decode -> [perspective] -> deskew -> upscale -> grayscale.
+    """Decode, optional perspective, deskew, upscale, grayscale, CLAHE, sharpen.
 
-    Returns an ndarray ready for Tesseract. Deliberately NO CLAHE or
-    pre-binarization by default: Tesseract runs its own Otsu pass internally,
-    and measured side-by-side both steps degraded recognition (CLAHE amplifies
-    noise into garbage words on clean scans). They were tuned for the previous
-    PaddleOCR engine.
+    Returns a 2D ndarray ready for Tesseract. CLAHE and sharpen are
+    heuristic/opt-in gated; pre-binarization is not applied here (Tesseract
+    thresholds internally; retry binarization lives in run_ocr_detailed).
 
     Opt-in flags (env vars):
-      PREPROCESS_PERSPECTIVE=1   — homography correction for camera keystoning
-      PREPROCESS_ADAPTIVE_BINARIZE=1 — shadow binarization (applied in run_ocr)
-      MIN_OCR_WIDTH=N            — override minimum width before upscaling
+      PREPROCESS_PERSPECTIVE=1        — homography when a confident quad is found
+      PREPROCESS_CLAHE=0              — disable contrast-gated CLAHE (default on)
+      PREPROCESS_CLAHE_CONTRAST_THRESHOLD — std-dev gate for CLAHE (default 45)
+      PREPROCESS_SHARPEN=1            — unsharp mask after grayscale (default off)
+      PREPROCESS_SHARPEN_AMOUNT/SIGMA — sharpen tuning knobs
+      PREPROCESS_ADAPTIVE_BINARIZE=1   — force binarize pass (in run_ocr_detailed)
+      PREPROCESS_DEBUG=1              — dump stage PNGs to PREPROCESS_DEBUG_DIR
+      MIN_OCR_WIDTH=N                 — override minimum width before upscaling
     """
     start = time.perf_counter()
     image = decode_image(image_bytes)
@@ -215,13 +331,37 @@ def preprocess(image_bytes: bytes) -> np.ndarray:
         image.shape[0],
         len(image_bytes) / 1024,
     )
+    _dump_debug_image("original", image)
+
     if os.environ.get("PREPROCESS_PERSPECTIVE"):
         image = perspective_correct(image)
+        _dump_debug_image("perspective", image)
+
     rotated = deskew(image)
+    _dump_debug_image("deskewed", rotated)
+
     upscaled = upscale_for_ocr(rotated)
+    _dump_debug_image("upscaled", upscaled)
+
     result = (
         cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY) if upscaled.ndim == 3 else upscaled
     )
+    _dump_debug_image("grayscale", result)
+
+    clahe_enabled = os.environ.get("PREPROCESS_CLAHE", "1") != "0"
+    if clahe_enabled and _is_low_contrast(result):
+        logger.info(
+            "preprocess: low contrast (std=%.1f < %.1f) — applying CLAHE",
+            result.std(),
+            _CLAHE_CONTRAST_STD_THRESHOLD,
+        )
+        result = enhance_contrast(result)
+        _dump_debug_image("clahe", result)
+
+    if os.environ.get("PREPROCESS_SHARPEN"):
+        result = sharpen(result)
+        _dump_debug_image("sharpened", result)
+
     logger.info(
         "preprocess: finished in %.2fs — ready for OCR at %dx%d",
         time.perf_counter() - start,

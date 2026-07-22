@@ -8,6 +8,8 @@
 
 **Why abandoned**: not documented in-repo beyond the preprocessing tradeoff; likely accuracy/consistency/deployability reasons (see `docs/decisions.md`). If re-evaluating OCR engines again, don't reuse the old CLAHE-heavy preprocessing config without re-measuring against whatever new engine is tried.
 
+**Update (2026-07-22)**: CLAHE is conditionally re-enabled behind a grayscale std-dev gate (`PREPROCESS_CLAHE`, see `docs/system/decisions.md` OCR preprocessing upgrade entry). The original finding was about *unconditional* CLAHE, not gated CLAHE — not a reversal of the PaddleOCR→Tesseract engine choice.
+
 ## On-device ML Kit OCR → self-hosted OCR API
 
 **Tried**: v1 spec's original design used on-device Google ML Kit Text Recognition v2, explicitly to avoid server-side re-OCR.

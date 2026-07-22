@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## OCR preprocessing pipeline upgrade (2026-07-22)
+
+**Decision**: extended `services/ocr-api/ocr_api/preprocessing.py` with confidence-gated document detection feeding `perspective_correct()`, contrast-gated CLAHE (`PREPROCESS_CLAHE`, default on but skipped on already-good-contrast images), opt-in unsharp-mask sharpen (`PREPROCESS_SHARPEN`, default off), smarter `shadow_binarize()` (OTSU fallback when adaptive output is degenerate), and opt-in stage PNG dumps (`PREPROCESS_DEBUG`).
+
+**Reason**: approach phone-photo receipt quality closer to a dedicated scanner app without regressing the measured finding that unconditional CLAHE/pre-binarization hurt Tesseract.
+
+**Alternatives considered**: always-on sharpen (rejected — opt-in until measured); a third full Tesseract pass comparing two binarizations (rejected — would risk reintroducing the documented 122s retry incident; degeneracy check stays a cheap numpy heuristic).
+
+**Tradeoffs**: Canny/contour detection adds CPU when `PREPROCESS_PERSPECTIVE=1` (still opt-in); CLAHE contrast threshold is a heuristic pending batch tuning via `scripts/process_receipts.ps1`.
+
+---
+
 ## Save-success animation gets count-based variants; batch imports show one celebration, not N (2026-07-22)
 
 **Decision**: `SaveSuccessScreen` now takes `List<TransactionView> savedTxs` (was a single nullable `TransactionView?`) and branches its cargo visual into three variants purely by count — 1 → single receipt slip (unchanged), 2–5 → a **fixed** 3-slip fanned stack (not scaled to the real count) with a staggered drop, 6+ → a single "bag" asset (`BagPainter`) — while keeping the existing single `AnimationController` + `Interval` timeline as the sole driver (no widget-per-receipt, no `Timer`-based stagger; the 3 staggered slip animations are additional `Interval`-scoped `CurvedAnimation`s parented to the same controller). `PendingImportService.processImport` gained a `deferSaveSuccessNav` param and a `ProcessImportResult` record return type (`lib/features/share/batch_scan_progress.dart`) so `_processAll` (the "Process all" batch button in `pending_imports_screen.dart`) keeps its existing per-receipt OCR-animation → confirm-sheet interleaving unchanged, but now defers navigation and fires the save-success screen exactly once at the end of the batch with every receipt actually saved, instead of showing N single-receipt celebrations back to back.

@@ -208,3 +208,40 @@ def test_ocr_no_text_recognized_skips_llm_call(
     assert body["understanding"] is None
     assert body["understanding_error"] is None
     assert calls == 0
+
+
+def test_ocr_response_schema_unchanged_with_new_preprocess_flags(
+    client: TestClient,
+    skewed_low_contrast_image_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_api.ocr_engine import OcrLineResult
+
+    monkeypatch.setattr(
+        "ocr_api.main.run_ocr_detailed",
+        lambda image: ([OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93),
+    )
+    monkeypatch.delenv("VLLM_BASE_URL", raising=False)
+    monkeypatch.setenv("PREPROCESS_CLAHE", "1")
+    monkeypatch.setenv("PREPROCESS_SHARPEN", "1")
+
+    resp = client.post(
+        "/ocr",
+        content=skewed_low_contrast_image_bytes,
+        headers={"X-OCR-Secret": SECRET, "Content-Type": "image/png"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body.keys()) == {
+        "text",
+        "confidence",
+        "lines",
+        "understanding",
+        "understanding_error",
+    }
+    assert body["text"] == "TOTAL RM 7.70"
+    assert body["confidence"] == pytest.approx(0.93)
+    assert body["lines"] == [{"text": "TOTAL RM 7.70", "height_ratio": 0.05}]
+    assert body["understanding"] is None
+    assert body["understanding_error"] == "server_misconfigured"

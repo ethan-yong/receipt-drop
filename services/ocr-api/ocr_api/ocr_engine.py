@@ -211,8 +211,12 @@ def run_ocr_detailed(image: np.ndarray) -> tuple[list[OcrLineResult], float]:
             confidence * 100,
             _LOW_CONFIDENCE_RETRY_THRESHOLD * 100,
         )
+        binarized = shadow_binarize(image)
+        from ocr_api.preprocessing import _dump_debug_image
+
+        _dump_debug_image("thresholded", binarized)
         retry_lines, retry_confidence = _run_tesseract(
-            shadow_binarize(image), label="binarize-retry"
+            binarized, label="binarize-retry"
         )
         if retry_confidence > confidence:
             logger.info(
