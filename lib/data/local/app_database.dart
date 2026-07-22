@@ -27,7 +27,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   /// True when [column] already exists on [table] (SQLite `PRAGMA table_info`).
   ///
@@ -35,10 +35,14 @@ class AppDatabase extends _$AppDatabase {
   /// when a later step fails before Drift bumps `user_version`, so a retry
   /// would otherwise hit "duplicate column name".
   Future<bool> _hasColumn(TableInfo table, GeneratedColumn column) async {
+    return _hasColumnNamed(table, column.name);
+  }
+
+  Future<bool> _hasColumnNamed(TableInfo table, String columnName) async {
     final rows = await customSelect(
       'PRAGMA table_info(${table.actualTableName})',
     ).get();
-    return rows.any((row) => row.read<String>('name') == column.name);
+    return rows.any((row) => row.read<String>('name') == columnName);
   }
 
   Future<void> _addColumnIfAbsent(
@@ -59,8 +63,12 @@ class AppDatabase extends _$AppDatabase {
                 m, outboxTransactions, outboxTransactions.impactUser);
           }
           if (from < 3) {
-            await _addColumnIfAbsent(
-                m, outboxTransactions, outboxTransactions.ritualledAt);
+            if (!await _hasColumnNamed(outboxTransactions, 'ritualled_at')) {
+              await customStatement(
+                'ALTER TABLE ${outboxTransactions.actualTableName} '
+                'ADD COLUMN ritualled_at INTEGER',
+              );
+            }
           }
           if (from < 4) {
             await m.createTable(outboxLineItems);
@@ -87,6 +95,13 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 8) {
             await m.createTable(pendingImports);
+          }
+          if (from < 9) {
+            if (await _hasColumnNamed(outboxTransactions, 'ritualled_at')) {
+              await customStatement(
+                'ALTER TABLE ${outboxTransactions.actualTableName} DROP COLUMN ritualled_at',
+              );
+            }
           }
         },
         // sqlite disables FK enforcement by default; needed for cascade

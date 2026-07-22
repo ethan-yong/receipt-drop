@@ -6,6 +6,7 @@ import '../../domain/logic/avatar_mood.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../widgets/blob_avatar.dart';
 import '../../widgets/reaction_chip.dart';
+import '../../widgets/skeleton.dart';
 
 /// Port of Impact Drops' feed.tsx — friends' auto-generated drop lines,
 /// backed by `SocialRepository.getFriendFeed()` (the `get_friend_feed()`
@@ -67,10 +68,7 @@ class _FeedScreenState extends State<FeedScreen> {
               ),
               const SizedBox(height: AppSpacing.lg),
               if (posts == null)
-                const Padding(
-                  padding: EdgeInsets.only(top: AppSpacing.xl),
-                  child: Center(child: CircularProgressIndicator()),
-                )
+                const _FeedSkeleton()
               else if (posts.isEmpty)
                 const _EmptyFeedNotice()
               else
@@ -157,6 +155,73 @@ class _FeedPostCard extends StatelessWidget {
                       count: post.eyesCount,
                       onTap: () => onReact('eyes'),
                     ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedSkeleton extends StatelessWidget {
+  const _FeedSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: Column(
+        children: [
+          for (var i = 0; i < 4; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.sm),
+            const _FeedPostCardSkeleton(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FeedPostCardSkeleton extends StatelessWidget {
+  const _FeedPostCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: AppSpacing.cardBorderRadius,
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SkeletonCircle(size: 48),
+          SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    SkeletonBox(width: 100, height: 14),
+                    Spacer(),
+                    SkeletonBox(width: 40, height: 11),
+                  ],
+                ),
+                SizedBox(height: 8),
+                SkeletonBox(width: double.infinity, height: 14),
+                SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    SkeletonBox(width: 54, height: 26, radius: 13),
+                    SizedBox(width: 8),
+                    SkeletonBox(width: 54, height: 26, radius: 13),
+                    SizedBox(width: 8),
+                    SkeletonBox(width: 54, height: 26, radius: 13),
                   ],
                 ),
               ],

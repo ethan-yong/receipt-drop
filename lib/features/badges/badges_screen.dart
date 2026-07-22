@@ -6,6 +6,7 @@ import '../../data/repositories/badge_repository.dart';
 import '../../domain/logic/badge_catalog.dart';
 import '../../widgets/achievement_progress_card.dart';
 import '../../widgets/badge_detail_dialog.dart';
+import '../../widgets/skeleton.dart';
 
 class BadgesScreen extends StatefulWidget {
   const BadgesScreen({super.key});
@@ -38,13 +39,13 @@ class _BadgesScreenState extends State<BadgesScreen> {
         title: const Text('Badges'),
       ),
       body: catalog == null
-          ? const Center(child: CircularProgressIndicator())
+          ? const _BadgesSkeleton()
           : StreamBuilder<List<Map<String, dynamic>>>(
               stream: BadgeRepository.streamAll(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting &&
                     snapshot.data == null) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const _BadgesSkeleton();
                 }
 
                 final rows = snapshot.data ?? const [];
@@ -132,6 +133,75 @@ class _BadgesScreenState extends State<BadgesScreen> {
         progress: progress,
         tier: tier,
       ),
+    );
+  }
+}
+
+/// Loading placeholder for the achievements list. Deliberately renders a
+/// fixed single-column list rather than mirroring the real screen's
+/// responsive 1-col/2-col [LayoutBuilder] split — not worth the complexity
+/// for a transient state.
+class _BadgesSkeleton extends StatelessWidget {
+  const _BadgesSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: ListView(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        children: [
+          for (var i = 0; i < 4; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.md),
+            const _AchievementCardSkeleton(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AchievementCardSkeleton extends StatelessWidget {
+  const _AchievementCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: AppSpacing.cardBorderRadius,
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SkeletonBox(width: 100, height: 11),
+          SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _TierHexSkeleton(),
+              _TierHexSkeleton(),
+              _TierHexSkeleton(),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TierHexSkeleton extends StatelessWidget {
+  const _TierHexSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [
+        SkeletonBox(width: 80, height: 80, radius: 12),
+        SizedBox(height: 6),
+        SkeletonBox(width: 44, height: 10),
+      ],
     );
   }
 }

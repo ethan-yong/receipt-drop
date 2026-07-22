@@ -11,12 +11,14 @@ import '../../domain/models/ocr_line.dart';
 import '../../domain/models/receipt_understanding.dart';
 import 'ocr_api_client.dart';
 
-// ocr-proxy's /ocr call to ocr-api can take up to ~45s worst case (Tesseract's
-// confidence-based retry pass, ~20s, plus the synchronous LLM understanding
-// step, up to 25s — see UPSTREAM_TIMEOUT_MS in supabase/functions/ocr-proxy).
-// Must stay above that ceiling so the client doesn't give up before ocr-proxy
-// would even finish waiting on ocr-api.
-const _ocrProxyTimeout = Duration(seconds: 65);
+// ocr-proxy's UPSTREAM_TIMEOUT_MS (supabase/functions/ocr-proxy/index.ts) is
+// 90s, sized to cover Tesseract's plain OCR pass plus its confidence-based
+// binarize retry (bounded by _RETRY_TIME_BUDGET_SECONDS in ocr_engine.py) and
+// the synchronous LLM understanding step (up to 25s), while staying under
+// Cloudflare's ~100s default tunnel response-wait ceiling. This must stay
+// above ocr-proxy's own timeout so the client doesn't give up before
+// ocr-proxy would even finish waiting on ocr-api.
+const _ocrProxyTimeout = Duration(seconds: 100);
 const _ocrImageMimeTypes = {'image/jpeg', 'image/png', 'image/webp'};
 
 typedef OcrLogger = void Function(

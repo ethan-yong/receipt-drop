@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
+import '../../widgets/skeleton.dart';
 
 /// Queue of receipts that OCR couldn't confidently read: one-tap confirm
 /// releases them back into the normal pipeline instead of losing them.
@@ -28,7 +29,7 @@ class ReceiptReviewScreen extends StatelessWidget {
           builder: (context, snapshot) {
             final rows = snapshot.data;
             if (rows == null) {
-              return const Center(child: CircularProgressIndicator());
+              return const _ReviewListSkeleton();
             }
             if (rows.isEmpty) {
               return Center(
@@ -67,6 +68,73 @@ class ReceiptReviewScreen extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _ReviewListSkeleton extends StatelessWidget {
+  const _ReviewListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.sm,
+          AppSpacing.md,
+          AppSpacing.xl,
+        ),
+        children: [
+          for (var i = 0; i < 3; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.md),
+            const _ReviewCardSkeleton(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ReviewCardSkeleton extends StatelessWidget {
+  const _ReviewCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        borderRadius: AppSpacing.cardBorderRadius,
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SkeletonBox(width: 48, height: 64, radius: 12),
+              SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkeletonBox(width: 140, height: 16),
+                    SizedBox(height: 6),
+                    SkeletonBox(width: 100, height: 12),
+                  ],
+                ),
+              ),
+              SkeletonBox(width: 64, height: 22, radius: 11),
+            ],
+          ),
+          SizedBox(height: AppSpacing.md),
+          SkeletonBox(width: double.infinity, height: 44, radius: 12),
+          SizedBox(height: AppSpacing.sm),
+          SkeletonBox(width: double.infinity, height: 44, radius: 20),
+        ],
       ),
     );
   }

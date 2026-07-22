@@ -6,14 +6,18 @@ For durable architecture/schema/API facts, see `docs/`. This file is for state t
 
 Receipt Drop: Malaysian users share receipt images/PDFs via the OS share sheet; the app OCRs them (self-hosted Tesseract), extracts amount/merchant/category/line-items, saves instantly to a local outbox, and syncs to Supabase in the background. Layered on top: gamification (avatar, badges, streaks), a spend map with friend pins, a friends feed, and a friends+global leaderboard. See `docs/architecture.md` for the full data-flow diagram.
 
-## Current development focus (branch: `feat/ethanyong/20260712121831/receipt-share-feat`)
+## Current development focus (branch: `feat/ethanyong/20260721102508/ui-fixes`)
 
 The share intent flow (OS share sheet → Receipt Drop) has been reworked from **immediate OCR** to an **inbox / pending-import pattern**:
 
-- Sharing a receipt from any app saves it locally first (no OCR, no blocking spinner). The user sees a "Receipt saved — open Receipt Drop to review" toast and returns to their previous app.
+- Sharing a receipt from any app saves it locally first (no OCR, no blocking spinner). The user sees a "Receipt saved — open Receipt Drop to review" toast (pluralized for a multi-file share) and returns to their previous app.
 - A home-screen banner ("N receipts waiting") links to a new `PendingImportsScreen` where the user explicitly taps **Process** (or **Retry** on failure) to trigger OCR.
-- The existing Camera/Gallery → OCR → Confirm → Save capture flow is **unchanged**.
 - Drift is the immediate source of truth; Supabase `pending_receipts` syncs asynchronously, best-effort.
+
+**2026-07-21 follow-up** (see `docs/decisions.md` for the full writeup): the OCR-time UI for both the pending-import flow and the in-app Camera/Gallery/file capture flow is now the **same** animated `ReceiptScanProcessingScreen` (`lib/features/share/receipt_scan_processing_screen.dart`) — the plain spinner overlay (`PlatformFeedback.showOcrProgress`) that `PendingImportService.processImport` used to show is gone. Key things to know before touching this area:
+- The screen's constructor takes `attemptFactory` (an `OcrAttemptFactory`, re-invoked on Retry) instead of a fixed `stream` — if you add a new call site, build a small local closure that creates a fresh `OcrProgressNotifier` per attempt (see `_startBytesAttempt`/`_startPathAttempt` in `receipt_capture_flow.dart` or the equivalent in `pending_import_service_io.dart`), don't pass a stream directly.
+- `processImport` now takes/returns an optional `BatchScanProgress` (`lib/features/share/batch_scan_progress.dart`) so `PendingImportsScreen._processAll`'s sequential "Process all" loop can show a running batch-progress footer. It's an immutable snapshot threaded call-to-call, not a shared mutable notifier.
+- `ShareIntentListener._handleSharedFiles` was also fixed to save **every** file from a multi-file OS share, not just the first (`files.firstWhere(...)` was silently dropping the rest before this fix) — a real batch can now actually reach the inbox.
 
 **Key new files (2026-07-12):**
 - `supabase/migrations/20260712000000_pending_receipts.sql` — new Supabase table

@@ -18,9 +18,10 @@ import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/places/place_picker_screen.dart';
 import '../../features/places/places_search_screen.dart';
 import '../../domain/logic/merchant_extractor.dart';
+import '../../domain/models/transaction_view.dart';
 import '../../features/pending_imports/pending_imports_screen.dart';
 import '../../features/review/receipt_review_screen.dart';
-import '../../features/ritual/ritual_screen.dart';
+import '../../features/save_success/save_success_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/share/share_hint_screen.dart';
 import '../../features/summary/summary_screen.dart';
@@ -139,9 +140,12 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
-        path: '/ritual',
-        name: 'ritual',
-        builder: (context, state) => const RitualScreen(),
+        path: '/save-success',
+        name: 'save-success',
+        builder: (context, state) {
+          final txs = state.extra as List<TransactionView>?;
+          return SaveSuccessScreen(savedTxs: txs ?? const []);
+        },
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

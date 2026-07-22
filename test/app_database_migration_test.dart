@@ -40,7 +40,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 8);
+    expect(await userVersion(db), 9);
     await db.customSelect(
       'SELECT llm_understanding_json FROM outbox_transactions',
     ).get();
@@ -54,7 +54,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 8);
+    expect(await userVersion(db), 9);
     await db.close();
   });
 
@@ -67,7 +67,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 8);
+    expect(await userVersion(db), 9);
     await db.customSelect('SELECT id FROM pending_imports').get();
     await db.close();
   });

@@ -1,11 +1,15 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/models/pending_import_model.dart';
+import '../../domain/models/transaction_view.dart';
+import '../../widgets/skeleton.dart';
+import '../share/batch_scan_progress.dart';
 import 'pending_import_service.dart';
 
 class PendingImportsScreen extends StatelessWidget {
@@ -37,7 +41,7 @@ class PendingImportsScreen extends StatelessWidget {
         stream: AppServices.pendingImports.watchAll(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const _PendingImportsSkeleton();
           }
 
           final imports = snapshot.data ?? const [];
@@ -68,10 +72,72 @@ class PendingImportsScreen extends StatelessWidget {
     BuildContext context,
     List<PendingImportModel> imports,
   ) async {
+    var progress = BatchScanProgress(totalCount: imports.length);
+    final savedTxs = <TransactionView>[];
     for (final import in imports) {
       if (!context.mounted) return;
-      await PendingImportService.processImport(context, import);
+      final result = await PendingImportService.processImport(
+        context,
+        import,
+        batchProgress: progress,
+        deferSaveSuccessNav: true,
+      );
+      progress = result.progress ?? progress;
+      if (result.savedTx != null) savedTxs.add(result.savedTx!);
     }
+    if (savedTxs.isNotEmpty && context.mounted) {
+      context.pushNamed('save-success', extra: savedTxs);
+    }
+  }
+}
+
+class _PendingImportsSkeleton extends StatelessWidget {
+  const _PendingImportsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.md,
+        ),
+        itemCount: 4,
+        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+        itemBuilder: (context, _) => const _PendingImportCardSkeleton(),
+      ),
+    );
+  }
+}
+
+class _PendingImportCardSkeleton extends StatelessWidget {
+  const _PendingImportCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: AppSpacing.cardPadding,
+        child: const Row(
+          children: [
+            SkeletonBox(width: 64, height: 64, radius: 8),
+            SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SkeletonBox(width: 70, height: 16, radius: 10),
+                  SizedBox(height: AppSpacing.xs),
+                  SkeletonBox(width: 110, height: 12),
+                ],
+              ),
+            ),
+            SizedBox(width: AppSpacing.sm),
+            SkeletonBox(width: 72, height: 32, radius: 20),
+          ],
+        ),
+      ),
+    );
   }
 }
 

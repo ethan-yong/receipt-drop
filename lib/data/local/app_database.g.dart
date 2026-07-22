@@ -356,17 +356,6 @@ class $OutboxTransactionsTable extends OutboxTransactions
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
-  static const VerificationMeta _ritualledAtMeta = const VerificationMeta(
-    'ritualledAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> ritualledAt = GeneratedColumn<DateTime>(
-    'ritualled_at',
-    aliasedName,
-    true,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: false,
-  );
   static const VerificationMeta _merchantCandidatesJsonMeta =
       const VerificationMeta('merchantCandidatesJson');
   @override
@@ -433,7 +422,6 @@ class $OutboxTransactionsTable extends OutboxTransactions
     syncStatus,
     lastError,
     retryCount,
-    ritualledAt,
     merchantCandidatesJson,
     ocrHeaderText,
     llmUnderstandingJson,
@@ -694,15 +682,6 @@ class $OutboxTransactionsTable extends OutboxTransactions
         retryCount.isAcceptableOrUnknown(data['retry_count']!, _retryCountMeta),
       );
     }
-    if (data.containsKey('ritualled_at')) {
-      context.handle(
-        _ritualledAtMeta,
-        ritualledAt.isAcceptableOrUnknown(
-          data['ritualled_at']!,
-          _ritualledAtMeta,
-        ),
-      );
-    }
     if (data.containsKey('merchant_candidates_json')) {
       context.handle(
         _merchantCandidatesJsonMeta,
@@ -863,10 +842,6 @@ class $OutboxTransactionsTable extends OutboxTransactions
         DriftSqlType.int,
         data['${effectivePrefix}retry_count'],
       )!,
-      ritualledAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}ritualled_at'],
-      ),
       merchantCandidatesJson: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}merchant_candidates_json'],
@@ -936,9 +911,6 @@ class OutboxTransaction extends DataClass
   final String? lastError;
   final int retryCount;
 
-  /// Set after the receipt has been shown in the ritual animation.
-  final DateTime? ritualledAt;
-
   /// Ranked merchant-name candidates (JSON-encoded `MerchantCandidate` list),
   /// synced to `transactions.merchant_candidates` (jsonb) so enrichment can
   /// try more than one Places text-search query.
@@ -985,7 +957,6 @@ class OutboxTransaction extends DataClass
     required this.syncStatus,
     this.lastError,
     required this.retryCount,
-    this.ritualledAt,
     this.merchantCandidatesJson,
     this.ocrHeaderText,
     this.llmUnderstandingJson,
@@ -1070,9 +1041,6 @@ class OutboxTransaction extends DataClass
       map['last_error'] = Variable<String>(lastError);
     }
     map['retry_count'] = Variable<int>(retryCount);
-    if (!nullToAbsent || ritualledAt != null) {
-      map['ritualled_at'] = Variable<DateTime>(ritualledAt);
-    }
     if (!nullToAbsent || merchantCandidatesJson != null) {
       map['merchant_candidates_json'] = Variable<String>(
         merchantCandidatesJson,
@@ -1164,9 +1132,6 @@ class OutboxTransaction extends DataClass
           ? const Value.absent()
           : Value(lastError),
       retryCount: Value(retryCount),
-      ritualledAt: ritualledAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(ritualledAt),
       merchantCandidatesJson: merchantCandidatesJson == null && nullToAbsent
           ? const Value.absent()
           : Value(merchantCandidatesJson),
@@ -1230,7 +1195,6 @@ class OutboxTransaction extends DataClass
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
       lastError: serializer.fromJson<String?>(json['lastError']),
       retryCount: serializer.fromJson<int>(json['retryCount']),
-      ritualledAt: serializer.fromJson<DateTime?>(json['ritualledAt']),
       merchantCandidatesJson: serializer.fromJson<String?>(
         json['merchantCandidatesJson'],
       ),
@@ -1277,7 +1241,6 @@ class OutboxTransaction extends DataClass
       'syncStatus': serializer.toJson<String>(syncStatus),
       'lastError': serializer.toJson<String?>(lastError),
       'retryCount': serializer.toJson<int>(retryCount),
-      'ritualledAt': serializer.toJson<DateTime?>(ritualledAt),
       'merchantCandidatesJson': serializer.toJson<String?>(
         merchantCandidatesJson,
       ),
@@ -1318,7 +1281,6 @@ class OutboxTransaction extends DataClass
     String? syncStatus,
     Value<String?> lastError = const Value.absent(),
     int? retryCount,
-    Value<DateTime?> ritualledAt = const Value.absent(),
     Value<String?> merchantCandidatesJson = const Value.absent(),
     Value<String?> ocrHeaderText = const Value.absent(),
     Value<String?> llmUnderstandingJson = const Value.absent(),
@@ -1378,7 +1340,6 @@ class OutboxTransaction extends DataClass
     syncStatus: syncStatus ?? this.syncStatus,
     lastError: lastError.present ? lastError.value : this.lastError,
     retryCount: retryCount ?? this.retryCount,
-    ritualledAt: ritualledAt.present ? ritualledAt.value : this.ritualledAt,
     merchantCandidatesJson: merchantCandidatesJson.present
         ? merchantCandidatesJson.value
         : this.merchantCandidatesJson,
@@ -1468,9 +1429,6 @@ class OutboxTransaction extends DataClass
       retryCount: data.retryCount.present
           ? data.retryCount.value
           : this.retryCount,
-      ritualledAt: data.ritualledAt.present
-          ? data.ritualledAt.value
-          : this.ritualledAt,
       merchantCandidatesJson: data.merchantCandidatesJson.present
           ? data.merchantCandidatesJson.value
           : this.merchantCandidatesJson,
@@ -1517,7 +1475,6 @@ class OutboxTransaction extends DataClass
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
           ..write('retryCount: $retryCount, ')
-          ..write('ritualledAt: $ritualledAt, ')
           ..write('merchantCandidatesJson: $merchantCandidatesJson, ')
           ..write('ocrHeaderText: $ocrHeaderText, ')
           ..write('llmUnderstandingJson: $llmUnderstandingJson')
@@ -1558,7 +1515,6 @@ class OutboxTransaction extends DataClass
     syncStatus,
     lastError,
     retryCount,
-    ritualledAt,
     merchantCandidatesJson,
     ocrHeaderText,
     llmUnderstandingJson,
@@ -1598,7 +1554,6 @@ class OutboxTransaction extends DataClass
           other.syncStatus == this.syncStatus &&
           other.lastError == this.lastError &&
           other.retryCount == this.retryCount &&
-          other.ritualledAt == this.ritualledAt &&
           other.merchantCandidatesJson == this.merchantCandidatesJson &&
           other.ocrHeaderText == this.ocrHeaderText &&
           other.llmUnderstandingJson == this.llmUnderstandingJson);
@@ -1636,7 +1591,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
   final Value<String> syncStatus;
   final Value<String?> lastError;
   final Value<int> retryCount;
-  final Value<DateTime?> ritualledAt;
   final Value<String?> merchantCandidatesJson;
   final Value<String?> ocrHeaderText;
   final Value<String?> llmUnderstandingJson;
@@ -1673,7 +1627,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.syncStatus = const Value.absent(),
     this.lastError = const Value.absent(),
     this.retryCount = const Value.absent(),
-    this.ritualledAt = const Value.absent(),
     this.merchantCandidatesJson = const Value.absent(),
     this.ocrHeaderText = const Value.absent(),
     this.llmUnderstandingJson = const Value.absent(),
@@ -1711,7 +1664,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.syncStatus = const Value.absent(),
     this.lastError = const Value.absent(),
     this.retryCount = const Value.absent(),
-    this.ritualledAt = const Value.absent(),
     this.merchantCandidatesJson = const Value.absent(),
     this.ocrHeaderText = const Value.absent(),
     this.llmUnderstandingJson = const Value.absent(),
@@ -1750,7 +1702,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Expression<String>? syncStatus,
     Expression<String>? lastError,
     Expression<int>? retryCount,
-    Expression<DateTime>? ritualledAt,
     Expression<String>? merchantCandidatesJson,
     Expression<String>? ocrHeaderText,
     Expression<String>? llmUnderstandingJson,
@@ -1793,7 +1744,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       if (syncStatus != null) 'sync_status': syncStatus,
       if (lastError != null) 'last_error': lastError,
       if (retryCount != null) 'retry_count': retryCount,
-      if (ritualledAt != null) 'ritualled_at': ritualledAt,
       if (merchantCandidatesJson != null)
         'merchant_candidates_json': merchantCandidatesJson,
       if (ocrHeaderText != null) 'ocr_header_text': ocrHeaderText,
@@ -1835,7 +1785,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Value<String>? syncStatus,
     Value<String?>? lastError,
     Value<int>? retryCount,
-    Value<DateTime?>? ritualledAt,
     Value<String?>? merchantCandidatesJson,
     Value<String?>? ocrHeaderText,
     Value<String?>? llmUnderstandingJson,
@@ -1874,7 +1823,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       syncStatus: syncStatus ?? this.syncStatus,
       lastError: lastError ?? this.lastError,
       retryCount: retryCount ?? this.retryCount,
-      ritualledAt: ritualledAt ?? this.ritualledAt,
       merchantCandidatesJson:
           merchantCandidatesJson ?? this.merchantCandidatesJson,
       ocrHeaderText: ocrHeaderText ?? this.ocrHeaderText,
@@ -1985,9 +1933,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     if (retryCount.present) {
       map['retry_count'] = Variable<int>(retryCount.value);
     }
-    if (ritualledAt.present) {
-      map['ritualled_at'] = Variable<DateTime>(ritualledAt.value);
-    }
     if (merchantCandidatesJson.present) {
       map['merchant_candidates_json'] = Variable<String>(
         merchantCandidatesJson.value,
@@ -2041,7 +1986,6 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           ..write('syncStatus: $syncStatus, ')
           ..write('lastError: $lastError, ')
           ..write('retryCount: $retryCount, ')
-          ..write('ritualledAt: $ritualledAt, ')
           ..write('merchantCandidatesJson: $merchantCandidatesJson, ')
           ..write('ocrHeaderText: $ocrHeaderText, ')
           ..write('llmUnderstandingJson: $llmUnderstandingJson, ')
@@ -3949,7 +3893,6 @@ typedef $$OutboxTransactionsTableCreateCompanionBuilder =
       Value<String> syncStatus,
       Value<String?> lastError,
       Value<int> retryCount,
-      Value<DateTime?> ritualledAt,
       Value<String?> merchantCandidatesJson,
       Value<String?> ocrHeaderText,
       Value<String?> llmUnderstandingJson,
@@ -3988,7 +3931,6 @@ typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
       Value<String> syncStatus,
       Value<String?> lastError,
       Value<int> retryCount,
-      Value<DateTime?> ritualledAt,
       Value<String?> merchantCandidatesJson,
       Value<String?> ocrHeaderText,
       Value<String?> llmUnderstandingJson,
@@ -4216,11 +4158,6 @@ class $$OutboxTransactionsTableFilterComposer
 
   ColumnFilters<int> get retryCount => $composableBuilder(
     column: $table.retryCount,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get ritualledAt => $composableBuilder(
-    column: $table.ritualledAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4454,11 +4391,6 @@ class $$OutboxTransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<DateTime> get ritualledAt => $composableBuilder(
-    column: $table.ritualledAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<String> get merchantCandidatesJson => $composableBuilder(
     column: $table.merchantCandidatesJson,
     builder: (column) => ColumnOrderings(column),
@@ -4623,11 +4555,6 @@ class $$OutboxTransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<DateTime> get ritualledAt => $composableBuilder(
-    column: $table.ritualledAt,
-    builder: (column) => column,
-  );
-
   GeneratedColumn<String> get merchantCandidatesJson => $composableBuilder(
     column: $table.merchantCandidatesJson,
     builder: (column) => column,
@@ -4761,7 +4688,6 @@ class $$OutboxTransactionsTableTableManager
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
                 Value<int> retryCount = const Value.absent(),
-                Value<DateTime?> ritualledAt = const Value.absent(),
                 Value<String?> merchantCandidatesJson = const Value.absent(),
                 Value<String?> ocrHeaderText = const Value.absent(),
                 Value<String?> llmUnderstandingJson = const Value.absent(),
@@ -4798,7 +4724,6 @@ class $$OutboxTransactionsTableTableManager
                 syncStatus: syncStatus,
                 lastError: lastError,
                 retryCount: retryCount,
-                ritualledAt: ritualledAt,
                 merchantCandidatesJson: merchantCandidatesJson,
                 ocrHeaderText: ocrHeaderText,
                 llmUnderstandingJson: llmUnderstandingJson,
@@ -4837,7 +4762,6 @@ class $$OutboxTransactionsTableTableManager
                 Value<String> syncStatus = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
                 Value<int> retryCount = const Value.absent(),
-                Value<DateTime?> ritualledAt = const Value.absent(),
                 Value<String?> merchantCandidatesJson = const Value.absent(),
                 Value<String?> ocrHeaderText = const Value.absent(),
                 Value<String?> llmUnderstandingJson = const Value.absent(),
@@ -4874,7 +4798,6 @@ class $$OutboxTransactionsTableTableManager
                 syncStatus: syncStatus,
                 lastError: lastError,
                 retryCount: retryCount,
-                ritualledAt: ritualledAt,
                 merchantCandidatesJson: merchantCandidatesJson,
                 ocrHeaderText: ocrHeaderText,
                 llmUnderstandingJson: llmUnderstandingJson,

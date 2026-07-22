@@ -7,6 +7,7 @@ import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../widgets/blob_avatar.dart';
+import '../../widgets/skeleton.dart';
 
 /// Minimal friends UI — add-by-email plus accept/decline (plan judgment
 /// call #10), needed to make the Phase 6 social backend usable at all.
@@ -136,10 +137,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
             ],
             const SizedBox(height: AppSpacing.lg),
             if (friendships == null)
-              const Padding(
-                padding: EdgeInsets.only(top: AppSpacing.xl),
-                child: Center(child: CircularProgressIndicator()),
-              )
+              const _FriendshipListSkeleton()
             else ...[
               if (incoming.isNotEmpty) ...[
                 Text('Requests', style: Theme.of(context).textTheme.titleSmall),
@@ -189,6 +187,42 @@ class _FriendsScreenState extends State<FriendsScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FriendshipListSkeleton extends StatelessWidget {
+  const _FriendshipListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeleton(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SkeletonBox(width: 90, height: 16),
+          const SizedBox(height: AppSpacing.sm),
+          for (var i = 0; i < 5; i++) ...[
+            if (i > 0) const SizedBox(height: AppSpacing.sm),
+            const _FriendshipTileSkeleton(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FriendshipTileSkeleton extends StatelessWidget {
+  const _FriendshipTileSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        SkeletonCircle(size: 40),
+        SizedBox(width: AppSpacing.sm),
+        Expanded(child: SkeletonBox(width: double.infinity, height: 14)),
+      ],
     );
   }
 }

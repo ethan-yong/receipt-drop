@@ -711,7 +711,7 @@ class _CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Ties this bubble's color into the same per-category coding used
-    // app-wide (CategoryChip, transaction_list_tile.dart/ritual_screen.dart)
+    // app-wide (CategoryChip, transaction_list_tile.dart/summary_screen.dart)
     // instead of a flat sheet-local color, so a receipt's category reads
     // consistently wherever it's shown.
     final color = AppColors.categoryColor(category);

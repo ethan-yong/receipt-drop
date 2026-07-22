@@ -13,6 +13,18 @@ ARG USE_TESSDATA_BEST=0
 ARG TESSDATA_DIR=""
 ENV TESSDATA_PREFIX=$TESSDATA_DIR
 
+# Tesseract's LSTM engine (--oem 3, the default per ocr_engine.py's _config())
+# uses OpenMP internally and by default sizes its thread pool off the *node's*
+# visible CPU count, not the container's cgroup quota — a well-known
+# Kubernetes/OpenMP footgun. With deploy/k8s/ocr-api.yaml capping this
+# container at 1 CPU, an oversubscribed thread pool gets repeatedly throttled
+# by the kernel's CFS bandwidth controller mid-computation, inflating wall
+# clock well beyond a properly single-threaded run. OMP_THREAD_LIMIT is the
+# Tesseract-specific variable it checks directly; OMP_NUM_THREADS is set too
+# as defense-in-depth for the underlying OpenMP runtime.
+ENV OMP_THREAD_LIMIT=1
+ENV OMP_NUM_THREADS=1
+
 # eng traineddata ships with tesseract-ocr; msa adds Malay for local receipts.
 # wget/ca-certificates only needed when USE_TESSDATA_BEST=1 but kept for the
 # conditional; they add ~4 MB to the layer.

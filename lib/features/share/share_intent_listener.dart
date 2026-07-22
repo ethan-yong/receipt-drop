@@ -45,32 +45,30 @@ class _ShareIntentListenerState extends State<ShareIntentListener> {
   }
 
   Future<void> _handleSharedFiles(List<SharedMediaFile> files) async {
-    if (files.isEmpty) return;
-
-    final file = files.firstWhere(
-      (f) =>
-          f.type == SharedMediaType.image ||
-          f.type == SharedMediaType.file ||
-          f.type == SharedMediaType.video,
-      orElse: () => files.first,
-    );
-
-    if (file.type == SharedMediaType.text || file.type == SharedMediaType.url) {
-      return;
-    }
+    final relevant = files
+        .where((f) =>
+            f.type == SharedMediaType.image ||
+            f.type == SharedMediaType.file ||
+            f.type == SharedMediaType.video)
+        .toList();
+    if (relevant.isEmpty) return;
 
     final context = rootNavigatorKey.currentContext;
     if (context == null || !context.mounted) return;
 
-    await PendingImportService.saveSharedReceipt(
-      path: file.path,
-      mimeType: file.mimeType ?? _guessMimeType(file.path),
-    );
+    for (final file in relevant) {
+      await PendingImportService.saveSharedReceipt(
+        path: file.path,
+        mimeType: file.mimeType ?? _guessMimeType(file.path),
+      );
+    }
 
     if (context.mounted) {
       PlatformFeedback.showMessage(
         context,
-        'Receipt saved — open Receipt Drop to review',
+        relevant.length > 1
+            ? '${relevant.length} receipts saved — open Receipt Drop to review'
+            : 'Receipt saved — open Receipt Drop to review',
       );
     }
 
