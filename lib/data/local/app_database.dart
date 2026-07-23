@@ -27,7 +27,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   /// True when [column] already exists on [table] (SQLite `PRAGMA table_info`).
   ///
@@ -102,6 +102,12 @@ class AppDatabase extends _$AppDatabase {
                 'ALTER TABLE ${outboxTransactions.actualTableName} DROP COLUMN ritualled_at',
               );
             }
+          }
+          if (from < 10) {
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.cleanedOcrText);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.ocrCorrectionsJson);
           }
         },
         // sqlite disables FK enforcement by default; needed for cascade

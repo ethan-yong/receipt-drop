@@ -389,6 +389,28 @@ class $OutboxTransactionsTable extends OutboxTransactions
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _cleanedOcrTextMeta = const VerificationMeta(
+    'cleanedOcrText',
+  );
+  @override
+  late final GeneratedColumn<String> cleanedOcrText = GeneratedColumn<String>(
+    'cleaned_ocr_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ocrCorrectionsJsonMeta =
+      const VerificationMeta('ocrCorrectionsJson');
+  @override
+  late final GeneratedColumn<String> ocrCorrectionsJson =
+      GeneratedColumn<String>(
+        'ocr_corrections_json',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -425,6 +447,8 @@ class $OutboxTransactionsTable extends OutboxTransactions
     merchantCandidatesJson,
     ocrHeaderText,
     llmUnderstandingJson,
+    cleanedOcrText,
+    ocrCorrectionsJson,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -709,6 +733,24 @@ class $OutboxTransactionsTable extends OutboxTransactions
         ),
       );
     }
+    if (data.containsKey('cleaned_ocr_text')) {
+      context.handle(
+        _cleanedOcrTextMeta,
+        cleanedOcrText.isAcceptableOrUnknown(
+          data['cleaned_ocr_text']!,
+          _cleanedOcrTextMeta,
+        ),
+      );
+    }
+    if (data.containsKey('ocr_corrections_json')) {
+      context.handle(
+        _ocrCorrectionsJsonMeta,
+        ocrCorrectionsJson.isAcceptableOrUnknown(
+          data['ocr_corrections_json']!,
+          _ocrCorrectionsJsonMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -854,6 +896,14 @@ class $OutboxTransactionsTable extends OutboxTransactions
         DriftSqlType.string,
         data['${effectivePrefix}llm_understanding_json'],
       ),
+      cleanedOcrText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cleaned_ocr_text'],
+      ),
+      ocrCorrectionsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ocr_corrections_json'],
+      ),
     );
   }
 
@@ -893,8 +943,9 @@ class OutboxTransaction extends DataClass
   final DateTime? shareLocationCapturedAt;
   final double? ocrConfidence;
 
-  /// Raw OCR text, kept only when the parse failed or was low-confidence —
-  /// the evidence needed to fix parser rules later.
+  /// Raw OCR text — always populated (client caps it ~8000 chars) since the
+  /// LLM receipt-understanding step, not only for failed/low-confidence
+  /// parses; still doubles as labeled data for fixing parser rules later.
   final String? rawOcrText;
 
   /// OCR engine's scan-quality confidence (mean word confidence, 0..1).
@@ -925,6 +976,18 @@ class OutboxTransaction extends DataClass
   /// capture time and synced to `transactions.llm_understanding` (jsonb) so
   /// `enrich-transaction` can skip calling the LLM itself.
   final String? llmUnderstandingJson;
+
+  /// LLM OCR-cleanup step's corrected transcript (opt-in server-side via
+  /// `LLM_CLEANUP_ENABLED`), synced to `transactions.cleaned_ocr_text` —
+  /// additive alongside (never replacing) [rawOcrText]. Null when cleanup
+  /// wasn't attempted or produced nothing the server's per-line
+  /// edit-distance guard accepted.
+  final String? cleanedOcrText;
+
+  /// Per-line corrections the cleanup guard accepted (JSON-encoded list of
+  /// `{line_index, original, corrected}`), synced to
+  /// `transactions.ocr_corrections` (jsonb).
+  final String? ocrCorrectionsJson;
   const OutboxTransaction({
     required this.id,
     required this.userId,
@@ -960,6 +1023,8 @@ class OutboxTransaction extends DataClass
     this.merchantCandidatesJson,
     this.ocrHeaderText,
     this.llmUnderstandingJson,
+    this.cleanedOcrText,
+    this.ocrCorrectionsJson,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1052,6 +1117,12 @@ class OutboxTransaction extends DataClass
     if (!nullToAbsent || llmUnderstandingJson != null) {
       map['llm_understanding_json'] = Variable<String>(llmUnderstandingJson);
     }
+    if (!nullToAbsent || cleanedOcrText != null) {
+      map['cleaned_ocr_text'] = Variable<String>(cleanedOcrText);
+    }
+    if (!nullToAbsent || ocrCorrectionsJson != null) {
+      map['ocr_corrections_json'] = Variable<String>(ocrCorrectionsJson);
+    }
     return map;
   }
 
@@ -1141,6 +1212,12 @@ class OutboxTransaction extends DataClass
       llmUnderstandingJson: llmUnderstandingJson == null && nullToAbsent
           ? const Value.absent()
           : Value(llmUnderstandingJson),
+      cleanedOcrText: cleanedOcrText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cleanedOcrText),
+      ocrCorrectionsJson: ocrCorrectionsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ocrCorrectionsJson),
     );
   }
 
@@ -1202,6 +1279,10 @@ class OutboxTransaction extends DataClass
       llmUnderstandingJson: serializer.fromJson<String?>(
         json['llmUnderstandingJson'],
       ),
+      cleanedOcrText: serializer.fromJson<String?>(json['cleanedOcrText']),
+      ocrCorrectionsJson: serializer.fromJson<String?>(
+        json['ocrCorrectionsJson'],
+      ),
     );
   }
   @override
@@ -1246,6 +1327,8 @@ class OutboxTransaction extends DataClass
       ),
       'ocrHeaderText': serializer.toJson<String?>(ocrHeaderText),
       'llmUnderstandingJson': serializer.toJson<String?>(llmUnderstandingJson),
+      'cleanedOcrText': serializer.toJson<String?>(cleanedOcrText),
+      'ocrCorrectionsJson': serializer.toJson<String?>(ocrCorrectionsJson),
     };
   }
 
@@ -1284,6 +1367,8 @@ class OutboxTransaction extends DataClass
     Value<String?> merchantCandidatesJson = const Value.absent(),
     Value<String?> ocrHeaderText = const Value.absent(),
     Value<String?> llmUnderstandingJson = const Value.absent(),
+    Value<String?> cleanedOcrText = const Value.absent(),
+    Value<String?> ocrCorrectionsJson = const Value.absent(),
   }) => OutboxTransaction(
     id: id ?? this.id,
     userId: userId ?? this.userId,
@@ -1349,6 +1434,12 @@ class OutboxTransaction extends DataClass
     llmUnderstandingJson: llmUnderstandingJson.present
         ? llmUnderstandingJson.value
         : this.llmUnderstandingJson,
+    cleanedOcrText: cleanedOcrText.present
+        ? cleanedOcrText.value
+        : this.cleanedOcrText,
+    ocrCorrectionsJson: ocrCorrectionsJson.present
+        ? ocrCorrectionsJson.value
+        : this.ocrCorrectionsJson,
   );
   OutboxTransaction copyWithCompanion(OutboxTransactionsCompanion data) {
     return OutboxTransaction(
@@ -1438,6 +1529,12 @@ class OutboxTransaction extends DataClass
       llmUnderstandingJson: data.llmUnderstandingJson.present
           ? data.llmUnderstandingJson.value
           : this.llmUnderstandingJson,
+      cleanedOcrText: data.cleanedOcrText.present
+          ? data.cleanedOcrText.value
+          : this.cleanedOcrText,
+      ocrCorrectionsJson: data.ocrCorrectionsJson.present
+          ? data.ocrCorrectionsJson.value
+          : this.ocrCorrectionsJson,
     );
   }
 
@@ -1477,7 +1574,9 @@ class OutboxTransaction extends DataClass
           ..write('retryCount: $retryCount, ')
           ..write('merchantCandidatesJson: $merchantCandidatesJson, ')
           ..write('ocrHeaderText: $ocrHeaderText, ')
-          ..write('llmUnderstandingJson: $llmUnderstandingJson')
+          ..write('llmUnderstandingJson: $llmUnderstandingJson, ')
+          ..write('cleanedOcrText: $cleanedOcrText, ')
+          ..write('ocrCorrectionsJson: $ocrCorrectionsJson')
           ..write(')'))
         .toString();
   }
@@ -1518,6 +1617,8 @@ class OutboxTransaction extends DataClass
     merchantCandidatesJson,
     ocrHeaderText,
     llmUnderstandingJson,
+    cleanedOcrText,
+    ocrCorrectionsJson,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1556,7 +1657,9 @@ class OutboxTransaction extends DataClass
           other.retryCount == this.retryCount &&
           other.merchantCandidatesJson == this.merchantCandidatesJson &&
           other.ocrHeaderText == this.ocrHeaderText &&
-          other.llmUnderstandingJson == this.llmUnderstandingJson);
+          other.llmUnderstandingJson == this.llmUnderstandingJson &&
+          other.cleanedOcrText == this.cleanedOcrText &&
+          other.ocrCorrectionsJson == this.ocrCorrectionsJson);
 }
 
 class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
@@ -1594,6 +1697,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
   final Value<String?> merchantCandidatesJson;
   final Value<String?> ocrHeaderText;
   final Value<String?> llmUnderstandingJson;
+  final Value<String?> cleanedOcrText;
+  final Value<String?> ocrCorrectionsJson;
   final Value<int> rowid;
   const OutboxTransactionsCompanion({
     this.id = const Value.absent(),
@@ -1630,6 +1735,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.merchantCandidatesJson = const Value.absent(),
     this.ocrHeaderText = const Value.absent(),
     this.llmUnderstandingJson = const Value.absent(),
+    this.cleanedOcrText = const Value.absent(),
+    this.ocrCorrectionsJson = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   OutboxTransactionsCompanion.insert({
@@ -1667,6 +1774,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.merchantCandidatesJson = const Value.absent(),
     this.ocrHeaderText = const Value.absent(),
     this.llmUnderstandingJson = const Value.absent(),
+    this.cleanedOcrText = const Value.absent(),
+    this.ocrCorrectionsJson = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        userId = Value(userId);
@@ -1705,6 +1814,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Expression<String>? merchantCandidatesJson,
     Expression<String>? ocrHeaderText,
     Expression<String>? llmUnderstandingJson,
+    Expression<String>? cleanedOcrText,
+    Expression<String>? ocrCorrectionsJson,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1749,6 +1860,9 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       if (ocrHeaderText != null) 'ocr_header_text': ocrHeaderText,
       if (llmUnderstandingJson != null)
         'llm_understanding_json': llmUnderstandingJson,
+      if (cleanedOcrText != null) 'cleaned_ocr_text': cleanedOcrText,
+      if (ocrCorrectionsJson != null)
+        'ocr_corrections_json': ocrCorrectionsJson,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1788,6 +1902,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Value<String?>? merchantCandidatesJson,
     Value<String?>? ocrHeaderText,
     Value<String?>? llmUnderstandingJson,
+    Value<String?>? cleanedOcrText,
+    Value<String?>? ocrCorrectionsJson,
     Value<int>? rowid,
   }) {
     return OutboxTransactionsCompanion(
@@ -1827,6 +1943,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           merchantCandidatesJson ?? this.merchantCandidatesJson,
       ocrHeaderText: ocrHeaderText ?? this.ocrHeaderText,
       llmUnderstandingJson: llmUnderstandingJson ?? this.llmUnderstandingJson,
+      cleanedOcrText: cleanedOcrText ?? this.cleanedOcrText,
+      ocrCorrectionsJson: ocrCorrectionsJson ?? this.ocrCorrectionsJson,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1946,6 +2064,12 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
         llmUnderstandingJson.value,
       );
     }
+    if (cleanedOcrText.present) {
+      map['cleaned_ocr_text'] = Variable<String>(cleanedOcrText.value);
+    }
+    if (ocrCorrectionsJson.present) {
+      map['ocr_corrections_json'] = Variable<String>(ocrCorrectionsJson.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1989,6 +2113,8 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           ..write('merchantCandidatesJson: $merchantCandidatesJson, ')
           ..write('ocrHeaderText: $ocrHeaderText, ')
           ..write('llmUnderstandingJson: $llmUnderstandingJson, ')
+          ..write('cleanedOcrText: $cleanedOcrText, ')
+          ..write('ocrCorrectionsJson: $ocrCorrectionsJson, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3896,6 +4022,8 @@ typedef $$OutboxTransactionsTableCreateCompanionBuilder =
       Value<String?> merchantCandidatesJson,
       Value<String?> ocrHeaderText,
       Value<String?> llmUnderstandingJson,
+      Value<String?> cleanedOcrText,
+      Value<String?> ocrCorrectionsJson,
       Value<int> rowid,
     });
 typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
@@ -3934,6 +4062,8 @@ typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
       Value<String?> merchantCandidatesJson,
       Value<String?> ocrHeaderText,
       Value<String?> llmUnderstandingJson,
+      Value<String?> cleanedOcrText,
+      Value<String?> ocrCorrectionsJson,
       Value<int> rowid,
     });
 
@@ -4176,6 +4306,16 @@ class $$OutboxTransactionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get cleanedOcrText => $composableBuilder(
+    column: $table.cleanedOcrText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ocrCorrectionsJson => $composableBuilder(
+    column: $table.ocrCorrectionsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> outboxArtifactsRefs(
     Expression<bool> Function($$OutboxArtifactsTableFilterComposer f) f,
   ) {
@@ -4405,6 +4545,16 @@ class $$OutboxTransactionsTableOrderingComposer
     column: $table.llmUnderstandingJson,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get cleanedOcrText => $composableBuilder(
+    column: $table.cleanedOcrText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ocrCorrectionsJson => $composableBuilder(
+    column: $table.ocrCorrectionsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$OutboxTransactionsTableAnnotationComposer
@@ -4570,6 +4720,16 @@ class $$OutboxTransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get cleanedOcrText => $composableBuilder(
+    column: $table.cleanedOcrText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ocrCorrectionsJson => $composableBuilder(
+    column: $table.ocrCorrectionsJson,
+    builder: (column) => column,
+  );
+
   Expression<T> outboxArtifactsRefs<T extends Object>(
     Expression<T> Function($$OutboxArtifactsTableAnnotationComposer a) f,
   ) {
@@ -4691,6 +4851,8 @@ class $$OutboxTransactionsTableTableManager
                 Value<String?> merchantCandidatesJson = const Value.absent(),
                 Value<String?> ocrHeaderText = const Value.absent(),
                 Value<String?> llmUnderstandingJson = const Value.absent(),
+                Value<String?> cleanedOcrText = const Value.absent(),
+                Value<String?> ocrCorrectionsJson = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion(
                 id: id,
@@ -4727,6 +4889,8 @@ class $$OutboxTransactionsTableTableManager
                 merchantCandidatesJson: merchantCandidatesJson,
                 ocrHeaderText: ocrHeaderText,
                 llmUnderstandingJson: llmUnderstandingJson,
+                cleanedOcrText: cleanedOcrText,
+                ocrCorrectionsJson: ocrCorrectionsJson,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4765,6 +4929,8 @@ class $$OutboxTransactionsTableTableManager
                 Value<String?> merchantCandidatesJson = const Value.absent(),
                 Value<String?> ocrHeaderText = const Value.absent(),
                 Value<String?> llmUnderstandingJson = const Value.absent(),
+                Value<String?> cleanedOcrText = const Value.absent(),
+                Value<String?> ocrCorrectionsJson = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion.insert(
                 id: id,
@@ -4801,6 +4967,8 @@ class $$OutboxTransactionsTableTableManager
                 merchantCandidatesJson: merchantCandidatesJson,
                 ocrHeaderText: ocrHeaderText,
                 llmUnderstandingJson: llmUnderstandingJson,
+                cleanedOcrText: cleanedOcrText,
+                ocrCorrectionsJson: ocrCorrectionsJson,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

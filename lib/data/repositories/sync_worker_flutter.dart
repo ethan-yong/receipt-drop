@@ -118,6 +118,14 @@ class SyncWorker {
         'llm_understanding': row.llmUnderstandingJson == null
             ? null
             : jsonDecode(row.llmUnderstandingJson!),
+        // LLM OCR-cleanup step's corrected transcript (opt-in server-side
+        // via LLM_CLEANUP_ENABLED) — additive alongside, never replacing,
+        // raw_ocr_text above. Usually null (feature defaults off / no
+        // correction accepted).
+        'cleaned_ocr_text': row.cleanedOcrText,
+        'ocr_corrections': row.ocrCorrectionsJson == null
+            ? null
+            : jsonDecode(row.ocrCorrectionsJson!),
       });
 
       await Supabase.instance.client.from('receipt_artifacts').upsert({

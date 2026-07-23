@@ -42,6 +42,19 @@ _SHARPEN_SIGMA = float(os.environ.get("PREPROCESS_SHARPEN_SIGMA", "1.0"))
 _ADAPTIVE_WHITE_RATIO_MIN = 0.02
 _ADAPTIVE_WHITE_RATIO_MAX = 0.98
 
+# Illumination normalization — tune against real fixtures via
+# scripts/process_receipts.ps1 before changing.
+_DEFAULT_ILLUMINATION_UNEVENNESS_THRESHOLD = 25.0
+_DEFAULT_ILLUMINATION_KERNEL_SIGMA = 40.0
+_DEFAULT_ILLUMINATION_TARGET_BRIGHTNESS = 180.0
+_DEFAULT_ILLUMINATION_MIN_MEAN_BRIGHTNESS = 40.0
+_ILLUMINATION_GRID_ROWS = 4
+_ILLUMINATION_GRID_COLS = 4
+# Guard: revert if corrected image has this many more clipped (0/255) pixels.
+_ILLUMINATION_CLIP_MARGIN = 0.05
+# Guard: revert if Otsu between-class variance drops by more than this fraction.
+_ILLUMINATION_BIMODALITY_DROP_RATIO = 0.5
+
 _DEFAULT_DEBUG_DIR = Path(__file__).resolve().parent.parent / ".debug"
 
 
@@ -141,6 +154,196 @@ def upscale_for_ocr(image: np.ndarray, min_width: int = _MIN_OCR_WIDTH) -> np.nd
 def _is_low_contrast(gray: np.ndarray) -> bool:
     """True when the image's grayscale std-dev suggests CLAHE may help."""
     return float(gray.std()) < _CLAHE_CONTRAST_STD_THRESHOLD
+
+
+def _illumination_threshold() -> float:
+    return float(
+        os.environ.get(
+            "PREPROCESS_ILLUMINATION_THRESHOLD",
+            str(_DEFAULT_ILLUMINATION_UNEVENNESS_THRESHOLD),
+        )
+    )
+
+
+def _illumination_kernel_sigma() -> float:
+    return float(
+        os.environ.get(
+            "PREPROCESS_ILLUMINATION_KERNEL_SIGMA",
+            str(_DEFAULT_ILLUMINATION_KERNEL_SIGMA),
+        )
+    )
+
+
+def _illumination_target_brightness() -> float:
+    return float(
+        os.environ.get(
+            "PREPROCESS_ILLUMINATION_TARGET",
+            str(_DEFAULT_ILLUMINATION_TARGET_BRIGHTNESS),
+        )
+    )
+
+
+def _illumination_min_mean_brightness() -> float:
+    return float(
+        os.environ.get(
+            "PREPROCESS_ILLUMINATION_MIN_MEAN",
+            str(_DEFAULT_ILLUMINATION_MIN_MEAN_BRIGHTNESS),
+        )
+    )
+
+
+def illumination_unevenness_score(
+    gray: np.ndarray,
+    rows: int = _ILLUMINATION_GRID_ROWS,
+    cols: int = _ILLUMINATION_GRID_COLS,
+) -> float:
+    """Max-min spread of coarse grid block means — spatial lighting unevenness."""
+    if gray.ndim == 3:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+    height, width = gray.shape[:2]
+    if height < rows or width < cols:
+        return 0.0
+    block_means: list[float] = []
+    for row in range(rows):
+        y0 = row * height // rows
+        y1 = (row + 1) * height // rows
+        for col in range(cols):
+            x0 = col * width // cols
+            x1 = (col + 1) * width // cols
+            block = gray[y0:y1, x0:x1]
+            if block.size > 0:
+                block_means.append(float(block.mean()))
+    if len(block_means) < 2:
+        return 0.0
+    return max(block_means) - min(block_means)
+
+
+def is_unevenly_lit(gray: np.ndarray) -> bool:
+    """True when grid unevenness exceeds threshold and image is not globally dark."""
+    if gray.ndim == 3:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+    mean_brightness = float(gray.mean())
+    if mean_brightness < _illumination_min_mean_brightness():
+        return False
+    return illumination_unevenness_score(gray) > _illumination_threshold()
+
+
+def _otsu_between_class_variance(gray: np.ndarray) -> float:
+    hist = cv2.calcHist([gray], [0], None, [256], [0, 256]).flatten()
+    total = float(gray.size)
+    sum_total = float(np.dot(np.arange(256), hist))
+    sum_b = 0.0
+    w_b = 0.0
+    max_var = 0.0
+    for threshold in range(256):
+        w_b += hist[threshold]
+        if w_b == 0:
+            continue
+        w_f = total - w_b
+        if w_f == 0:
+            break
+        sum_b += threshold * hist[threshold]
+        mean_b = sum_b / w_b
+        mean_f = (sum_total - sum_b) / w_f
+        var_between = w_b * w_f * (mean_b - mean_f) ** 2
+        if var_between > max_var:
+            max_var = var_between
+    return float(max_var)
+
+
+def _clipped_pixel_ratio(gray: np.ndarray) -> float:
+    return float(np.mean((gray == 0) | (gray == 255)))
+
+
+def _illumination_clipping_guard_failed(
+    original: np.ndarray, corrected: np.ndarray
+) -> bool:
+    """True when correction materially increased saturation at 0/255."""
+    before = _clipped_pixel_ratio(original)
+    after = _clipped_pixel_ratio(corrected)
+    return after > before + _ILLUMINATION_CLIP_MARGIN
+
+
+def _illumination_bimodality_guard_failed(
+    original: np.ndarray, corrected: np.ndarray
+) -> bool:
+    """True when correction washed out text/background histogram separation."""
+    before = _otsu_between_class_variance(original)
+    after = _otsu_between_class_variance(corrected)
+    if before <= 0:
+        return False
+    return after < before * (1.0 - _ILLUMINATION_BIMODALITY_DROP_RATIO)
+
+
+def correct_illumination(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Flat-field shading correction via large-kernel background division.
+
+    Returns (corrected grayscale, background estimate as uint8).
+    """
+    if gray.ndim == 3:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+    sigma = _illumination_kernel_sigma()
+    background = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), sigma)
+    background = np.maximum(background, 1.0)
+    target = _illumination_target_brightness()
+    corrected = (gray.astype(np.float32) / background) * target
+    corrected = np.clip(corrected, 0, 255).astype(np.uint8)
+    background_u8 = np.clip(background, 0, 255).astype(np.uint8)
+    return corrected, background_u8
+
+
+def normalize_illumination(gray: np.ndarray) -> np.ndarray:
+    """Detect uneven lighting and flatten gradient when guards pass.
+
+    Heuristic-gated on by default (PREPROCESS_ILLUMINATION=0 to disable).
+    Never raises — failures skip the stage and return the input unchanged.
+    """
+    if gray.ndim == 3:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+    original = gray
+
+    if os.environ.get("PREPROCESS_ILLUMINATION", "1") == "0":
+        logger.info("illumination: disabled via PREPROCESS_ILLUMINATION=0")
+        return original
+
+    try:
+        score = illumination_unevenness_score(original)
+        if not is_unevenly_lit(original):
+            logger.info(
+                "illumination: even lighting (score=%.1f <= %.1f) — skipping",
+                score,
+                _illumination_threshold(),
+            )
+            return original
+
+        corrected, background = correct_illumination(original)
+        _dump_debug_image("illumination_background", background)
+        _dump_debug_image("illumination_corrected", corrected)
+
+        if _illumination_clipping_guard_failed(original, corrected):
+            logger.info(
+                "illumination: clipping guard failed — reverting to pre-correction"
+            )
+            _dump_debug_image("illumination_reverted", original)
+            return original
+
+        if _illumination_bimodality_guard_failed(original, corrected):
+            logger.info(
+                "illumination: bimodality guard failed — reverting to pre-correction"
+            )
+            _dump_debug_image("illumination_reverted", corrected)
+            return original
+
+        logger.info(
+            "illumination: applied correction (score=%.1f -> %.1f)",
+            score,
+            illumination_unevenness_score(corrected),
+        )
+        _dump_debug_image("illumination", corrected)
+        return corrected
+    except Exception:
+        logger.exception("illumination: stage failed — using pre-stage image")
+        return original
 
 
 def enhance_contrast(image: np.ndarray) -> np.ndarray:
@@ -307,14 +510,20 @@ def _dump_debug_image(step: str, image: np.ndarray) -> None:
 
 
 def preprocess(image_bytes: bytes) -> np.ndarray:
-    """Decode, optional perspective, deskew, upscale, grayscale, CLAHE, sharpen.
+    """Decode, optional perspective, deskew, upscale, grayscale, illumination,
+    CLAHE, sharpen.
 
-    Returns a 2D ndarray ready for Tesseract. CLAHE and sharpen are
+    Returns a 2D ndarray ready for Tesseract. CLAHE and illumination are
     heuristic/opt-in gated; pre-binarization is not applied here (Tesseract
     thresholds internally; retry binarization lives in run_ocr_detailed).
 
     Opt-in flags (env vars):
       PREPROCESS_PERSPECTIVE=1        — homography when a confident quad is found
+      PREPROCESS_ILLUMINATION=0       — disable illumination correction (default on)
+      PREPROCESS_ILLUMINATION_THRESHOLD — grid unevenness gate (default 25)
+      PREPROCESS_ILLUMINATION_KERNEL_SIGMA — background blur sigma (default 40)
+      PREPROCESS_ILLUMINATION_TARGET  — post-correction target brightness (180)
+      PREPROCESS_ILLUMINATION_MIN_MEAN — skip globally dark images (default 40)
       PREPROCESS_CLAHE=0              — disable contrast-gated CLAHE (default on)
       PREPROCESS_CLAHE_CONTRAST_THRESHOLD — std-dev gate for CLAHE (default 45)
       PREPROCESS_SHARPEN=1            — unsharp mask after grayscale (default off)
@@ -347,6 +556,8 @@ def preprocess(image_bytes: bytes) -> np.ndarray:
         cv2.cvtColor(upscaled, cv2.COLOR_BGR2GRAY) if upscaled.ndim == 3 else upscaled
     )
     _dump_debug_image("grayscale", result)
+
+    result = normalize_illumination(result)
 
     clahe_enabled = os.environ.get("PREPROCESS_CLAHE", "1") != "0"
     if clahe_enabled and _is_low_contrast(result):

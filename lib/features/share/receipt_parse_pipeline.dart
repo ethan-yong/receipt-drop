@@ -188,11 +188,38 @@ ReceiptParseResult parseReceiptOcrText({
   ReceiptUnderstanding? understanding,
   String? understandingError,
 }) {
+  // Prefer the LLM OCR-cleanup step's corrected transcript as the heuristic
+  // extractors' input whenever it's present (opt-in server-side via
+  // LLM_CLEANUP_ENABLED — usually absent). This is purely a better *input*
+  // to the same heuristics below; it never changes precedence between the
+  // heuristic pass and the LLM's own structured fields, and — critically —
+  // `ReceiptParseResult.ocrText` below stays the true OCR-original text:
+  // that field is persisted as `raw_ocr_text` and must never be replaced
+  // with a corrected rewrite (see docs/system/decisions.md).
+  final cleanedOcrText = understanding?.cleanedOcrText;
+  final heuristicText =
+      (cleanedOcrText != null && cleanedOcrText.isNotEmpty) ? cleanedOcrText : ocrText;
+
+  // extractMerchantCandidates() additionally needs each line's height_ratio,
+  // which the cleaned text (a flat string) doesn't carry — pair cleaned
+  // line text with the *original* per-line height_ratio by position instead
+  // (cleaned_lines is always the same length/order as the lines actually
+  // sent for cleanup — see ocr_api/receipt_understanding.py). Falls back to
+  // the original ocrLines untouched if the lengths don't line up.
+  final cleanedLines = understanding?.cleanedLines;
+  final heuristicOcrLines =
+      (cleanedLines != null && ocrLines != null && cleanedLines.length == ocrLines.length)
+          ? [
+              for (var i = 0; i < cleanedLines.length; i++)
+                OcrLine(text: cleanedLines[i], heightRatio: ocrLines[i].heightRatio),
+            ]
+          : ocrLines;
+
   // Fast path: known bank/wallet providers have templated, labeled-field output
   // that regex can read reliably. Heuristic amount stays authoritative here,
   // but pass understanding through so receipt_type/payment_method/etc. are
   // available to downstream consumers.
-  final bankParse = tryParseBankReceipt(ocrText);
+  final bankParse = tryParseBankReceipt(heuristicText);
   if (bankParse != null) {
     return ReceiptParseResult(
       filePath: filePath,
@@ -222,7 +249,7 @@ ReceiptParseResult parseReceiptOcrText({
   // The heuristic pass always runs first: its line-item subtotal feeds the
   // amount-parsing cross-check below regardless of the LLM's own extraction,
   // and it's the fallback whenever the LLM found nothing or failed outright.
-  final extracted = extractReceiptLineItems(ocrText);
+  final extracted = extractReceiptLineItems(heuristicText);
   final largestItemPrice = extracted.items.isEmpty
       ? null
       : extracted.items
@@ -230,7 +257,7 @@ ReceiptParseResult parseReceiptOcrText({
           .reduce((a, b) => a > b ? a : b);
 
   final parseResult = parseRmAmountFromOcr(
-    ocrText,
+    heuristicText,
     itemsSubtotalMyr: extracted.itemsSubtotalMyr,
     largestItemPriceMyr: largestItemPrice,
     lineItemCount: extracted.items.length,
@@ -253,8 +280,11 @@ ReceiptParseResult parseReceiptOcrText({
       ? heuristicLineItems
       : reconcileWithTotal(llmLineItems, amount);
 
-  final heuristicMerchantCandidates =
-      extractMerchantCandidates(ocrText, categories, ocrLines: ocrLines);
+  final heuristicMerchantCandidates = extractMerchantCandidates(
+    heuristicText,
+    categories,
+    ocrLines: heuristicOcrLines,
+  );
   final llmMerchantName = understanding?.merchantName;
   final merchantCandidates = llmMerchantName == null
       ? heuristicMerchantCandidates
@@ -268,7 +298,7 @@ ReceiptParseResult parseReceiptOcrText({
         ];
   final merchantRaw =
       merchantCandidates.isEmpty ? null : merchantCandidates.first.text;
-  final headerText = extractOcrHeaderText(ocrText);
+  final headerText = extractOcrHeaderText(heuristicText);
 
   final llmCategory = understanding?.vendorCategory;
   final String categoryGuess;
@@ -279,7 +309,7 @@ ReceiptParseResult parseReceiptOcrText({
     categoryConfidence = understanding!.confidence.category;
   } else {
     final (:category, :confidence) =
-        categories.guessWithConfidence(merchantRaw ?? '', ocrText);
+        categories.guessWithConfidence(merchantRaw ?? '', heuristicText);
     categoryGuess = category;
     categoryConfidence = confidence;
   }

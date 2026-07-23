@@ -6,13 +6,19 @@ from ocr_api.preprocessing import (
     _ADAPTIVE_WHITE_RATIO_MAX,
     _ADAPTIVE_WHITE_RATIO_MIN,
     InvalidImageError,
+    _illumination_bimodality_guard_failed,
+    _illumination_clipping_guard_failed,
     _is_low_contrast,
     _skew_angle,
     binarize,
+    correct_illumination,
     decode_image,
     deskew,
     detect_document_corners,
     enhance_contrast,
+    illumination_unevenness_score,
+    is_unevenly_lit,
+    normalize_illumination,
     perspective_correct,
     preprocess,
     shadow_binarize,
@@ -154,6 +160,7 @@ def test_preprocess_clean_image_unchanged_by_default_flags(
     monkeypatch.delenv("PREPROCESS_PERSPECTIVE", raising=False)
     monkeypatch.delenv("PREPROCESS_SHARPEN", raising=False)
     monkeypatch.setenv("PREPROCESS_CLAHE", "0")
+    monkeypatch.setenv("PREPROCESS_ILLUMINATION", "0")
 
     processed = preprocess(clean_receipt_image_bytes)
     baseline = preprocess(clean_receipt_image_bytes)
@@ -169,6 +176,7 @@ def test_preprocess_low_light_applies_clahe_by_default(
     monkeypatch.delenv("PREPROCESS_PERSPECTIVE", raising=False)
     monkeypatch.delenv("PREPROCESS_SHARPEN", raising=False)
     monkeypatch.setenv("PREPROCESS_CLAHE", "1")
+    monkeypatch.setenv("PREPROCESS_ILLUMINATION", "0")
 
     without = preprocess(low_light_receipt_image_bytes)
     monkeypatch.setenv("PREPROCESS_CLAHE", "0")
@@ -209,6 +217,7 @@ def test_preprocess_debug_writes_stage_files(
     monkeypatch.setenv("PREPROCESS_DEBUG", "1")
     monkeypatch.setenv("PREPROCESS_DEBUG_DIR", str(debug_dir))
     monkeypatch.setenv("PREPROCESS_CLAHE", "0")
+    monkeypatch.setenv("PREPROCESS_ILLUMINATION", "0")
 
     preprocess(clean_receipt_image_bytes)
 
@@ -227,6 +236,7 @@ def test_preprocess_debug_off_writes_nothing(
     monkeypatch.delenv("PREPROCESS_DEBUG", raising=False)
     monkeypatch.setenv("PREPROCESS_DEBUG_DIR", str(debug_dir))
     monkeypatch.setenv("PREPROCESS_CLAHE", "0")
+    monkeypatch.setenv("PREPROCESS_ILLUMINATION", "0")
 
     preprocess(clean_receipt_image_bytes)
 
@@ -239,8 +249,121 @@ def test_preprocess_low_resolution_still_returns_grayscale(
 ) -> None:
     monkeypatch.setenv("MIN_OCR_WIDTH", "800")
     monkeypatch.setenv("PREPROCESS_CLAHE", "0")
+    monkeypatch.setenv("PREPROCESS_ILLUMINATION", "0")
 
     processed = preprocess(low_resolution_receipt_image_bytes)
 
     assert processed.ndim == 2
     assert processed.shape[1] >= 800
+
+
+def test_illumination_unevenness_high_on_shadow_fixture(
+    shadow_gradient_receipt_image_bytes: bytes,
+) -> None:
+    gray = decode_image(shadow_gradient_receipt_image_bytes)[:, :, 0]
+    assert illumination_unevenness_score(gray) > 25.0
+
+
+def test_illumination_unevenness_low_on_clean_fixture(
+    clean_receipt_image_bytes: bytes,
+) -> None:
+    gray = decode_image(clean_receipt_image_bytes)[:, :, 0]
+    assert illumination_unevenness_score(gray) < 25.0
+
+
+def test_is_unevenly_lit_true_on_shadow_fixture(
+    shadow_gradient_receipt_image_bytes: bytes,
+) -> None:
+    gray = decode_image(shadow_gradient_receipt_image_bytes)[:, :, 0]
+    assert is_unevenly_lit(gray)
+
+
+def test_is_unevenly_lit_false_on_clean_fixture(
+    clean_receipt_image_bytes: bytes,
+) -> None:
+    gray = decode_image(clean_receipt_image_bytes)[:, :, 0]
+    assert not is_unevenly_lit(gray)
+
+
+def test_correct_illumination_reduces_unevenness(
+    shadow_gradient_receipt_image_bytes: bytes,
+) -> None:
+    gray = decode_image(shadow_gradient_receipt_image_bytes)[:, :, 0]
+    before = illumination_unevenness_score(gray)
+    corrected, _background = correct_illumination(gray)
+    after = illumination_unevenness_score(corrected)
+    assert after < before
+
+
+def test_clipping_guard_detects_over_saturation() -> None:
+    original = np.full((120, 120), 200, dtype=np.uint8)
+    original[40:80, 40:80] = 30
+    over_saturated = np.full((120, 120), 255, dtype=np.uint8)
+    assert _illumination_clipping_guard_failed(original, over_saturated)
+
+
+def test_bimodality_guard_detects_washed_separation() -> None:
+    original = np.zeros((120, 120), dtype=np.uint8)
+    original[:, :60] = 30
+    original[:, 60:] = 220
+    washed = np.full((120, 120), 180, dtype=np.uint8)
+    assert _illumination_bimodality_guard_failed(original, washed)
+
+
+def test_normalize_illumination_skips_clean_image(
+    clean_receipt_image_bytes: bytes,
+) -> None:
+    gray = decode_image(clean_receipt_image_bytes)[:, :, 0]
+    result = normalize_illumination(gray)
+    assert np.array_equal(result, gray)
+
+
+def test_normalize_illumination_flattens_shadow_fixture(
+    shadow_gradient_receipt_image_bytes: bytes,
+) -> None:
+    gray = decode_image(shadow_gradient_receipt_image_bytes)[:, :, 0]
+    before = illumination_unevenness_score(gray)
+    result = normalize_illumination(gray)
+    assert illumination_unevenness_score(result) < before
+
+
+def test_normalize_illumination_disabled_via_env(
+    shadow_gradient_receipt_image_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gray = decode_image(shadow_gradient_receipt_image_bytes)[:, :, 0]
+    monkeypatch.setenv("PREPROCESS_ILLUMINATION", "0")
+    result = normalize_illumination(gray)
+    assert np.array_equal(result, gray)
+
+
+def test_preprocess_clean_image_unchanged_with_illumination_default_on(
+    clean_receipt_image_bytes: bytes,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PREPROCESS_PERSPECTIVE", raising=False)
+    monkeypatch.delenv("PREPROCESS_SHARPEN", raising=False)
+    monkeypatch.setenv("PREPROCESS_CLAHE", "0")
+
+    with_illumination = preprocess(clean_receipt_image_bytes)
+    monkeypatch.setenv("PREPROCESS_ILLUMINATION", "0")
+    without_illumination = preprocess(clean_receipt_image_bytes)
+
+    assert np.array_equal(with_illumination, without_illumination)
+
+
+def test_preprocess_debug_writes_illumination_stages(
+    shadow_gradient_receipt_image_bytes: bytes,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    debug_dir = tmp_path / "debug-illumination"
+    monkeypatch.setenv("PREPROCESS_DEBUG", "1")
+    monkeypatch.setenv("PREPROCESS_DEBUG_DIR", str(debug_dir))
+    monkeypatch.setenv("PREPROCESS_CLAHE", "0")
+    monkeypatch.setenv("MIN_OCR_WIDTH", "400")
+
+    preprocess(shadow_gradient_receipt_image_bytes)
+
+    files = list(debug_dir.glob("*.png"))
+    assert any("illumination" in f.name for f in files)

@@ -1,5 +1,6 @@
 import io
 
+import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
@@ -129,4 +130,38 @@ def angled_receipt_on_background_bytes(
 ) -> bytes:
     buf = io.BytesIO()
     angled_receipt_on_background.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@pytest.fixture
+def shadow_gradient_receipt_image(clean_receipt_image: Image.Image) -> Image.Image:
+    """Receipt with a horizontal brightness gradient simulating hand shadow."""
+    arr = np.array(clean_receipt_image.convert("L"), dtype=np.float32)
+    height, width = arr.shape
+    gradient = np.linspace(0.45, 1.0, width, dtype=np.float32)
+    shaded = np.clip(arr * gradient[np.newaxis, :], 0, 255).astype(np.uint8)
+    return Image.fromarray(shaded).convert("RGB")
+
+
+@pytest.fixture
+def shadow_gradient_receipt_image_bytes(
+    shadow_gradient_receipt_image: Image.Image,
+) -> bytes:
+    buf = io.BytesIO()
+    shadow_gradient_receipt_image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+@pytest.fixture
+def faded_receipt_image() -> Image.Image:
+    """Low-contrast receipt — bimodality guard rejects aggressive correction."""
+    base = _render_receipt_text().convert("L")
+    faded = Image.blend(base, Image.new("L", base.size, color=200), alpha=0.85)
+    return faded.convert("RGB")
+
+
+@pytest.fixture
+def faded_receipt_image_bytes(faded_receipt_image: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    faded_receipt_image.save(buf, format="PNG")
     return buf.getvalue()

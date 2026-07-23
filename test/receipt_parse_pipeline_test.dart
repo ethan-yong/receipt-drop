@@ -473,4 +473,141 @@ TOTAL : RM 18.70
       expect(tehO.quantity, 3);
     });
   });
+
+  group('OCR cleanup: prefers cleaned text/lines when present', () {
+    // Deliberately garbled beyond what the amount regex (\d+\.\d{2}) can
+    // match at all — proves the heuristic pass actually switched its input,
+    // not just tolerated noise it already handled.
+    const garbledOcrText = '''
+RESTQRAN ANWAR MAJU
+T0TAL RM 4Z.5O
+''';
+    const cleanedOcrText = '''
+RESTORAN ANWAR MAJU
+TOTAL RM 42.50
+''';
+
+    test('uses cleanedOcrText for amount extraction when raw text is'
+        ' unparseable', () {
+      final understanding = ReceiptUnderstanding(
+        merchantName: null,
+        merchantSearchQueries: const [],
+        addressText: null,
+        locationClues: const [],
+        vendorCategory: null,
+        googlePlaceTypes: const [],
+        lineItems: const [],
+        confidence: _fixtureConfidence,
+        cleanedLines: cleanedOcrText.trim().split('\n'),
+        cleanedOcrText: cleanedOcrText,
+      );
+
+      final withoutCleanup = parseReceiptOcrText(
+        filePath: '/tmp/garbled.png',
+        ocrText: garbledOcrText,
+        categories: categories,
+      );
+      expect(withoutCleanup.needsAmount, isTrue);
+
+      final withCleanup = parseReceiptOcrText(
+        filePath: '/tmp/garbled.png',
+        ocrText: garbledOcrText,
+        categories: categories,
+        understanding: understanding,
+      );
+      expect(withCleanup.amountMyr, 42.50);
+      expect(withCleanup.needsAmount, isFalse);
+    });
+
+    test('never replaces the persisted raw ocrText with cleaned text', () {
+      final understanding = ReceiptUnderstanding(
+        merchantName: null,
+        merchantSearchQueries: const [],
+        addressText: null,
+        locationClues: const [],
+        vendorCategory: null,
+        googlePlaceTypes: const [],
+        lineItems: const [],
+        confidence: _fixtureConfidence,
+        cleanedLines: cleanedOcrText.trim().split('\n'),
+        cleanedOcrText: cleanedOcrText,
+      );
+
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/garbled.png',
+        ocrText: garbledOcrText,
+        categories: categories,
+        understanding: understanding,
+      );
+
+      // raw_ocr_text immutability: ReceiptParseResult.ocrText is what gets
+      // persisted as transactions.raw_ocr_text — it must stay the true OCR
+      // output even though the heuristics above ran against cleaned text.
+      expect(result.ocrText, garbledOcrText);
+    });
+
+    test('pairs cleanedLines with original height_ratio for merchant'
+        ' extraction', () {
+      const ocrLines = [
+        OcrLine(text: 'RESTQRAN ANWAR MAJU', heightRatio: 0.12),
+        OcrLine(text: 'T0TAL RM 4Z.5O', heightRatio: 0.04),
+      ];
+      final understanding = ReceiptUnderstanding(
+        merchantName: null,
+        merchantSearchQueries: const [],
+        addressText: null,
+        locationClues: const [],
+        vendorCategory: null,
+        googlePlaceTypes: const [],
+        lineItems: const [],
+        confidence: _fixtureConfidence,
+        cleanedLines: const ['RESTORAN ANWAR MAJU', 'TOTAL RM 42.50'],
+        cleanedOcrText: cleanedOcrText,
+      );
+
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/garbled.png',
+        ocrText: garbledOcrText,
+        categories: categories,
+        ocrLines: ocrLines,
+        understanding: understanding,
+      );
+
+      // The large-font header line ("RESTORAN...") wins the merchant slot,
+      // and it's the *cleaned* spelling, not the garbled OCR original.
+      expect(result.merchantRaw, contains('RESTORAN'));
+    });
+
+    test('falls back to raw ocrLines when cleanedLines length mismatches',
+        () {
+      const ocrLines = [
+        OcrLine(text: 'RESTQRAN ANWAR MAJU', heightRatio: 0.12),
+        OcrLine(text: 'T0TAL RM 4Z.5O', heightRatio: 0.04),
+      ];
+      final understanding = ReceiptUnderstanding(
+        merchantName: null,
+        merchantSearchQueries: const [],
+        addressText: null,
+        locationClues: const [],
+        vendorCategory: null,
+        googlePlaceTypes: const [],
+        lineItems: const [],
+        confidence: _fixtureConfidence,
+        // Mismatched length vs ocrLines — must not throw, must fall back.
+        cleanedLines: const ['RESTORAN ANWAR MAJU'],
+        cleanedOcrText: cleanedOcrText,
+      );
+
+      expect(
+        () => parseReceiptOcrText(
+          filePath: '/tmp/garbled.png',
+          ocrText: garbledOcrText,
+          categories: categories,
+          ocrLines: ocrLines,
+          understanding: understanding,
+        ),
+        returnsNormally,
+      );
+    });
+  });
 }

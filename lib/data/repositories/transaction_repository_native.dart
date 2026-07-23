@@ -101,6 +101,19 @@ class TransactionRepository {
                   ? null
                   : jsonEncode(request.understanding!.toJson()),
             ),
+            // Own columns (not just nested inside llmUnderstandingJson above)
+            // so cleanup output stays independently queryable — mirrors
+            // rawOcrText's own-column precedent alongside the LLM blob.
+            cleanedOcrText: Value(request.understanding?.cleanedOcrText),
+            ocrCorrectionsJson: Value(
+              (request.understanding?.corrections.isEmpty ?? true)
+                  ? null
+                  : jsonEncode(
+                      request.understanding!.corrections
+                          .map((c) => c.toJson())
+                          .toList(),
+                    ),
+            ),
             placeName: Value(
               request.pickedPlaceLocked ? request.pickedPlaceName : null,
             ),

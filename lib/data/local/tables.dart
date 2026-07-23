@@ -59,8 +59,9 @@ class OutboxTransactions extends Table {
 
   RealColumn get ocrConfidence => real().nullable()();
 
-  /// Raw OCR text, kept only when the parse failed or was low-confidence —
-  /// the evidence needed to fix parser rules later.
+  /// Raw OCR text — always populated (client caps it ~8000 chars) since the
+  /// LLM receipt-understanding step, not only for failed/low-confidence
+  /// parses; still doubles as labeled data for fixing parser rules later.
   TextColumn get rawOcrText => text().nullable()();
 
   /// OCR engine's scan-quality confidence (mean word confidence, 0..1).
@@ -98,6 +99,18 @@ class OutboxTransactions extends Table {
   /// capture time and synced to `transactions.llm_understanding` (jsonb) so
   /// `enrich-transaction` can skip calling the LLM itself.
   TextColumn get llmUnderstandingJson => text().nullable()();
+
+  /// LLM OCR-cleanup step's corrected transcript (opt-in server-side via
+  /// `LLM_CLEANUP_ENABLED`), synced to `transactions.cleaned_ocr_text` —
+  /// additive alongside (never replacing) [rawOcrText]. Null when cleanup
+  /// wasn't attempted or produced nothing the server's per-line
+  /// edit-distance guard accepted.
+  TextColumn get cleanedOcrText => text().nullable()();
+
+  /// Per-line corrections the cleanup guard accepted (JSON-encoded list of
+  /// `{line_index, original, corrected}`), synced to
+  /// `transactions.ocr_corrections` (jsonb).
+  TextColumn get ocrCorrectionsJson => text().nullable()();
 
   @override
   Set<Column<Object>>? get primaryKey => {id};

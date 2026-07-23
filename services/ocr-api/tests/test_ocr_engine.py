@@ -255,3 +255,46 @@ def test_run_ocr_detailed_empty_returns_no_lines(
 
     assert lines == []
     assert confidence == 0.0
+
+
+def test_run_ocr_detailed_computes_per_line_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A confident header line (90/95) and a much less confident body line
+    # (20/30) — each line's own calibrated confidence must diverge from the
+    # other and from the overall request mean, since this is exactly the
+    # signal the LLM cleanup prompt uses to focus correction effort.
+    data = _fake_data(
+        [
+            ("HEADER", 90, (1, 1, 1)),
+            ("TEXT", 95, (1, 1, 1)),
+            ("blah", 20, (1, 1, 2)),
+            ("blur", 30, (1, 1, 2)),
+        ]
+    )
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
+
+    lines, mean_confidence = ocr_engine.run_ocr_detailed(
+        np.zeros((10, 10), dtype=np.uint8)
+    )
+
+    assert len(lines) == 2
+    header, body = lines
+    assert header.confidence == pytest.approx(
+        ocr_engine._calibrate_confidence((90 + 95) / 2 / 100.0)
+    )
+    assert body.confidence == pytest.approx(
+        ocr_engine._calibrate_confidence((20 + 30) / 2 / 100.0)
+    )
+    assert header.confidence > body.confidence
+    # Per-line confidences bracket the overall calibrated mean.
+    assert body.confidence < mean_confidence < header.confidence
+
+
+def test_ocr_line_result_confidence_defaults_to_fully_confident() -> None:
+    # Call sites that don't care about confidence (most existing /ocr route
+    # tests) shouldn't need to specify it — default is "assume no correction
+    # needed" (1.0), not "assume worst" (0.0), since an unspecified value
+    # means "irrelevant to this test," not "known low-quality."
+    line = ocr_engine.OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)
+    assert line.confidence == 1.0

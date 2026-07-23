@@ -25,6 +25,13 @@ class OcrLineResult:
     # total height. Relative-to-this-receipt, not an absolute pixel
     # threshold, so it's comparable regardless of a given scan's resolution.
     height_ratio: float
+    # This line's own calibrated confidence (same 0..1 sigmoid calibration as
+    # the request-level mean) — lets the LLM cleanup prompt (see
+    # receipt_understanding.py) leave already-confident lines untouched and
+    # concentrate correction effort on low-confidence ones. Internal only:
+    # not surfaced on the client-facing OcrLine in models.py, since nothing
+    # downstream of the LLM call needs it.
+    confidence: float = 1.0
 
 
 # Common OCR letter/digit confusions in thermal-receipt fonts.
@@ -117,6 +124,7 @@ def _run_tesseract(
     # each line's visual prominence (relative to the image) can be derived.
     lines: dict[tuple[int, int, int], list[str]] = {}
     heights: dict[tuple[int, int, int], list[int]] = {}
+    line_confidences: dict[tuple[int, int, int], list[float]] = {}
     confidences: list[float] = []
     for i, word in enumerate(data["text"]):
         if not word.strip():
@@ -129,6 +137,7 @@ def _run_tesseract(
         conf = float(data["conf"][i])
         if conf > 0:
             confidences.append(conf)
+            line_confidences.setdefault(key, []).append(conf)
 
     if not lines:
         logger.info(
@@ -144,6 +153,17 @@ def _run_tesseract(
             text=_normalize_ocr_amounts(" ".join(words)),
             height_ratio=(
                 statistics.median(heights[key]) / image_height if image_height else 0.0
+            ),
+            # Same calibration as the request-level mean, applied per line —
+            # a line with no positive-confidence words (rare; structural rows
+            # are already excluded above) falls back to 0.0, the same
+            # "unknown/low" signal a wholly unreadable line should carry.
+            confidence=(
+                _calibrate_confidence(
+                    sum(line_confidences[key]) / len(line_confidences[key]) / 100.0
+                )
+                if line_confidences.get(key)
+                else 0.0
             ),
         )
         for key, words in lines.items()

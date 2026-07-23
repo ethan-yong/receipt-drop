@@ -10,6 +10,8 @@
 
 **Update (2026-07-22)**: CLAHE is conditionally re-enabled behind a grayscale std-dev gate (`PREPROCESS_CLAHE`, see `docs/system/decisions.md` OCR preprocessing upgrade entry). The original finding was about *unconditional* CLAHE, not gated CLAHE — not a reversal of the PaddleOCR→Tesseract engine choice.
 
+**Update (2026-07-23)**: illumination normalization (flat-field shading correction before Tesseract) added as a separate, heuristically-gated stage — distinct from CLAHE's global-contrast signal and from the reactive `shadow_binarize()` retry. See `docs/system/decisions.md` illumination normalization entry. Thresholds pending batch tuning via `scripts/process_receipts.ps1`.
+
 ## On-device ML Kit OCR → self-hosted OCR API
 
 **Tried**: v1 spec's original design used on-device Google ML Kit Text Recognition v2, explicitly to avoid server-side re-OCR.

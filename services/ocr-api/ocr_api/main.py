@@ -192,7 +192,7 @@ async def ocr(request: Request) -> OcrResponse:
     if text.strip():
         try:
             understanding = await call_receipt_understanding(
-                text, http_client=request.app.state.http_client
+                text, http_client=request.app.state.http_client, lines=lines
             )
         except ReceiptUnderstandingError as exc:
             logger.warning(

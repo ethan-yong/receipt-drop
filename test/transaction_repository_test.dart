@@ -4,6 +4,14 @@ import 'package:receipt_drop/data/repositories/ingest_receipt_request.dart';
 import 'package:receipt_drop/data/repositories/places_repository.dart';
 import 'package:receipt_drop/data/repositories/transaction_repository_native.dart';
 import 'package:receipt_drop/domain/models/receipt_line_item.dart';
+import 'package:receipt_drop/domain/models/receipt_understanding.dart';
+
+const _fixtureConfidence = ReceiptUnderstandingConfidence(
+  merchant: 0,
+  address: 0,
+  category: 0,
+  lineItems: 0,
+);
 
 void main() {
   test('fresh in-memory database creates the line items table', () async {
@@ -142,6 +150,82 @@ void main() {
     expect(row.lineItemsConfidence, 0.3);
     expect(row.parseFailureReason, 'no_amount_pattern');
     expect(row.amountSource, isNull);
+
+    await db.close();
+  });
+
+  test('persists the LLM OCR-cleanup fields as their own columns', () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final understanding = ReceiptUnderstanding(
+      merchantName: 'Kedai Ali',
+      merchantSearchQueries: const ['Kedai Ali'],
+      addressText: null,
+      locationClues: const [],
+      vendorCategory: null,
+      googlePlaceTypes: const [],
+      lineItems: const [],
+      confidence: _fixtureConfidence,
+      cleanedLines: const ['Kedai Ali', 'TOTAL RM7.70'],
+      cleanedOcrText: 'Kedai Ali\nTOTAL RM7.70',
+      corrections: const [
+        ReceiptUnderstandingCorrection(
+          lineIndex: 1,
+          original: 'T0TAL RM7.70',
+          corrected: 'TOTAL RM7.70',
+        ),
+      ],
+    );
+
+    final saved = await repo.ingestReceipt(
+      IngestReceiptRequest(
+        localFilePath: '/tmp/cleanup.png',
+        mimeType: 'image/png',
+        amountMyr: 7.70,
+        needsAmount: false,
+        merchantRaw: 'Kedai Ali',
+        categoryGuess: 'Food & Drink',
+        rawOcrText: 'Kedai Ali\nT0TAL RM7.70',
+        understanding: understanding,
+      ),
+    );
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+    expect(row.cleanedOcrText, 'Kedai Ali\nTOTAL RM7.70');
+    expect(
+      row.ocrCorrectionsJson,
+      contains('T0TAL RM7.70'),
+    );
+    // The raw OCR field is untouched by the cleanup fields above.
+    expect(row.rawOcrText, 'Kedai Ali\nT0TAL RM7.70');
+
+    await db.close();
+  });
+
+  test('leaves the cleanup columns null when no cleanup was attempted',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/no_cleanup.png',
+        mimeType: 'image/png',
+        amountMyr: 7.70,
+        needsAmount: false,
+        merchantRaw: 'Kedai Ali',
+        categoryGuess: 'Food & Drink',
+      ),
+    );
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+    expect(row.cleanedOcrText, isNull);
+    expect(row.ocrCorrectionsJson, isNull);
 
     await db.close();
   });
