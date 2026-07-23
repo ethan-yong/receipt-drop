@@ -25,6 +25,12 @@ class OcrLineResult:
     # total height. Relative-to-this-receipt, not an absolute pixel
     # threshold, so it's comparable regardless of a given scan's resolution.
     height_ratio: float
+    # Line bounding box as fractions of this image's width/height — min-left,
+    # min-top, and span width aggregated from per-word boxes in
+    # image_to_data(). Same receipt-relative convention as height_ratio.
+    left_ratio: float = 0.0
+    top_ratio: float = 0.0
+    width_ratio: float = 0.0
     # This line's own calibrated confidence (same 0..1 sigmoid calibration as
     # the request-level mean) — lets the LLM cleanup prompt (see
     # receipt_understanding.py) leave already-confident lines untouched and
@@ -124,6 +130,9 @@ def _run_tesseract(
     # each line's visual prominence (relative to the image) can be derived.
     lines: dict[tuple[int, int, int], list[str]] = {}
     heights: dict[tuple[int, int, int], list[int]] = {}
+    lefts: dict[tuple[int, int, int], list[int]] = {}
+    tops: dict[tuple[int, int, int], list[int]] = {}
+    rights: dict[tuple[int, int, int], list[int]] = {}
     line_confidences: dict[tuple[int, int, int], list[float]] = {}
     confidences: list[float] = []
     for i, word in enumerate(data["text"]):
@@ -131,7 +140,13 @@ def _run_tesseract(
             continue
         key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
         lines.setdefault(key, []).append(word)
+        word_left = int(data["left"][i])
+        word_top = int(data["top"][i])
+        word_width = int(data["width"][i])
         heights.setdefault(key, []).append(int(data["height"][i]))
+        lefts.setdefault(key, []).append(word_left)
+        tops.setdefault(key, []).append(word_top)
+        rights.setdefault(key, []).append(word_left + word_width)
         # conf is 0-100 per word; -1 marks structural (non-word) rows, and 0
         # is Tesseract's "no confidence" marker — both are excluded from the mean.
         conf = float(data["conf"][i])
@@ -148,11 +163,23 @@ def _run_tesseract(
         return [], 0.0
 
     image_height = image.shape[0]
+    image_width = image.shape[1]
     line_results = [
         OcrLineResult(
             text=_normalize_ocr_amounts(" ".join(words)),
             height_ratio=(
                 statistics.median(heights[key]) / image_height if image_height else 0.0
+            ),
+            left_ratio=(
+                min(lefts[key]) / image_width if image_width and lefts.get(key) else 0.0
+            ),
+            top_ratio=(
+                min(tops[key]) / image_height if image_height and tops.get(key) else 0.0
+            ),
+            width_ratio=(
+                (max(rights[key]) - min(lefts[key])) / image_width
+                if image_width and lefts.get(key) and rights.get(key)
+                else 0.0
             ),
             # Same calibration as the request-level mean, applied per line —
             # a line with no positive-confidence words (rare; structural rows

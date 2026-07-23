@@ -1,6 +1,7 @@
 import '../models/receipt_line_item.dart';
+import '../models/receipt_line_zone.dart';
 import 'merchant_extractor.dart'
-    show looksLikeBoilerplate, numericOrPunctuationOnly, stripEdgeJunk;
+    show looksLikeBoilerplate, looksLikeReceiptMetadata, numericOrPunctuationOnly, stripEdgeJunk;
 import 'rm_amount_parser.dart'
     show
         discountOrSummaryHints,
@@ -31,6 +32,10 @@ const _qtyPatternConfidence = 0.90;
 const _qtyNoXPatternConfidence = 0.80;
 const _rmPatternConfidence = 0.85;
 const _barePatternConfidence = 0.55;
+
+/// Confidence penalty when layout zones mark a parsed item row as header/footer
+/// metadata rather than body — scoring nudge only, not a hard filter.
+const _wrongZoneItemPenalty = 0.35;
 
 /// Summary-row wording not already covered by [discountOrSummaryHints] /
 /// [totalKeywordHints] (those two are tuned for *picking the paid total*,
@@ -204,6 +209,9 @@ double _lineConfidence(double base, String name, double price) {
   return null;
 }
 
+/// True when [line] matches any tier of the item-row regex cascade.
+bool looksLikeItemLine(String line) => _tryParseItemLine(line) != null;
+
 /// Extracts item + price rows from raw receipt OCR text.
 ///
 /// [totalMyr], when supplied (typically the value from
@@ -213,6 +221,7 @@ ReceiptLineItemsResult extractReceiptLineItems(
   String ocrText, {
   double? totalMyr,
   int maxItems = maxExtractedLineItems,
+  ReceiptLayoutAnalysis? layout,
 }) {
   final lines = ocrText.split(RegExp(r'\r?\n'));
   final items = <ReceiptLineItem>[];
@@ -228,11 +237,21 @@ ReceiptLineItemsResult extractReceiptLineItems(
     final parsed = _tryParseItemLine(line);
     if (parsed == null) continue;
 
+    var confidence = parsed.confidence;
+    if (layout?.isReliable == true) {
+      final zone = layout!.zoneAt(i);
+      if (zone == ReceiptLineZone.header || zone == ReceiptLineZone.footer) {
+        confidence -= _wrongZoneItemPenalty;
+      } else if (zone != ReceiptLineZone.body &&
+          looksLikeReceiptMetadata(line)) {
+        confidence -= _wrongZoneItemPenalty;
+      }
+    }
     items.add(ReceiptLineItem(
       name: parsed.name,
       priceMyr: parsed.price,
       quantity: parsed.quantity,
-      confidence: parsed.confidence,
+      confidence: confidence.clamp(0.05, 0.98),
       lineIndex: i,
     ));
   }

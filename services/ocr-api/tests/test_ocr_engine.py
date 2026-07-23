@@ -6,20 +6,33 @@ from ocr_api import ocr_engine
 
 def _fake_data(
     words: list[tuple[str, int, tuple[int, int, int]]]
-    | list[tuple[str, int, tuple[int, int, int], int]],
+    | list[tuple[str, int, tuple[int, int, int], int]]
+    | list[tuple[str, int, tuple[int, int, int], int, int, int, int]],
 ) -> dict[str, list]:
-    """Builds an image_to_data DICT from (text, conf, (block, par, line)[, height]).
+    """Build image_to_data DICT from word tuples.
 
-    Height defaults to 20 when omitted — existing 3-tuple call sites don't
-    care about height_ratio and shouldn't need updating for it.
+    Each word is (text, conf, (block, par, line)[, height[, left, top, width]]).
+    Height defaults to 20 when omitted; left/top/width default to 0/0/10.
     """
+
+    def _word_fields(w: tuple) -> tuple[int, int, int, int]:
+        height = w[3] if len(w) > 3 else 20
+        left = w[4] if len(w) > 4 else 0
+        top = w[5] if len(w) > 5 else 0
+        width = w[6] if len(w) > 6 else 10
+        return height, left, top, width
+
+    parsed = [_word_fields(w) for w in words]
     return {
         "text": [w[0] for w in words],
         "conf": [w[1] for w in words],
         "block_num": [w[2][0] for w in words],
         "par_num": [w[2][1] for w in words],
         "line_num": [w[2][2] for w in words],
-        "height": [w[3] if len(w) > 3 else 20 for w in words],
+        "height": [p[0] for p in parsed],
+        "left": [p[1] for p in parsed],
+        "top": [p[2] for p in parsed],
+        "width": [p[3] for p in parsed],
     }
 
 
@@ -298,3 +311,27 @@ def test_ocr_line_result_confidence_defaults_to_fully_confident() -> None:
     # means "irrelevant to this test," not "known low-quality."
     line = ocr_engine.OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)
     assert line.confidence == 1.0
+
+
+def test_run_ocr_detailed_computes_line_bbox_ratios(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Two words on one line at left=10,width=20 and left=40,width=30 on a 100x200 image.
+    data = _fake_data(
+        [
+            ("FOO", 90, (1, 1, 1), 20, 10, 5, 20),
+            ("BAR", 90, (1, 1, 1), 20, 40, 5, 30),
+            ("BAZ", 90, (1, 1, 2), 20, 5, 50, 15),
+        ]
+    )
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
+
+    lines, _ = ocr_engine.run_ocr_detailed(np.zeros((200, 100), dtype=np.uint8))
+
+    assert len(lines) == 2
+    first, second = lines
+    assert first.left_ratio == pytest.approx(10 / 100)
+    assert first.top_ratio == pytest.approx(5 / 200)
+    assert first.width_ratio == pytest.approx((70 - 10) / 100)
+    assert second.left_ratio == pytest.approx(5 / 100)
+    assert second.width_ratio == pytest.approx(15 / 100)

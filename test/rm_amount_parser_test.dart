@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/domain/logic/rm_amount_parser.dart';
+import 'package:receipt_drop/domain/models/receipt_line_zone.dart';
 
 void main() {
   test('picks total paid over change line', () {
@@ -183,5 +184,33 @@ RM 110.00
     expect(sstResult.amount, 106.00);
     expect(vagueResult.amount, 110.00);
     expect(sstResult.confidence, greaterThan(vagueResult.confidence));
+  });
+
+  test('omitting layout or unreliable layout matches baseline amount parse', () {
+    const ocr = '''
+7-ELEVEN MALAYSIA
+Total RM 12.50
+Tunai RM 20.00
+Baki RM 7.50
+''';
+    final baseline = parseRmAmountFromOcr(ocr);
+    final withNull = parseRmAmountFromOcr(ocr, layout: null);
+    final withUnreliable = parseRmAmountFromOcr(
+      ocr,
+      layout: const ReceiptLayoutAnalysis(
+        zones: [
+          ReceiptLineZone.header,
+          ReceiptLineZone.footer,
+          ReceiptLineZone.footer,
+          ReceiptLineZone.footer,
+        ],
+        isReliable: false,
+      ),
+    );
+    expect(withNull.amount, baseline.amount);
+    expect(withNull.confidence, baseline.confidence);
+    expect(withNull.source, baseline.source);
+    expect(withUnreliable.amount, baseline.amount);
+    expect(withUnreliable.confidence, baseline.confidence);
   });
 }

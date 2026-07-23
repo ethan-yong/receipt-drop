@@ -1,3 +1,5 @@
+import '../models/receipt_line_zone.dart';
+
 /// How the paid amount was found: an explicit `RM x.xx` match, a bare number
 /// on/near a total-keyword line, or not at all.
 enum AmountParseSource { rmPrefixed, totalKeywordFallback, none }
@@ -62,6 +64,9 @@ const _fallbackBaseScore = 0.55;
 /// Boost applied when a candidate appears in the bottom 20% of the receipt —
 /// totals are printed near the end, so position is a weak but free signal.
 const _bottomPositionBoost = 0.15;
+
+/// Additional boost when layout zones reliably mark the line as footer.
+const _footerZoneBoost = 0.10;
 
 /// Boost applied when the same value appears as an RM candidate two or more
 /// times (e.g. on both the TOTAL and BAYARAN lines). Consensus overcomes a
@@ -148,6 +153,7 @@ AmountParseResult parseRmAmountFromOcr(
   double? itemsSubtotalMyr,
   double? largestItemPriceMyr,
   int lineItemCount = 0,
+  ReceiptLayoutAnalysis? layout,
 }) {
   final lines = raw.split(RegExp(r'\r?\n'));
   final candidates = <({double value, double score})>[];
@@ -168,11 +174,14 @@ AmountParseResult parseRmAmountFromOcr(
   for (var i = 0; i < lines.length; i++) {
     final line = lines[i];
     final isNearBottom = i >= bottomThreshold;
+    final inFooterZone =
+        layout?.isReliable == true && layout!.zoneAt(i) == ReceiptLineZone.footer;
     for (final m in _rmRegex.allMatches(line)) {
       final value = double.tryParse(m.group(1)!.replaceAll(',', ''));
       if (value == null) continue;
       var score = 1.0;
       if (isNearBottom) score += _bottomPositionBoost;
+      if (inFooterZone) score += _footerZoneBoost;
       if (discountOrSummaryHints.hasMatch(line)) score -= 0.45;
       if (totalKeywordHints.hasMatch(line)) score += 0.35;
       candidates.add((value: value, score: adjust(score, value)));
@@ -191,6 +200,8 @@ AmountParseResult parseRmAmountFromOcr(
       if (!totalKeywordHints.hasMatch(line)) continue;
       if (discountOrSummaryHints.hasMatch(line)) continue;
       final isNearBottom = i >= bottomThreshold;
+      final inFooterZone =
+          layout?.isReliable == true && layout!.zoneAt(i) == ReceiptLineZone.footer;
       var values = _bareDecimalValues(line);
       if (values.isEmpty && i + 1 < lines.length) {
         // OCR often splits the "TOTAL" label and its value across lines.
@@ -200,7 +211,8 @@ AmountParseResult parseRmAmountFromOcr(
         }
       }
       final base =
-          _fallbackBaseScore + (isNearBottom ? _bottomPositionBoost : 0.0);
+          _fallbackBaseScore + (isNearBottom ? _bottomPositionBoost : 0.0) +
+              (inFooterZone ? _footerZoneBoost : 0.0);
       for (final value in values) {
         candidates.add((value: value, score: adjust(base, value)));
       }

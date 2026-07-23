@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/domain/logic/receipt_line_item_extractor.dart';
+import 'package:receipt_drop/domain/models/receipt_line_zone.dart';
 
 void main() {
   test('extracts >=2 items from a typical cafe receipt', () {
@@ -254,5 +255,35 @@ Croissant                  RM 7.90
     final mismatched = reconcileWithTotal(extracted, 99.00);
     expect(mismatched.itemsMatchTotal, isFalse);
     expect(mismatched.confidence, lessThan(extracted.confidence));
+  });
+
+  test('omitting layout or unreliable layout matches baseline extraction', () {
+    const ocr = '''
+ROCK CAFE SDN BHD
+Latte                     RM 12.50
+Croissant                 RM 7.90
+TOTAL                     RM 20.40
+''';
+    final baseline = extractReceiptLineItems(ocr, totalMyr: 20.40);
+    final withNull = extractReceiptLineItems(ocr, totalMyr: 20.40, layout: null);
+    final withUnreliable = extractReceiptLineItems(
+      ocr,
+      totalMyr: 20.40,
+      layout: const ReceiptLayoutAnalysis(
+        zones: [
+          ReceiptLineZone.header,
+          ReceiptLineZone.body,
+          ReceiptLineZone.body,
+          ReceiptLineZone.footer,
+        ],
+        isReliable: false,
+      ),
+    );
+    expect(withNull.items.map((i) => i.name).toList(),
+        baseline.items.map((i) => i.name).toList());
+    expect(withNull.items.map((i) => i.priceMyr).toList(),
+        baseline.items.map((i) => i.priceMyr).toList());
+    expect(withUnreliable.items.map((i) => i.name).toList(),
+        baseline.items.map((i) => i.name).toList());
   });
 }

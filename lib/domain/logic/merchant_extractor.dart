@@ -1,4 +1,5 @@
 import '../models/ocr_line.dart';
+import '../models/receipt_line_zone.dart';
 import 'category_matcher.dart';
 
 /// Only the lines near the top of the receipt are worth considering — the
@@ -54,14 +55,20 @@ bool looksLikeBoilerplate(String line) =>
 
 /// Lines that are clearly metadata rather than a merchant name — phone
 /// numbers, dates, addresses, postcodes — even though they contain letters
-/// and would otherwise pass [_lettersRun]. Applied only when ranking
-/// candidates; the last-resort fallback in [extractMerchantCandidates] still
-/// prefers any line with real content over nothing at all.
-bool _looksLikeMetadata(String line) =>
+/// and would otherwise pass [_lettersRun]. Shared with
+/// [receipt_layout_analyzer.dart] and [receipt_line_item_extractor.dart].
+bool looksLikeReceiptMetadata(String line) =>
     _phoneNumberHint.hasMatch(line) ||
     _dateHint.hasMatch(line) ||
     _addressHint.hasMatch(line) ||
     _postcodeHint.hasMatch(line);
+
+/// Lines that are clearly metadata rather than a merchant name — phone
+/// numbers, dates, addresses, postcodes — even though they contain letters
+/// and would otherwise pass [_lettersRun]. Applied only when ranking
+/// candidates; the last-resort fallback in [extractMerchantCandidates] still
+/// prefers any line with real content over nothing at all.
+bool _looksLikeMetadata(String line) => looksLikeReceiptMetadata(line);
 
 // A real merchant name has at least one run of 3+ letters. OCR scene junk
 // from cluttered photo backgrounds ("- : a a ~~ . ;", "oo a") passes the
@@ -147,6 +154,7 @@ List<MerchantCandidate> extractMerchantCandidates(
   String ocrText,
   CategoryConfig categories, {
   List<OcrLine>? ocrLines,
+  ReceiptLayoutAnalysis? layout,
 }) {
   final rawLines = ocrText
       .split(RegExp(r'\r?\n'))
@@ -190,8 +198,25 @@ List<MerchantCandidate> extractMerchantCandidates(
 
   // Pass 2: generic business/venue-type words, skipping anything that reads
   // as metadata (phone/date/address/postcode) even if it has real letters.
+  // When layout zones are reliable, skip business-word hits inside the body
+  // zone (e.g. Kopitiam Fried Rice) — they stay eligible in header/ambiguous.
+  int? indexOfRawLine(String trimmedLine) {
+    final allLines = ocrText.split(RegExp(r'\r?\n'));
+    for (var i = 0; i < allLines.length; i++) {
+      if (allLines[i].trim() == trimmedLine) return i;
+    }
+    return null;
+  }
+
   for (final line in rawLines) {
     if (looksLikeBoilerplate(line) || _looksLikeMetadata(line)) continue;
+    if (layout?.isReliable == true) {
+      final rawIndex = indexOfRawLine(line);
+      if (rawIndex != null &&
+          layout!.zoneAt(rawIndex) == ReceiptLineZone.body) {
+        continue;
+      }
+    }
     if (_businessWordHints.hasMatch(line) && _lettersRun.hasMatch(line)) {
       addCandidate(line, 0.82, 'keyword');
     }
@@ -244,6 +269,13 @@ List<MerchantCandidate> extractMerchantCandidates(
   var positionRank = 0;
   for (final line in rawLines) {
     if (looksLikeBoilerplate(line) || _looksLikeMetadata(line)) continue;
+    if (layout?.isReliable == true) {
+      final rawIndex = indexOfRawLine(line);
+      if (rawIndex != null &&
+          layout!.zoneAt(rawIndex) == ReceiptLineZone.body) {
+        continue;
+      }
+    }
     final letterCount = line.replaceAll(RegExp(r'[^A-Za-z]'), '').length;
     if (letterCount < 4) continue;
     final lengthScore = (letterCount / 20).clamp(0.0, 1.0);

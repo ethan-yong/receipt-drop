@@ -99,7 +99,15 @@ def test_ocr_success_returns_text_and_confidence(
     body = resp.json()
     assert body["text"] == "TOTAL RM 7.70"
     assert body["confidence"] == pytest.approx(0.93)
-    assert body["lines"] == [{"text": "TOTAL RM 7.70", "height_ratio": 0.05}]
+    assert body["lines"] == [
+        {
+            "text": "TOTAL RM 7.70",
+            "height_ratio": 0.05,
+            "left_ratio": 0.0,
+            "top_ratio": 0.0,
+            "width_ratio": 0.0,
+        }
+    ]
     assert body["understanding"] is None
     assert body["understanding_error"] == "server_misconfigured"
 
@@ -244,7 +252,15 @@ def test_ocr_response_schema_unchanged_with_new_preprocess_flags(
     }
     assert body["text"] == "TOTAL RM 7.70"
     assert body["confidence"] == pytest.approx(0.93)
-    assert body["lines"] == [{"text": "TOTAL RM 7.70", "height_ratio": 0.05}]
+    assert body["lines"] == [
+        {
+            "text": "TOTAL RM 7.70",
+            "height_ratio": 0.05,
+            "left_ratio": 0.0,
+            "top_ratio": 0.0,
+            "width_ratio": 0.0,
+        }
+    ]
     assert body["understanding"] is None
     assert body["understanding_error"] == "server_misconfigured"
 
@@ -306,4 +322,10 @@ def test_ocr_success_includes_cleaned_ocr_fields_when_cleanup_enabled(
     # The client-facing `lines` array is unaffected by cleanup — per-line
     # confidence stays internal to ocr_engine.OcrLineResult (models.py's
     # OcrLine is unchanged).
-    assert set(resp.json()["lines"][0].keys()) == {"text", "height_ratio"}
+    assert set(resp.json()["lines"][0].keys()) == {
+        "text",
+        "height_ratio",
+        "left_ratio",
+        "top_ratio",
+        "width_ratio",
+    }

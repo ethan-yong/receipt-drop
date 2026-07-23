@@ -4,6 +4,7 @@ import '../../domain/logic/bank_receipt_parser.dart';
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/logic/merchant_extractor.dart';
+import '../../domain/logic/receipt_layout_analyzer.dart';
 import '../../domain/logic/receipt_line_item_extractor.dart';
 import '../../domain/logic/rm_amount_parser.dart';
 import '../../domain/models/ocr_line.dart';
@@ -211,9 +212,17 @@ ReceiptParseResult parseReceiptOcrText({
       (cleanedLines != null && ocrLines != null && cleanedLines.length == ocrLines.length)
           ? [
               for (var i = 0; i < cleanedLines.length; i++)
-                OcrLine(text: cleanedLines[i], heightRatio: ocrLines[i].heightRatio),
+                OcrLine(
+                  text: cleanedLines[i],
+                  heightRatio: ocrLines[i].heightRatio,
+                  leftRatio: ocrLines[i].leftRatio,
+                  topRatio: ocrLines[i].topRatio,
+                  widthRatio: ocrLines[i].widthRatio,
+                ),
             ]
           : ocrLines;
+
+  final layout = analyzeReceiptLayout(heuristicText, heuristicOcrLines);
 
   // Fast path: known bank/wallet providers have templated, labeled-field output
   // that regex can read reliably. Heuristic amount stays authoritative here,
@@ -249,7 +258,7 @@ ReceiptParseResult parseReceiptOcrText({
   // The heuristic pass always runs first: its line-item subtotal feeds the
   // amount-parsing cross-check below regardless of the LLM's own extraction,
   // and it's the fallback whenever the LLM found nothing or failed outright.
-  final extracted = extractReceiptLineItems(heuristicText);
+  final extracted = extractReceiptLineItems(heuristicText, layout: layout);
   final largestItemPrice = extracted.items.isEmpty
       ? null
       : extracted.items
@@ -261,6 +270,7 @@ ReceiptParseResult parseReceiptOcrText({
     itemsSubtotalMyr: extracted.itemsSubtotalMyr,
     largestItemPriceMyr: largestItemPrice,
     lineItemCount: extracted.items.length,
+    layout: layout,
   );
   // For payment and transport receipts the LLM skill extracts the actual
   // transaction amount (distinguishing it from account balance / surcharges).
@@ -284,6 +294,7 @@ ReceiptParseResult parseReceiptOcrText({
     heuristicText,
     categories,
     ocrLines: heuristicOcrLines,
+    layout: layout,
   );
   final llmMerchantName = understanding?.merchantName;
   final merchantCandidates = llmMerchantName == null

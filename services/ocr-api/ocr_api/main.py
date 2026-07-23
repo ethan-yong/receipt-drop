@@ -206,7 +206,14 @@ async def ocr(request: Request) -> OcrResponse:
         text=text,
         confidence=confidence,
         lines=[
-            OcrLine(text=line.text, height_ratio=line.height_ratio) for line in lines
+            OcrLine(
+                text=line.text,
+                height_ratio=line.height_ratio,
+                left_ratio=line.left_ratio,
+                top_ratio=line.top_ratio,
+                width_ratio=line.width_ratio,
+            )
+            for line in lines
         ],
         understanding=understanding,
         understanding_error=understanding_error,
