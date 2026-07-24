@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/domain/logic/rm_amount_parser.dart';
+import 'package:receipt_drop/domain/models/ocr_line.dart';
 import 'package:receipt_drop/domain/models/receipt_line_zone.dart';
 
 void main() {
@@ -212,5 +213,71 @@ Baki RM 7.50
     expect(withNull.source, baseline.source);
     expect(withUnreliable.amount, baseline.amount);
     expect(withUnreliable.confidence, baseline.confidence);
+  });
+
+  test('OCR confidence penalty lowers score without overriding corroboration', () {
+    const ocr = '''
+ITEM A RM 5.00
+ITEM B RM 5.00
+ITEM C RM 5.00
+TOTAL RM 15.00
+STRAY RM 99.00
+''';
+    final lowConfLines = [
+      const OcrLine(text: 'ITEM A RM 5.00', heightRatio: 0.03, confidence: 0.9),
+      const OcrLine(text: 'ITEM B RM 5.00', heightRatio: 0.03, confidence: 0.9),
+      const OcrLine(text: 'ITEM C RM 5.00', heightRatio: 0.03, confidence: 0.9),
+      const OcrLine(text: 'TOTAL RM 15.00', heightRatio: 0.03, confidence: 0.2),
+      const OcrLine(text: 'STRAY RM 99.00', heightRatio: 0.03, confidence: 0.95),
+    ];
+    final result = parseRmAmountFromOcr(
+      ocr,
+      itemsSubtotalMyr: 15.00,
+      lineItemCount: 3,
+      ocrLines: lowConfLines,
+    );
+    // Corroborated TOTAL still wins despite low OCR confidence.
+    expect(result.amount, 15.00);
+    expect(result.candidates.first.corroborated, isTrue);
+  });
+
+  test('parseRmAmountCandidates top entry matches parseRmAmountFromOcr winner', () {
+    const ocr = '''
+Kopi O RM 3.00
+TOTAL RM 7.70
+Tunai RM 10.00
+''';
+    final single = parseRmAmountFromOcr(ocr);
+    final ranked = parseRmAmountCandidates(ocr);
+    expect(ranked, isNotEmpty);
+    expect(ranked.first.value, single.amount);
+    expect(single.candidates.first.value, ranked.first.value);
+  });
+
+  test('suspicious when low OCR conf, uncorroborated, and alternative exists', () {
+    const ocr = '''
+HEADER LINE
+TOTAL RM 12.50
+OTHER RM 8.00
+''';
+    final lines = [
+      const OcrLine(text: 'HEADER LINE', heightRatio: 0.05, confidence: 0.9),
+      OcrLine(
+        text: 'TOTAL RM 12.50',
+        heightRatio: 0.03,
+        confidence: 0.2,
+        words: const [
+          OcrWord(text: 'TOTAL', confidence: 0.3),
+          OcrWord(text: 'RM', confidence: 0.3),
+          OcrWord(text: '12.50', confidence: 0.2),
+        ],
+      ),
+      const OcrLine(text: 'OTHER RM 8.00', heightRatio: 0.03, confidence: 0.9),
+    ];
+    final result = parseRmAmountFromOcr(ocr, ocrLines: lines);
+    expect(result.amount, isNotNull);
+    expect(result.suspicious, isTrue);
+    expect(result.alternative, isNotNull);
+    expect(result.alternative!.value, isNot(result.amount));
   });
 }

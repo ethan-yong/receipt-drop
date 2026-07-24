@@ -31,6 +31,25 @@ def _set_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OCR_SHARED_SECRET", SECRET)
 
 
+def _ocr_result(lines, confidence: float = 0.93):
+    from ocr_api.ocr_engine import OcrDetailedResult
+
+    return OcrDetailedResult(lines=list(lines), confidence=confidence)
+
+
+_OCR_RESPONSE_KEYS = {
+    "text",
+    "confidence",
+    "lines",
+    "understanding",
+    "understanding_error",
+    "strategy_psm",
+    "strategy_bucket",
+    "pass_count",
+    "composite_score",
+}
+
+
 @pytest.fixture
 def client() -> TestClient:
     # `with` runs the app's lifespan (app/main.py's _lifespan) so
@@ -82,7 +101,9 @@ def test_ocr_success_returns_text_and_confidence(
 
     monkeypatch.setattr(
         "ocr_api.main.run_ocr_detailed",
-        lambda image: ([OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93),
+        lambda image: _ocr_result(
+            [OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93
+        ),
     )
     # No VLLM_BASE_URL/VLLM_MODEL_NAME configured in this test's environment
     # — the synchronous LLM step fails with server_misconfigured, and the
@@ -106,6 +127,8 @@ def test_ocr_success_returns_text_and_confidence(
             "left_ratio": 0.0,
             "top_ratio": 0.0,
             "width_ratio": 0.0,
+            "confidence": None,
+            "words": None,
         }
     ]
     assert body["understanding"] is None
@@ -121,7 +144,7 @@ def test_ocr_success_includes_llm_understanding(
 
     monkeypatch.setattr(
         "ocr_api.main.run_ocr_detailed",
-        lambda image: (
+        lambda image: _ocr_result(
             [OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.08)],
             0.93,
         ),
@@ -161,7 +184,9 @@ def test_ocr_llm_failure_still_returns_raw_ocr(
 
     monkeypatch.setattr(
         "ocr_api.main.run_ocr_detailed",
-        lambda image: ([OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93),
+        lambda image: _ocr_result(
+            [OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93
+        ),
     )
     monkeypatch.setenv("VLLM_BASE_URL", "http://gateway.local:31180")
     monkeypatch.setenv("VLLM_MODEL_NAME", "test-model")
@@ -192,7 +217,7 @@ def test_ocr_no_text_recognized_skips_llm_call(
 ) -> None:
     monkeypatch.setattr(
         "ocr_api.main.run_ocr_detailed",
-        lambda image: ([], 0.0),
+        lambda image: _ocr_result([], 0.0),
     )
 
     calls = 0
@@ -227,7 +252,9 @@ def test_ocr_response_schema_unchanged_with_new_preprocess_flags(
 
     monkeypatch.setattr(
         "ocr_api.main.run_ocr_detailed",
-        lambda image: ([OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93),
+        lambda image: _ocr_result(
+            [OcrLineResult(text="TOTAL RM 7.70", height_ratio=0.05)], 0.93
+        ),
     )
     monkeypatch.delenv("VLLM_BASE_URL", raising=False)
     monkeypatch.setenv("PREPROCESS_CLAHE", "1")
@@ -243,13 +270,10 @@ def test_ocr_response_schema_unchanged_with_new_preprocess_flags(
 
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {
-        "text",
-        "confidence",
-        "lines",
-        "understanding",
-        "understanding_error",
-    }
+    # Deliberately updated to the adaptive-telemetry superset — additive
+    # optional fields; older clients reading only the original keys are fine.
+    assert set(body.keys()) == _OCR_RESPONSE_KEYS
+    # Legacy required keys still present and usable without the new fields.
     assert body["text"] == "TOTAL RM 7.70"
     assert body["confidence"] == pytest.approx(0.93)
     assert body["lines"] == [
@@ -259,10 +283,16 @@ def test_ocr_response_schema_unchanged_with_new_preprocess_flags(
             "left_ratio": 0.0,
             "top_ratio": 0.0,
             "width_ratio": 0.0,
+            "confidence": None,
+            "words": None,
         }
     ]
     assert body["understanding"] is None
     assert body["understanding_error"] == "server_misconfigured"
+    assert body["strategy_psm"] is None
+    assert body["strategy_bucket"] is None
+    assert body["pass_count"] is None
+    assert body["composite_score"] is None
 
 
 def test_ocr_success_includes_cleaned_ocr_fields_when_cleanup_enabled(
@@ -274,7 +304,7 @@ def test_ocr_success_includes_cleaned_ocr_fields_when_cleanup_enabled(
 
     monkeypatch.setattr(
         "ocr_api.main.run_ocr_detailed",
-        lambda image: (
+        lambda image: _ocr_result(
             [
                 OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.08),
                 OcrLineResult(text="T0TAL RM7.70 big mac meal", height_ratio=0.05),
@@ -319,13 +349,14 @@ def test_ocr_success_includes_cleaned_ocr_fields_when_cleanup_enabled(
             "corrected": "TOTAL RM7.70 big mac meal",
         }
     ]
-    # The client-facing `lines` array is unaffected by cleanup — per-line
-    # confidence stays internal to ocr_engine.OcrLineResult (models.py's
-    # OcrLine is unchanged).
+    # The client-facing `lines` array is unaffected by cleanup. Token-level
+    # confidence fields are additive (null when TOKEN_LEVEL_CONFIDENCE is off).
     assert set(resp.json()["lines"][0].keys()) == {
         "text",
         "height_ratio",
         "left_ratio",
         "top_ratio",
         "width_ratio",
+        "confidence",
+        "words",
     }

@@ -10,7 +10,14 @@
 #   .\scripts\process_receipts.ps1 -ReceiptsDir receipts
 #   .\scripts\process_receipts.ps1 -OcrUrl http://127.0.0.1:8080/ocr
 #   .\scripts\process_receipts.ps1 -SkipHealthCheck
+#   .\scripts\process_receipts.ps1 -BatchBudget
 #   .\scripts\process_receipts.ps1 -v                    # extra progress + live dart output
+#
+# -BatchBudget: documents that the OCR API process should be started with
+#   OCR_BUDGET_MODE=batch (and ideally ADAPTIVE_OCR_ENABLED=1) so the service
+#   relaxes its interactive time budget and allows more adaptive passes.
+#   This script cannot flip that flag mid-request — set it on the uvicorn
+#   process before running the batch tool.
 
 param(
     [string]$ReceiptsDir = "",
@@ -19,6 +26,7 @@ param(
     [switch]$IncludeOcrText,
     [switch]$E2e,
     [switch]$SkipHealthCheck,
+    [switch]$BatchBudget,
     [Alias("v")]
     [switch]$Verbose
 )
@@ -105,6 +113,14 @@ try {
     Write-Host "Running batch processor on $ReceiptsDir ..."
     if ($E2e) {
         Write-Host "  E2E: OCR -> parse -> draft -> outbox -> sync payload preview"
+    }
+    if ($BatchBudget) {
+        Write-Host "  BatchBudget: ensure ocr-api was started with OCR_BUDGET_MODE=batch"
+        Write-Host "    (optional: ADAPTIVE_OCR_ENABLED=1 for adaptive multi-pass tuning)"
+        if ($env:OCR_BUDGET_MODE -ne "batch") {
+            Write-Host "  WARNING: this shell's OCR_BUDGET_MODE='$($env:OCR_BUDGET_MODE)' — the"
+            Write-Host "    running uvicorn process must have OCR_BUDGET_MODE=batch itself."
+        }
     }
     Write-Host "  (first dart run compiles the CLI; each image waits on Tesseract OCR)"
     if ($Verbose) {

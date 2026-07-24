@@ -499,19 +499,26 @@ async def test_call_returns_validated_understanding() -> None:
     assert result.merchant_name == "McDonald's Pavilion KL"
 
 
-async def test_call_with_lines_but_cleanup_disabled_sends_flattened_text() -> None:
+async def test_call_with_lines_but_cleanup_disabled_sends_confidence_tags() -> None:
     # LLM_CLEANUP_ENABLED unset (default off, via the autouse fixture above) —
-    # passing `lines` must not change today's request shape or response.
+    # passing `lines` still tags the main extraction prompt with per-line
+    # confidence (token-level confidence tracking), but does not request
+    # cleaned_lines / run the cleanup path.
     lines = [
-        OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.1),
-        OcrLineResult(text="T0TAL RM5O.OO fast food burger", height_ratio=0.05),
+        OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.1, confidence=0.9),
+        OcrLineResult(
+            text="T0TAL RM5O.OO fast food burger", height_ratio=0.05, confidence=0.4
+        ),
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
+        system_content = body["messages"][0]["content"]
         user_content = body["messages"][1]["content"]
-        assert "MCDONALD'S PAVILION KL" in user_content
-        assert "[0]" not in user_content  # no per-line cleanup framing
+        assert "[0] (confidence 0.90) MCDONALD'S PAVILION KL" in user_content
+        assert "[1] (confidence 0.40) T0TAL RM5O.OO fast food burger" in user_content
+        assert "reliability metadata" in system_content
+        assert "cleaned_lines" not in system_content
         return httpx.Response(200, content=_chat_content(json.dumps(MCD_JSON)))
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:

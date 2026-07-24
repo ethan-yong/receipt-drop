@@ -43,6 +43,74 @@ function placeDisplayName(first: {
   return d.text ?? null;
 }
 
+/// Extends `merchant_aliases`' write-back (docs/plans/
+/// 2026-07-23-feedback-learning-system.md) with a second trigger: an
+/// explicit user correction, not only an algorithmic >=0.85-confidence
+/// auto-resolve. Looks up this transaction's synced `user_field_corrections`
+/// row for the given [correctionType] (there's at most one merchant
+/// correction per transaction — the confirm sheet only fires once per
+/// field) and, if present, upserts via `upsert_merchant_alias_from_correction`
+/// (its own corroboration-gate tiering lives entirely in that SQL function).
+/// Best-effort: any failure here must never affect this transaction's own
+/// already-saved enrichment result.
+async function maybeWriteBackMerchantAliasFromCorrection(
+  client: ReturnType<typeof createClient>,
+  transactionId: string,
+  userId: string,
+  correctionType: "user_locked" | "free_text",
+  place: {
+    id: string | null | undefined;
+    name: string | null;
+    lat: number | null;
+    lng: number | null;
+  },
+  shareLat: number | null | undefined,
+  shareLng: number | null | undefined,
+): Promise<void> {
+  if (
+    typeof shareLat !== "number" ||
+    typeof shareLng !== "number" ||
+    !place.id ||
+    !place.name
+  ) {
+    return;
+  }
+  try {
+    const { data: corrections } = await client
+      .from("user_field_corrections")
+      .select("predicted_value, confirmed_value")
+      .eq("transaction_id", transactionId)
+      .eq("user_id", userId)
+      .eq("field", "merchant")
+      .eq("correction_type", correctionType)
+      .limit(1);
+    const correction = Array.isArray(corrections) ? corrections[0] : null;
+    if (!correction) return;
+
+    // The alias key is the text a *future* garbled OCR read should match
+    // against: for a picker override the user picked a place without
+    // retyping the name, so the original OCR guess is still the right key;
+    // for a free-text rename, the user's own corrected text is the name
+    // future scans of this merchant should resolve via.
+    const aliasText = correctionType === "user_locked"
+      ? correction.predicted_value
+      : correction.confirmed_value;
+    if (!isUsableMerchantText(aliasText)) return;
+
+    await client.rpc("upsert_merchant_alias_from_correction", {
+      p_alias_text: normalizeForCompare(aliasText),
+      p_geohash: geohashEncode(shareLat, shareLng, ALIAS_GEOHASH_PRECISION),
+      p_place_id: place.id,
+      p_name: place.name,
+      p_lat: place.lat,
+      p_lng: place.lng,
+      p_correction_type: correctionType,
+    });
+  } catch {
+    // Non-fatal — see function doc comment above.
+  }
+}
+
 async function markPlacesFailure(
   client: ReturnType<typeof createClient>,
   transactionId: string,
@@ -151,6 +219,21 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    await maybeWriteBackMerchantAliasFromCorrection(
+      supabase,
+      transactionId,
+      user.id,
+      "user_locked",
+      {
+        id: row.place_google_place_id as string | null | undefined,
+        name: row.place_name as string | null,
+        lat: row.place_lat as number | null,
+        lng: row.place_lng as number | null,
+      },
+      row.share_location_lat as number | null | undefined,
+      row.share_location_lng as number | null | undefined,
+    );
 
     return new Response(JSON.stringify({ ok: true, skipped_places: true }), {
       status: 200,
@@ -743,6 +826,21 @@ Deno.serve(async (req) => {
       // Non-fatal — see comment above.
     }
   }
+
+  // Free-text merchant-name correction write-back: reuses this request's
+  // already-resolved Places winner (no extra Places call) — the
+  // corroboration-gate tiering that makes this safe against a bad edit
+  // lives in upsert_merchant_alias_from_correction() itself, so this fires
+  // regardless of winnerConfidence.
+  await maybeWriteBackMerchantAliasFromCorrection(
+    supabase,
+    transactionId,
+    user.id,
+    "free_text",
+    { id: winner.id, name: winner.name, lat: winner.lat, lng: winner.lng },
+    hasLocation ? shareLat : null,
+    hasLocation ? shareLng : null,
+  );
 
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,

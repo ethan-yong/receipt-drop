@@ -16,6 +16,14 @@ const merchantScanLines = 15;
 /// wide margin; tune after batch runs, same as the OCR engine's constants.
 const _largeTextRatioThreshold = 1.4;
 
+/// How strongly line-level OCR confidence blends into merchant candidate
+/// scores. Missing confidence → neutral (no change).
+const _ocrConfidenceBlendWeight = 0.15;
+
+/// When top-2 merchant candidate confidences differ by less than this,
+/// treat as ambiguous and surface both in the UI.
+const merchantAmbiguousDelta = 0.08;
+
 final boilerplateHints = RegExp(
   r'(tax invoice|simplified tax invoice|cash bill|official receipt|'
   r'gst reg|gst no|sst reg|sst no|company reg|tel:|phone:|www\.|receipt no|'
@@ -164,6 +172,29 @@ List<MerchantCandidate> extractMerchantCandidates(
       .toList();
   if (rawLines.isEmpty) return const [];
 
+  // Pre-compute raw-line index once (avoids O(n) scan per candidate).
+  final allLines = ocrText.split(RegExp(r'\r?\n'));
+  final rawIndexByTrimmed = <String, int>{};
+  for (var i = 0; i < allLines.length; i++) {
+    rawIndexByTrimmed.putIfAbsent(allLines[i].trim(), () => i);
+  }
+
+  double? ocrConfFor(String trimmedLine) {
+    final idx = rawIndexByTrimmed[trimmedLine];
+    if (idx == null || ocrLines == null || idx >= ocrLines.length) return null;
+    // Prefer index alignment over text-keyed lookup.
+    final line = ocrLines[idx];
+    if (line.text.trim() != trimmedLine) return null;
+    return line.confidence;
+  }
+
+  double blendOcr(double base, String line) {
+    final conf = ocrConfFor(line);
+    if (conf == null) return base;
+    // Soft blend: high OCR confidence lifts slightly, low confidence lowers.
+    return (base + (conf - 0.5) * _ocrConfidenceBlendWeight).clamp(0.05, 0.98);
+  }
+
   // Edge junk is stripped from a winning line only (not before matching: the
   // raw line is what boilerplate/keyword/metadata patterns were tuned
   // against).
@@ -180,7 +211,11 @@ List<MerchantCandidate> extractMerchantCandidates(
     if (text.isEmpty) return;
     if (!seenNormalized.add(text.toLowerCase())) return;
     candidates.add(
-      MerchantCandidate(text: text, confidence: confidence, source: source),
+      MerchantCandidate(
+        text: text,
+        confidence: blendOcr(confidence, line),
+        source: source,
+      ),
     );
   }
 
@@ -200,18 +235,10 @@ List<MerchantCandidate> extractMerchantCandidates(
   // as metadata (phone/date/address/postcode) even if it has real letters.
   // When layout zones are reliable, skip business-word hits inside the body
   // zone (e.g. Kopitiam Fried Rice) — they stay eligible in header/ambiguous.
-  int? indexOfRawLine(String trimmedLine) {
-    final allLines = ocrText.split(RegExp(r'\r?\n'));
-    for (var i = 0; i < allLines.length; i++) {
-      if (allLines[i].trim() == trimmedLine) return i;
-    }
-    return null;
-  }
-
   for (final line in rawLines) {
     if (looksLikeBoilerplate(line) || _looksLikeMetadata(line)) continue;
     if (layout?.isReliable == true) {
-      final rawIndex = indexOfRawLine(line);
+      final rawIndex = rawIndexByTrimmed[line];
       if (rawIndex != null &&
           layout!.zoneAt(rawIndex) == ReceiptLineZone.body) {
         continue;
@@ -258,19 +285,12 @@ List<MerchantCandidate> extractMerchantCandidates(
   // Pass 3: fallback over whatever's left, scored mainly by how much real
   // letter content the line has — a proxy for "looks like a substantive
   // name/header" rather than an isolated OCR-noise fragment — with position
-  // as a secondary tiebreak only. Pure position-decay used to let a short
-  // garbled word (e.g. "mel", 3 letters — real OCR noise from a receipt
-  // header Tesseract otherwise butchered) outrank a much longer line that
-  // was actually the (badly garbled) merchant header, just because it
-  // appeared a line or two earlier and happened to survive the
-  // boilerplate/metadata filters. Real receipt headers are essentially never
-  // shorter than this, even garbled, so total letter count is a much more
-  // reliable signal here than raw position.
+  // as a secondary tiebreak only.
   var positionRank = 0;
   for (final line in rawLines) {
     if (looksLikeBoilerplate(line) || _looksLikeMetadata(line)) continue;
     if (layout?.isReliable == true) {
-      final rawIndex = indexOfRawLine(line);
+      final rawIndex = rawIndexByTrimmed[line];
       if (rawIndex != null &&
           layout!.zoneAt(rawIndex) == ReceiptLineZone.body) {
         continue;

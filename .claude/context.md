@@ -61,6 +61,8 @@ If you're picking this up cold: check `git status`/`git diff` again before assum
 - **Port convention mismatch**: local dev OCR API defaults to port 8081 (`scripts/run_ocr_api.ps1`, `.env.example`), but the Dockerfile/`bin/process_receipts.dart --help` default to 8080. Don't assume one when debugging "wrong port" issues — check which one the specific script/service you're touching actually defaults to.
 - **CARTO map tiles are a free/no-key placeholder**, explicitly flagged in `spend_map_screen.dart` as not safe to ship at production scale.
 
+- **Feedback-learning system landed (2026-07-23)**: `ReceiptConfirmSheet` now captures a `FieldCorrection` for every merchant/amount/category/line-item edit into `OutboxFieldCorrections` → `user_field_corrections`, feeding three surfaces (merchant-alias write-back from `enrich-transaction`, per-user category preference, global anonymized OCR-misread patterns). See `docs/system/decisions.md` and `docs/database/schema.md`. `services/ocr-api` still has no Postgres connectivity — the misread-pattern table is aggregation-only for now, not yet consumed.
+
 ## Before modifying code, also check
 
 - `docs/decisions.md` for *why* something is the way it is — several apparent oddities (RLS widening, security-invoker vs definer, dual confidence fields) are deliberate, documented tradeoffs, not bugs.

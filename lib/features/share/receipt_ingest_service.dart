@@ -102,6 +102,12 @@ class ReceiptIngestService {
       merchantCandidates: parsed.merchantCandidates,
       ocrHeaderText: parsed.ocrHeaderText,
       understanding: parsed.understanding,
+      amountAlternativeMyr: parsed.amountAlternative?.value,
+      amountSuspicious: parsed.amountSuspicious,
+      amountFieldLowConfidence: parsed.amountOcrConfidence != null &&
+          parsed.amountOcrConfidence! < 0.5,
+      merchantAmbiguous: parsed.merchantAmbiguous,
+      merchantConfidence: parsed.merchantConfidence,
     );
 
     await notifier?.emit(ProcessingCompletedEvent(draft: draft));

@@ -1,3 +1,4 @@
+import '../models/ocr_line.dart';
 import '../models/receipt_line_item.dart';
 import '../models/receipt_line_zone.dart';
 import 'merchant_extractor.dart'
@@ -36,6 +37,12 @@ const _barePatternConfidence = 0.55;
 /// Confidence penalty when layout zones mark a parsed item row as header/footer
 /// metadata rather than body — scoring nudge only, not a hard filter.
 const _wrongZoneItemPenalty = 0.35;
+
+/// Max penalty from low OCR line/word confidence on an item row.
+const _ocrConfidenceMaxPenalty = 0.20;
+
+/// Extra penalty when a price token was digit-corrected.
+const _digitCorrectedItemPenalty = 0.08;
 
 /// Summary-row wording not already covered by [discountOrSummaryHints] /
 /// [totalKeywordHints] (those two are tuned for *picking the paid total*,
@@ -143,6 +150,19 @@ double _lineConfidence(double base, String name, double price) {
   return score.clamp(0.05, 0.98);
 }
 
+double _ocrItemPenalty(OcrLine? ocrLine) {
+  if (ocrLine == null) return 0.0;
+  var penalty = 0.0;
+  if (ocrLine.confidence != null) {
+    penalty += (1.0 - ocrLine.confidence!) * _ocrConfidenceMaxPenalty;
+  }
+  final words = ocrLine.words;
+  if (words != null && words.any((w) => w.digitCorrected)) {
+    penalty += _digitCorrectedItemPenalty;
+  }
+  return penalty;
+}
+
 ({String name, double price, int? quantity, double confidence})?
     _tryParseItemLine(String line) {
   final qty = _qtyItemRegex.firstMatch(line);
@@ -222,6 +242,7 @@ ReceiptLineItemsResult extractReceiptLineItems(
   double? totalMyr,
   int maxItems = maxExtractedLineItems,
   ReceiptLayoutAnalysis? layout,
+  List<OcrLine>? ocrLines,
 }) {
   final lines = ocrText.split(RegExp(r'\r?\n'));
   final items = <ReceiptLineItem>[];
@@ -247,6 +268,8 @@ ReceiptLineItemsResult extractReceiptLineItems(
         confidence -= _wrongZoneItemPenalty;
       }
     }
+    final ocrLine = (ocrLines != null && i < ocrLines.length) ? ocrLines[i] : null;
+    confidence -= _ocrItemPenalty(ocrLine);
     items.add(ReceiptLineItem(
       name: parsed.name,
       priceMyr: parsed.price,

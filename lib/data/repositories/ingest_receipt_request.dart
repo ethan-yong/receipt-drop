@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../../domain/logic/merchant_extractor.dart';
+import '../../domain/models/field_correction.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/receipt_understanding.dart';
 
@@ -36,6 +37,7 @@ class IngestReceiptRequest {
     this.pickedPlaceLat,
     this.pickedPlaceLng,
     this.pickedPlaceLocked = false,
+    this.fieldCorrections = const [],
   });
 
   final String localFilePath;
@@ -86,4 +88,9 @@ class IngestReceiptRequest {
   /// When true, the above place fields are written immediately and
   /// [placeStatus] is set to 'user_locked' so enrichment skips Places.
   final bool pickedPlaceLocked;
+
+  /// Predicted-vs-confirmed diffs captured on the confirm sheet — persisted
+  /// alongside the transaction and synced for the feedback-learning
+  /// surfaces. See `docs/plans/2026-07-23-feedback-learning-system.md`.
+  final List<FieldCorrection> fieldCorrections;
 }

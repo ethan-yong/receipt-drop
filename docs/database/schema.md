@@ -101,6 +101,21 @@ Added `20260708000000_merchant_aliases.sql`. `id`, `alias_text_normalized text`,
 
 **Deliberately global, not per-user** — a cache of "this garbled OCR text near this location resolves to this Google Place," shared across all users (business names aren't sensitive; one user's correction should help everyone who later scans a receipt from the same place). RLS enabled with **zero policies** — no `authenticated`/`anon` grant on the table at all, and function `EXECUTE` is explicitly revoked from `PUBLIC` before being granted to `authenticated` (Postgres auto-grants `EXECUTE` to `PUBLIC` on new functions — easy to forget to revoke). The only access path is the two functions below, matching the `list_leaderboard_scores()` precedent of a locked-down table behind narrow definer functions. See `docs/decisions.md`.
 
+### `user_field_corrections`
+Added `20260723010000_user_field_corrections.sql` (feedback-learning-system, `docs/plans/2026-07-23-feedback-learning-system.md`). `id`, `user_id` FK → `profiles.id` cascade, `transaction_id` FK → `transactions.id` cascade, `field text` (check `merchant|amount|category|line_item_price`), `predicted_value text`, `confirmed_value text`, `merchant_raw text` (nullable — the merchant this correction is attributed to, regardless of `field`), `confidence double precision` (nullable), `correction_type text` (nullable — `free_text|user_locked`, `field = 'merchant'` only), `line_item_index integer` (nullable, `field = 'line_item_price'` only), `created_at`. Indexes on `user_id` and `transaction_id`.
+
+Owner-only RLS (`user_id = auth.uid()`), same as `transactions`. This is the single source-of-truth event log every other learning surface below derives from — captured client-side in `ReceiptConfirmSheet._buildFieldCorrections()` at the one point the OCR/LLM prediction and the user's confirmed value are both still in scope, synced alongside the transaction it belongs to.
+
+### `user_category_preferences`
+Added `20260723020000_user_category_preferences.sql`. `id`, `user_id` FK → `profiles.id` cascade, `merchant_normalized text`, `category text`, `correction_count int default 1` (corroboration counter — see below), `last_corrected_at`, `created_at`. `unique(user_id, merchant_normalized)`, index on `(user_id, merchant_normalized)`.
+
+Strictly owner-only (RLS `user_id = auth.uid()`, like `transactions`) — a personal signal, not shared cross-user like `merchant_aliases`. `upsert_category_preference()`/`lookup_category_preference()` below are plain `security invoker` functions (RLS still applies to the caller), used only for the atomic corroboration-count increment, not to bypass RLS. A learned preference is only meant to be surfaced once corrected *consistently* at least twice for the same merchant: when a disagreeing correction arrives, the newest category wins (recency) but `correction_count` resets to 1. One-time backfill from historical `transactions.category_user`/`category_guess` divergence: `supabase/scripts/20260723_backfill_category_preferences.sql` (not a migration — run manually once).
+
+### `ocr_misread_patterns`
+Added `20260723030000_ocr_misread_patterns.sql`. `id`, `from_char text`, `to_char text`, `hit_count int default 1`, `created_at`, `last_seen_at`. `unique(from_char, to_char)`, index on `(from_char, to_char)`.
+
+Global and anonymous by construction — rows are abstracted single-character substitution counts only (e.g. "a predicted `O` was corrected to a confirmed `0`"); the amount/receipt content that produced them never reaches this table at all (the abstraction — `lib/domain/logic/misread_pattern_extractor.dart` — runs client-side before the record is ever constructed, and only proceeds when the predicted/confirmed strings align as a small, localized fix). Locked down exactly like `merchant_aliases`: zero RLS policies, access only via `lookup_misread_patterns()`/`upsert_misread_pattern()`, execute revoked from `public` then granted to `authenticated`. Not yet consumed server-side (`services/ocr-api` has no Postgres connectivity today — see `docs/system/decisions.md`); aggregation only for v1.
+
 ## Storage buckets (`20260511000001_storage.sql`)
 
 | Bucket | Public | Policy |
@@ -123,6 +138,11 @@ Added `20260708000000_merchant_aliases.sql`. `id`, `alias_text_normalized text`,
 | `get_map_transactions_in_bounds(min_lat, min_lng, max_lat, max_lng, start_at, end_at, category)` | `security definer` | Caller's own geolocated transactions inside a lat/lng bounding box + time/category filter, via the `place_geom` GiST index; explicit `where user_id = auth.uid()` since security definer bypasses RLS; `limit 2000` | `20260713000000` | `map_transactions_repository.dart` (spend map own-place pins, fetched on `onCameraIdle` only) |
 | `lookup_merchant_alias(alias_text, geohash)` | `security definer`, execute revoked from `public`, granted to `authenticated` | Best (highest-confidence) cached merchant→place match for an alias key + geohash bucket | `20260708000000` | `enrich-transaction` edge function (alias fast-path, before any Places call) |
 | `upsert_merchant_alias(alias_text, geohash, place_id, name, lat, lng, confidence)` | `security definer`, execute revoked from `public`, granted to `authenticated` | Insert-or-bump-confidence/hit-count on conflict | `20260708000000` | `enrich-transaction` edge function (only when a fresh resolution's confidence clears `ALIAS_SAVE_CONFIDENCE_THRESHOLD`, best-effort) |
+| `upsert_merchant_alias_from_correction(alias_text, geohash, place_id, name, lat, lng, correction_type)` | `security definer`, execute revoked from `public`, granted to `authenticated` | Second alias write-back trigger keyed on an explicit user correction rather than an algorithmic confidence threshold; `user_locked` trusts immediately, `free_text` is corroboration-gated (writes a low-confidence competing row when it disagrees with an established entry, promoted only after 3 recurrences) | `20260723040000` | `enrich-transaction` edge function |
+| `upsert_category_preference(merchant_normalized, category)` | `security invoker` (RLS applies) | Atomic upsert-with-corroboration-count for the caller's own `user_category_preferences` row | `20260723020000` | `sync_worker_flutter.dart` (on syncing a `category` field correction) |
+| `lookup_category_preference(merchant_normalized)` | `security invoker` (RLS applies) | The caller's own learned category + corroboration count for a merchant, if any | `20260723020000` | `category_preference_repository.dart` (consulted before parsing, keyed on the LLM's merchant read) |
+| `upsert_misread_pattern(from_char, to_char)` | `security definer`, execute revoked from `public`, granted to `authenticated` | Insert-or-bump-hit-count for a single abstracted character-substitution pattern | `20260723030000` | `sync_worker_flutter.dart` (on syncing an `amount`/`line_item_price` field correction, after client-side abstraction) |
+| `lookup_misread_patterns()` | `security definer`, execute revoked from `public`, granted to `authenticated` | All abstracted misread patterns, ranked by hit count | `20260723030000` | Not yet consumed (see table doc above) |
 
 ## Relationships (ER summary)
 
@@ -142,7 +162,7 @@ profiles 1─N pending_receipts (user_id, cascade)
 pending_receipts 0..1─0..1 transactions (transaction_id, set null on delete)
 ```
 
-`merchant_aliases` has no FK to any other table — it's a standalone global cache keyed by `(alias_text_normalized, geohash_bucket)`, not by user or transaction.
+`merchant_aliases` has no FK to any other table — it's a standalone global cache keyed by `(alias_text_normalized, geohash_bucket)`, not by user or transaction. `ocr_misread_patterns` likewise has no FK — it's a standalone global, anonymized aggregate keyed by `(from_char, to_char)`. `user_field_corrections` FKs to both `profiles` and `transactions` (cascade both ways); `user_category_preferences` FKs only to `profiles`, keyed by `(user_id, merchant_normalized)`.
 
 ## Two leaderboard systems — how they relate
 
@@ -152,17 +172,26 @@ Not competing — layered. **Friend leaderboard** = Postgres-native, RLS-backed 
 
 `enrich-transaction` (see `docs/api.md`) checks `lookup_merchant_alias()` **before** calling Google Places at all: if a hit is found for the top-ranked merchant candidate's normalized text + geohash bucket, it writes `place_*`/`pipeline_status='enriched'` directly from the cached row and returns — no Places API call, no cost. A fresh Places resolution that clears a confidence threshold gets written back via `upsert_merchant_alias()` so the *next* scan of the same merchant near the same location skips Places too. Global (see table doc above) — this is the one place in the schema where cross-user data sharing happens by design outside the friends/social system.
 
+## Feedback-learning system — how the three surfaces derive from one capture point
+
+See `docs/plans/2026-07-23-feedback-learning-system.md` for the full design. `ReceiptConfirmSheet` captures a `user_field_corrections` row for every field the user actually changed (merchant/amount/category/line-item price), synced alongside its transaction — nothing downstream captures corrections independently:
+
+- **Merchant identity** — `enrich-transaction` reads any pending `merchant` correction for the transaction it's enriching and calls `upsert_merchant_alias_from_correction()` using the place it already resolved (either the transaction's own `user_locked` fields, or its freshly-resolved Places winner) — a second write-back trigger into `merchant_aliases` alongside the existing algorithmic `>=0.85`-confidence path.
+- **Category preference** — `sync_worker_flutter.dart` calls `upsert_category_preference()` for any pending `category` correction as it syncs. `parseReceiptFile()` calls `lookup_category_preference()` ahead of parsing (keyed on the LLM's own merchant read, when available) and `parseReceiptOcrText()` uses the result as a low-priority tie-breaker (only fills in when the request's own category signal is itself below `categoryPreferenceOverrideConfidenceCeiling`, and only once `correction_count >= categoryPreferenceMinCorroboration`).
+- **OCR misread patterns** — `lib/domain/logic/misread_pattern_extractor.dart` runs client-side, before upload, against any pending `amount`/`line_item_price` correction, discarding the actual values and keeping only aligned character-substitution pairs; `sync_worker_flutter.dart` calls `upsert_misread_pattern()` for each one found. Aggregation only for v1 — not yet consumed (`services/ocr-api` has no Postgres connectivity today).
+
 ## Local-only tables (Drift/SQLite, on-device — see `lib/data/local/tables.dart`)
 
-Not part of Postgres; the outbox mirrors the cloud schema plus sync bookkeeping. Schema is versioned (`schemaVersion = 8` in `app_database.dart`) with incremental `onUpgrade` migrations.
+Not part of Postgres; the outbox mirrors the cloud schema plus sync bookkeeping. Schema is versioned (`schemaVersion = 11` in `app_database.dart`) with incremental `onUpgrade` migrations.
 
 | Table | Mirrors | Extra fields |
 |---|---|---|
-| `OutboxTransactions` | `transactions` | `syncStatus` (`pending\|syncing\|synced\|stuck`), `lastError`, `retryCount`, `impactUser` (v2), `rawOcrText`/`ocrServiceConfidence`/`lineItemsConfidence`/`parseFailureReason` (v5, mirrors the Postgres v3 columns), `merchantCandidatesJson`/`ocrHeaderText` (v6, mirrors `transactions.merchant_candidates`/`ocr_header_text`), `llmUnderstandingJson` (v7, mirrors `transactions.llm_understanding` — populated at capture time by the synchronous OCR+LLM call, see `docs/decisions.md`) |
+| `OutboxTransactions` | `transactions` | `syncStatus` (`pending\|syncing\|synced\|stuck`), `lastError`, `retryCount`, `impactUser` (v2), `rawOcrText`/`ocrServiceConfidence`/`lineItemsConfidence`/`parseFailureReason` (v5, mirrors the Postgres v3 columns), `merchantCandidatesJson`/`ocrHeaderText` (v6, mirrors `transactions.merchant_candidates`/`ocr_header_text`), `llmUnderstandingJson` (v7, mirrors `transactions.llm_understanding` — populated at capture time by the synchronous OCR+LLM call, see `docs/decisions.md`), `cleanedOcrText`/`ocrCorrectionsJson` (v10, LLM OCR-cleanup diffs — unrelated to `OutboxFieldCorrections` below despite the similar name) |
 | `OutboxArtifacts` | `receipt_artifacts` | `localFilePath` |
 | `OutboxLineItems` (v4) | `receipt_line_items` | — |
 | `CategoryConfigCache` | remote categories JSON | etag/version — **scaffolded but not actively fetched at runtime**; categories are loaded only from the bundled asset (`assets/config/categories-v1.json`). Don't assume remote refresh works. |
 | `PendingImports` (v8) | `pending_receipts` (async best-effort) | local-only inbox. Rows are the **immediate source of truth** — the Supabase mirror is best-effort. Status: `local\|processing\|failed`. On successful save the Drift row **and** the copied local file are deleted; there is no `completed` status. `localFilePath` points to `<documents>/pending_receipts/<id>.<ext>`. Exposed via `PendingImportsRepository` (`lib/data/repositories/pending_imports_repository.dart`); public API uses pure Dart `PendingImportModel` (not the Drift-generated class) so web compiles without Drift. |
+| `OutboxFieldCorrections` (v11) | `user_field_corrections` | local queue for the feedback-learning capture hook (see above) — `syncStatus` (`pending\|synced`) gates both the Postgres upsert and the one-time category-preference/misread-pattern RPC calls that must fire exactly once per correction |
 
 `beforeOpen` sets `PRAGMA foreign_keys = ON` — SQLite disables FK enforcement by default; required for cascade deletes.
 

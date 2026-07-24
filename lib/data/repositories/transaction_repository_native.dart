@@ -164,6 +164,26 @@ class TransactionRepository {
       });
     }
 
+    if (request.fieldCorrections.isNotEmpty) {
+      await _db.batch((batch) {
+        batch.insertAll(_db.outboxFieldCorrections, [
+          for (final correction in request.fieldCorrections)
+            OutboxFieldCorrectionsCompanion.insert(
+              id: _uuid.v4(),
+              userId: request.userId,
+              transactionId: id,
+              field: correction.field,
+              predictedValue: correction.predictedValue,
+              confirmedValue: correction.confirmedValue,
+              merchantRaw: Value(correction.merchantRaw),
+              confidence: Value(correction.confidence),
+              correctionType: Value(correction.correctionType),
+              lineItemIndex: Value(correction.lineItemIndex),
+            ),
+        ]);
+      });
+    }
+
     unawaited(SyncWorker.run(_db, id));
 
     return TransactionView(

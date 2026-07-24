@@ -3942,6 +3942,760 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
   }
 }
 
+class $OutboxFieldCorrectionsTable extends OutboxFieldCorrections
+    with TableInfo<$OutboxFieldCorrectionsTable, OutboxFieldCorrection> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $OutboxFieldCorrectionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _transactionIdMeta = const VerificationMeta(
+    'transactionId',
+  );
+  @override
+  late final GeneratedColumn<String> transactionId = GeneratedColumn<String>(
+    'transaction_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES outbox_transactions (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _fieldMeta = const VerificationMeta('field');
+  @override
+  late final GeneratedColumn<String> field = GeneratedColumn<String>(
+    'field',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _predictedValueMeta = const VerificationMeta(
+    'predictedValue',
+  );
+  @override
+  late final GeneratedColumn<String> predictedValue = GeneratedColumn<String>(
+    'predicted_value',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _confirmedValueMeta = const VerificationMeta(
+    'confirmedValue',
+  );
+  @override
+  late final GeneratedColumn<String> confirmedValue = GeneratedColumn<String>(
+    'confirmed_value',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _merchantRawMeta = const VerificationMeta(
+    'merchantRaw',
+  );
+  @override
+  late final GeneratedColumn<String> merchantRaw = GeneratedColumn<String>(
+    'merchant_raw',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _correctionTypeMeta = const VerificationMeta(
+    'correctionType',
+  );
+  @override
+  late final GeneratedColumn<String> correctionType = GeneratedColumn<String>(
+    'correction_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lineItemIndexMeta = const VerificationMeta(
+    'lineItemIndex',
+  );
+  @override
+  late final GeneratedColumn<int> lineItemIndex = GeneratedColumn<int>(
+    'line_item_index',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('pending'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    transactionId,
+    field,
+    predictedValue,
+    confirmedValue,
+    merchantRaw,
+    confidence,
+    correctionType,
+    lineItemIndex,
+    createdAt,
+    syncStatus,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'outbox_field_corrections';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<OutboxFieldCorrection> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('transaction_id')) {
+      context.handle(
+        _transactionIdMeta,
+        transactionId.isAcceptableOrUnknown(
+          data['transaction_id']!,
+          _transactionIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_transactionIdMeta);
+    }
+    if (data.containsKey('field')) {
+      context.handle(
+        _fieldMeta,
+        field.isAcceptableOrUnknown(data['field']!, _fieldMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fieldMeta);
+    }
+    if (data.containsKey('predicted_value')) {
+      context.handle(
+        _predictedValueMeta,
+        predictedValue.isAcceptableOrUnknown(
+          data['predicted_value']!,
+          _predictedValueMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_predictedValueMeta);
+    }
+    if (data.containsKey('confirmed_value')) {
+      context.handle(
+        _confirmedValueMeta,
+        confirmedValue.isAcceptableOrUnknown(
+          data['confirmed_value']!,
+          _confirmedValueMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_confirmedValueMeta);
+    }
+    if (data.containsKey('merchant_raw')) {
+      context.handle(
+        _merchantRawMeta,
+        merchantRaw.isAcceptableOrUnknown(
+          data['merchant_raw']!,
+          _merchantRawMeta,
+        ),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    }
+    if (data.containsKey('correction_type')) {
+      context.handle(
+        _correctionTypeMeta,
+        correctionType.isAcceptableOrUnknown(
+          data['correction_type']!,
+          _correctionTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('line_item_index')) {
+      context.handle(
+        _lineItemIndexMeta,
+        lineItemIndex.isAcceptableOrUnknown(
+          data['line_item_index']!,
+          _lineItemIndexMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  OutboxFieldCorrection map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return OutboxFieldCorrection(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      transactionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transaction_id'],
+      )!,
+      field: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}field'],
+      )!,
+      predictedValue: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}predicted_value'],
+      )!,
+      confirmedValue: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}confirmed_value'],
+      )!,
+      merchantRaw: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}merchant_raw'],
+      ),
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      ),
+      correctionType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}correction_type'],
+      ),
+      lineItemIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}line_item_index'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      )!,
+    );
+  }
+
+  @override
+  $OutboxFieldCorrectionsTable createAlias(String alias) {
+    return $OutboxFieldCorrectionsTable(attachedDatabase, alias);
+  }
+}
+
+class OutboxFieldCorrection extends DataClass
+    implements Insertable<OutboxFieldCorrection> {
+  final String id;
+  final String userId;
+  final String transactionId;
+
+  /// 'merchant' | 'amount' | 'category' | 'line_item_price'.
+  final String field;
+  final String predictedValue;
+  final String confirmedValue;
+
+  /// Merchant text this correction is associated with, regardless of
+  /// [field] — always the *predicted* merchant name at capture time.
+  final String? merchantRaw;
+  final double? confidence;
+
+  /// For field == 'merchant' only: 'free_text' | 'user_locked'.
+  final String? correctionType;
+
+  /// For field == 'line_item_price' only: which item index changed.
+  final int? lineItemIndex;
+  final DateTime createdAt;
+  final String syncStatus;
+  const OutboxFieldCorrection({
+    required this.id,
+    required this.userId,
+    required this.transactionId,
+    required this.field,
+    required this.predictedValue,
+    required this.confirmedValue,
+    this.merchantRaw,
+    this.confidence,
+    this.correctionType,
+    this.lineItemIndex,
+    required this.createdAt,
+    required this.syncStatus,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['transaction_id'] = Variable<String>(transactionId);
+    map['field'] = Variable<String>(field);
+    map['predicted_value'] = Variable<String>(predictedValue);
+    map['confirmed_value'] = Variable<String>(confirmedValue);
+    if (!nullToAbsent || merchantRaw != null) {
+      map['merchant_raw'] = Variable<String>(merchantRaw);
+    }
+    if (!nullToAbsent || confidence != null) {
+      map['confidence'] = Variable<double>(confidence);
+    }
+    if (!nullToAbsent || correctionType != null) {
+      map['correction_type'] = Variable<String>(correctionType);
+    }
+    if (!nullToAbsent || lineItemIndex != null) {
+      map['line_item_index'] = Variable<int>(lineItemIndex);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['sync_status'] = Variable<String>(syncStatus);
+    return map;
+  }
+
+  OutboxFieldCorrectionsCompanion toCompanion(bool nullToAbsent) {
+    return OutboxFieldCorrectionsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      transactionId: Value(transactionId),
+      field: Value(field),
+      predictedValue: Value(predictedValue),
+      confirmedValue: Value(confirmedValue),
+      merchantRaw: merchantRaw == null && nullToAbsent
+          ? const Value.absent()
+          : Value(merchantRaw),
+      confidence: confidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confidence),
+      correctionType: correctionType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(correctionType),
+      lineItemIndex: lineItemIndex == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lineItemIndex),
+      createdAt: Value(createdAt),
+      syncStatus: Value(syncStatus),
+    );
+  }
+
+  factory OutboxFieldCorrection.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return OutboxFieldCorrection(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      transactionId: serializer.fromJson<String>(json['transactionId']),
+      field: serializer.fromJson<String>(json['field']),
+      predictedValue: serializer.fromJson<String>(json['predictedValue']),
+      confirmedValue: serializer.fromJson<String>(json['confirmedValue']),
+      merchantRaw: serializer.fromJson<String?>(json['merchantRaw']),
+      confidence: serializer.fromJson<double?>(json['confidence']),
+      correctionType: serializer.fromJson<String?>(json['correctionType']),
+      lineItemIndex: serializer.fromJson<int?>(json['lineItemIndex']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      syncStatus: serializer.fromJson<String>(json['syncStatus']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'transactionId': serializer.toJson<String>(transactionId),
+      'field': serializer.toJson<String>(field),
+      'predictedValue': serializer.toJson<String>(predictedValue),
+      'confirmedValue': serializer.toJson<String>(confirmedValue),
+      'merchantRaw': serializer.toJson<String?>(merchantRaw),
+      'confidence': serializer.toJson<double?>(confidence),
+      'correctionType': serializer.toJson<String?>(correctionType),
+      'lineItemIndex': serializer.toJson<int?>(lineItemIndex),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'syncStatus': serializer.toJson<String>(syncStatus),
+    };
+  }
+
+  OutboxFieldCorrection copyWith({
+    String? id,
+    String? userId,
+    String? transactionId,
+    String? field,
+    String? predictedValue,
+    String? confirmedValue,
+    Value<String?> merchantRaw = const Value.absent(),
+    Value<double?> confidence = const Value.absent(),
+    Value<String?> correctionType = const Value.absent(),
+    Value<int?> lineItemIndex = const Value.absent(),
+    DateTime? createdAt,
+    String? syncStatus,
+  }) => OutboxFieldCorrection(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    transactionId: transactionId ?? this.transactionId,
+    field: field ?? this.field,
+    predictedValue: predictedValue ?? this.predictedValue,
+    confirmedValue: confirmedValue ?? this.confirmedValue,
+    merchantRaw: merchantRaw.present ? merchantRaw.value : this.merchantRaw,
+    confidence: confidence.present ? confidence.value : this.confidence,
+    correctionType: correctionType.present
+        ? correctionType.value
+        : this.correctionType,
+    lineItemIndex: lineItemIndex.present
+        ? lineItemIndex.value
+        : this.lineItemIndex,
+    createdAt: createdAt ?? this.createdAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+  );
+  OutboxFieldCorrection copyWithCompanion(
+    OutboxFieldCorrectionsCompanion data,
+  ) {
+    return OutboxFieldCorrection(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      transactionId: data.transactionId.present
+          ? data.transactionId.value
+          : this.transactionId,
+      field: data.field.present ? data.field.value : this.field,
+      predictedValue: data.predictedValue.present
+          ? data.predictedValue.value
+          : this.predictedValue,
+      confirmedValue: data.confirmedValue.present
+          ? data.confirmedValue.value
+          : this.confirmedValue,
+      merchantRaw: data.merchantRaw.present
+          ? data.merchantRaw.value
+          : this.merchantRaw,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      correctionType: data.correctionType.present
+          ? data.correctionType.value
+          : this.correctionType,
+      lineItemIndex: data.lineItemIndex.present
+          ? data.lineItemIndex.value
+          : this.lineItemIndex,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OutboxFieldCorrection(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('transactionId: $transactionId, ')
+          ..write('field: $field, ')
+          ..write('predictedValue: $predictedValue, ')
+          ..write('confirmedValue: $confirmedValue, ')
+          ..write('merchantRaw: $merchantRaw, ')
+          ..write('confidence: $confidence, ')
+          ..write('correctionType: $correctionType, ')
+          ..write('lineItemIndex: $lineItemIndex, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('syncStatus: $syncStatus')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    transactionId,
+    field,
+    predictedValue,
+    confirmedValue,
+    merchantRaw,
+    confidence,
+    correctionType,
+    lineItemIndex,
+    createdAt,
+    syncStatus,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is OutboxFieldCorrection &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.transactionId == this.transactionId &&
+          other.field == this.field &&
+          other.predictedValue == this.predictedValue &&
+          other.confirmedValue == this.confirmedValue &&
+          other.merchantRaw == this.merchantRaw &&
+          other.confidence == this.confidence &&
+          other.correctionType == this.correctionType &&
+          other.lineItemIndex == this.lineItemIndex &&
+          other.createdAt == this.createdAt &&
+          other.syncStatus == this.syncStatus);
+}
+
+class OutboxFieldCorrectionsCompanion
+    extends UpdateCompanion<OutboxFieldCorrection> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<String> transactionId;
+  final Value<String> field;
+  final Value<String> predictedValue;
+  final Value<String> confirmedValue;
+  final Value<String?> merchantRaw;
+  final Value<double?> confidence;
+  final Value<String?> correctionType;
+  final Value<int?> lineItemIndex;
+  final Value<DateTime> createdAt;
+  final Value<String> syncStatus;
+  final Value<int> rowid;
+  const OutboxFieldCorrectionsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.transactionId = const Value.absent(),
+    this.field = const Value.absent(),
+    this.predictedValue = const Value.absent(),
+    this.confirmedValue = const Value.absent(),
+    this.merchantRaw = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.correctionType = const Value.absent(),
+    this.lineItemIndex = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  OutboxFieldCorrectionsCompanion.insert({
+    required String id,
+    required String userId,
+    required String transactionId,
+    required String field,
+    required String predictedValue,
+    required String confirmedValue,
+    this.merchantRaw = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.correctionType = const Value.absent(),
+    this.lineItemIndex = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       transactionId = Value(transactionId),
+       field = Value(field),
+       predictedValue = Value(predictedValue),
+       confirmedValue = Value(confirmedValue);
+  static Insertable<OutboxFieldCorrection> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<String>? transactionId,
+    Expression<String>? field,
+    Expression<String>? predictedValue,
+    Expression<String>? confirmedValue,
+    Expression<String>? merchantRaw,
+    Expression<double>? confidence,
+    Expression<String>? correctionType,
+    Expression<int>? lineItemIndex,
+    Expression<DateTime>? createdAt,
+    Expression<String>? syncStatus,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (transactionId != null) 'transaction_id': transactionId,
+      if (field != null) 'field': field,
+      if (predictedValue != null) 'predicted_value': predictedValue,
+      if (confirmedValue != null) 'confirmed_value': confirmedValue,
+      if (merchantRaw != null) 'merchant_raw': merchantRaw,
+      if (confidence != null) 'confidence': confidence,
+      if (correctionType != null) 'correction_type': correctionType,
+      if (lineItemIndex != null) 'line_item_index': lineItemIndex,
+      if (createdAt != null) 'created_at': createdAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  OutboxFieldCorrectionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<String>? transactionId,
+    Value<String>? field,
+    Value<String>? predictedValue,
+    Value<String>? confirmedValue,
+    Value<String?>? merchantRaw,
+    Value<double?>? confidence,
+    Value<String?>? correctionType,
+    Value<int?>? lineItemIndex,
+    Value<DateTime>? createdAt,
+    Value<String>? syncStatus,
+    Value<int>? rowid,
+  }) {
+    return OutboxFieldCorrectionsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      transactionId: transactionId ?? this.transactionId,
+      field: field ?? this.field,
+      predictedValue: predictedValue ?? this.predictedValue,
+      confirmedValue: confirmedValue ?? this.confirmedValue,
+      merchantRaw: merchantRaw ?? this.merchantRaw,
+      confidence: confidence ?? this.confidence,
+      correctionType: correctionType ?? this.correctionType,
+      lineItemIndex: lineItemIndex ?? this.lineItemIndex,
+      createdAt: createdAt ?? this.createdAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (transactionId.present) {
+      map['transaction_id'] = Variable<String>(transactionId.value);
+    }
+    if (field.present) {
+      map['field'] = Variable<String>(field.value);
+    }
+    if (predictedValue.present) {
+      map['predicted_value'] = Variable<String>(predictedValue.value);
+    }
+    if (confirmedValue.present) {
+      map['confirmed_value'] = Variable<String>(confirmedValue.value);
+    }
+    if (merchantRaw.present) {
+      map['merchant_raw'] = Variable<String>(merchantRaw.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (correctionType.present) {
+      map['correction_type'] = Variable<String>(correctionType.value);
+    }
+    if (lineItemIndex.present) {
+      map['line_item_index'] = Variable<int>(lineItemIndex.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OutboxFieldCorrectionsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('transactionId: $transactionId, ')
+          ..write('field: $field, ')
+          ..write('predictedValue: $predictedValue, ')
+          ..write('confirmedValue: $confirmedValue, ')
+          ..write('merchantRaw: $merchantRaw, ')
+          ..write('confidence: $confidence, ')
+          ..write('correctionType: $correctionType, ')
+          ..write('lineItemIndex: $lineItemIndex, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3956,6 +4710,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $CategoryConfigCacheTable categoryConfigCache =
       $CategoryConfigCacheTable(this);
   late final $PendingImportsTable pendingImports = $PendingImportsTable(this);
+  late final $OutboxFieldCorrectionsTable outboxFieldCorrections =
+      $OutboxFieldCorrectionsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3966,6 +4722,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     outboxLineItems,
     categoryConfigCache,
     pendingImports,
+    outboxFieldCorrections,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -3982,6 +4739,15 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('outbox_line_items', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'outbox_transactions',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [
+        TableUpdate('outbox_field_corrections', kind: UpdateKind.delete),
+      ],
     ),
   ]);
 }
@@ -4120,6 +4886,34 @@ final class $$OutboxTransactionsTableReferences
 
     final cache = $_typedResult.readTableOrNull(
       _outboxLineItemsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<
+    $OutboxFieldCorrectionsTable,
+    List<OutboxFieldCorrection>
+  >
+  _outboxFieldCorrectionsRefsTable(_$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.outboxFieldCorrections,
+        aliasName: $_aliasNameGenerator(
+          db.outboxTransactions.id,
+          db.outboxFieldCorrections.transactionId,
+        ),
+      );
+
+  $$OutboxFieldCorrectionsTableProcessedTableManager
+  get outboxFieldCorrectionsRefs {
+    final manager = $$OutboxFieldCorrectionsTableTableManager(
+      $_db,
+      $_db.outboxFieldCorrections,
+    ).filter((f) => f.transactionId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _outboxFieldCorrectionsRefsTable($_db),
     );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
@@ -4363,6 +5157,32 @@ class $$OutboxTransactionsTableFilterComposer
                 $removeJoinBuilderFromRootComposer,
           ),
     );
+    return f(composer);
+  }
+
+  Expression<bool> outboxFieldCorrectionsRefs(
+    Expression<bool> Function($$OutboxFieldCorrectionsTableFilterComposer f) f,
+  ) {
+    final $$OutboxFieldCorrectionsTableFilterComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.outboxFieldCorrections,
+          getReferencedColumn: (t) => t.transactionId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$OutboxFieldCorrectionsTableFilterComposer(
+                $db: $db,
+                $table: $db.outboxFieldCorrections,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
     return f(composer);
   }
 }
@@ -4779,6 +5599,32 @@ class $$OutboxTransactionsTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> outboxFieldCorrectionsRefs<T extends Object>(
+    Expression<T> Function($$OutboxFieldCorrectionsTableAnnotationComposer a) f,
+  ) {
+    final $$OutboxFieldCorrectionsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.outboxFieldCorrections,
+          getReferencedColumn: (t) => t.transactionId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$OutboxFieldCorrectionsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.outboxFieldCorrections,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$OutboxTransactionsTableTableManager
@@ -4797,6 +5643,7 @@ class $$OutboxTransactionsTableTableManager
           PrefetchHooks Function({
             bool outboxArtifactsRefs,
             bool outboxLineItemsRefs,
+            bool outboxFieldCorrectionsRefs,
           })
         > {
   $$OutboxTransactionsTableTableManager(
@@ -4980,12 +5827,17 @@ class $$OutboxTransactionsTableTableManager
               )
               .toList(),
           prefetchHooksCallback:
-              ({outboxArtifactsRefs = false, outboxLineItemsRefs = false}) {
+              ({
+                outboxArtifactsRefs = false,
+                outboxLineItemsRefs = false,
+                outboxFieldCorrectionsRefs = false,
+              }) {
                 return PrefetchHooks(
                   db: db,
                   explicitlyWatchedTables: [
                     if (outboxArtifactsRefs) db.outboxArtifacts,
                     if (outboxLineItemsRefs) db.outboxLineItems,
+                    if (outboxFieldCorrectionsRefs) db.outboxFieldCorrections,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -5032,6 +5884,27 @@ class $$OutboxTransactionsTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (outboxFieldCorrectionsRefs)
+                        await $_getPrefetchedData<
+                          OutboxTransaction,
+                          $OutboxTransactionsTable,
+                          OutboxFieldCorrection
+                        >(
+                          currentTable: table,
+                          referencedTable: $$OutboxTransactionsTableReferences
+                              ._outboxFieldCorrectionsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$OutboxTransactionsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).outboxFieldCorrectionsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.transactionId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -5055,6 +5928,7 @@ typedef $$OutboxTransactionsTableProcessedTableManager =
       PrefetchHooks Function({
         bool outboxArtifactsRefs,
         bool outboxLineItemsRefs,
+        bool outboxFieldCorrectionsRefs,
       })
     >;
 typedef $$OutboxArtifactsTableCreateCompanionBuilder =
@@ -6274,6 +7148,498 @@ typedef $$PendingImportsTableProcessedTableManager =
       PendingImport,
       PrefetchHooks Function()
     >;
+typedef $$OutboxFieldCorrectionsTableCreateCompanionBuilder =
+    OutboxFieldCorrectionsCompanion Function({
+      required String id,
+      required String userId,
+      required String transactionId,
+      required String field,
+      required String predictedValue,
+      required String confirmedValue,
+      Value<String?> merchantRaw,
+      Value<double?> confidence,
+      Value<String?> correctionType,
+      Value<int?> lineItemIndex,
+      Value<DateTime> createdAt,
+      Value<String> syncStatus,
+      Value<int> rowid,
+    });
+typedef $$OutboxFieldCorrectionsTableUpdateCompanionBuilder =
+    OutboxFieldCorrectionsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<String> transactionId,
+      Value<String> field,
+      Value<String> predictedValue,
+      Value<String> confirmedValue,
+      Value<String?> merchantRaw,
+      Value<double?> confidence,
+      Value<String?> correctionType,
+      Value<int?> lineItemIndex,
+      Value<DateTime> createdAt,
+      Value<String> syncStatus,
+      Value<int> rowid,
+    });
+
+final class $$OutboxFieldCorrectionsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $OutboxFieldCorrectionsTable,
+          OutboxFieldCorrection
+        > {
+  $$OutboxFieldCorrectionsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $OutboxTransactionsTable _transactionIdTable(_$AppDatabase db) =>
+      db.outboxTransactions.createAlias(
+        $_aliasNameGenerator(
+          db.outboxFieldCorrections.transactionId,
+          db.outboxTransactions.id,
+        ),
+      );
+
+  $$OutboxTransactionsTableProcessedTableManager get transactionId {
+    final $_column = $_itemColumn<String>('transaction_id')!;
+
+    final manager = $$OutboxTransactionsTableTableManager(
+      $_db,
+      $_db.outboxTransactions,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_transactionIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$OutboxFieldCorrectionsTableFilterComposer
+    extends Composer<_$AppDatabase, $OutboxFieldCorrectionsTable> {
+  $$OutboxFieldCorrectionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get field => $composableBuilder(
+    column: $table.field,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get predictedValue => $composableBuilder(
+    column: $table.predictedValue,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get confirmedValue => $composableBuilder(
+    column: $table.confirmedValue,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get merchantRaw => $composableBuilder(
+    column: $table.merchantRaw,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get correctionType => $composableBuilder(
+    column: $table.correctionType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lineItemIndex => $composableBuilder(
+    column: $table.lineItemIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$OutboxTransactionsTableFilterComposer get transactionId {
+    final $$OutboxTransactionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.transactionId,
+      referencedTable: $db.outboxTransactions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxTransactionsTableFilterComposer(
+            $db: $db,
+            $table: $db.outboxTransactions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OutboxFieldCorrectionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $OutboxFieldCorrectionsTable> {
+  $$OutboxFieldCorrectionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get field => $composableBuilder(
+    column: $table.field,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get predictedValue => $composableBuilder(
+    column: $table.predictedValue,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get confirmedValue => $composableBuilder(
+    column: $table.confirmedValue,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get merchantRaw => $composableBuilder(
+    column: $table.merchantRaw,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get correctionType => $composableBuilder(
+    column: $table.correctionType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lineItemIndex => $composableBuilder(
+    column: $table.lineItemIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$OutboxTransactionsTableOrderingComposer get transactionId {
+    final $$OutboxTransactionsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.transactionId,
+      referencedTable: $db.outboxTransactions,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$OutboxTransactionsTableOrderingComposer(
+            $db: $db,
+            $table: $db.outboxTransactions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$OutboxFieldCorrectionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $OutboxFieldCorrectionsTable> {
+  $$OutboxFieldCorrectionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get field =>
+      $composableBuilder(column: $table.field, builder: (column) => column);
+
+  GeneratedColumn<String> get predictedValue => $composableBuilder(
+    column: $table.predictedValue,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get confirmedValue => $composableBuilder(
+    column: $table.confirmedValue,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get merchantRaw => $composableBuilder(
+    column: $table.merchantRaw,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get correctionType => $composableBuilder(
+    column: $table.correctionType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get lineItemIndex => $composableBuilder(
+    column: $table.lineItemIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+
+  $$OutboxTransactionsTableAnnotationComposer get transactionId {
+    final $$OutboxTransactionsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.transactionId,
+          referencedTable: $db.outboxTransactions,
+          getReferencedColumn: (t) => t.id,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$OutboxTransactionsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.outboxTransactions,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return composer;
+  }
+}
+
+class $$OutboxFieldCorrectionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $OutboxFieldCorrectionsTable,
+          OutboxFieldCorrection,
+          $$OutboxFieldCorrectionsTableFilterComposer,
+          $$OutboxFieldCorrectionsTableOrderingComposer,
+          $$OutboxFieldCorrectionsTableAnnotationComposer,
+          $$OutboxFieldCorrectionsTableCreateCompanionBuilder,
+          $$OutboxFieldCorrectionsTableUpdateCompanionBuilder,
+          (OutboxFieldCorrection, $$OutboxFieldCorrectionsTableReferences),
+          OutboxFieldCorrection,
+          PrefetchHooks Function({bool transactionId})
+        > {
+  $$OutboxFieldCorrectionsTableTableManager(
+    _$AppDatabase db,
+    $OutboxFieldCorrectionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$OutboxFieldCorrectionsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$OutboxFieldCorrectionsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$OutboxFieldCorrectionsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> transactionId = const Value.absent(),
+                Value<String> field = const Value.absent(),
+                Value<String> predictedValue = const Value.absent(),
+                Value<String> confirmedValue = const Value.absent(),
+                Value<String?> merchantRaw = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<String?> correctionType = const Value.absent(),
+                Value<int?> lineItemIndex = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => OutboxFieldCorrectionsCompanion(
+                id: id,
+                userId: userId,
+                transactionId: transactionId,
+                field: field,
+                predictedValue: predictedValue,
+                confirmedValue: confirmedValue,
+                merchantRaw: merchantRaw,
+                confidence: confidence,
+                correctionType: correctionType,
+                lineItemIndex: lineItemIndex,
+                createdAt: createdAt,
+                syncStatus: syncStatus,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required String transactionId,
+                required String field,
+                required String predictedValue,
+                required String confirmedValue,
+                Value<String?> merchantRaw = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<String?> correctionType = const Value.absent(),
+                Value<int?> lineItemIndex = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => OutboxFieldCorrectionsCompanion.insert(
+                id: id,
+                userId: userId,
+                transactionId: transactionId,
+                field: field,
+                predictedValue: predictedValue,
+                confirmedValue: confirmedValue,
+                merchantRaw: merchantRaw,
+                confidence: confidence,
+                correctionType: correctionType,
+                lineItemIndex: lineItemIndex,
+                createdAt: createdAt,
+                syncStatus: syncStatus,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$OutboxFieldCorrectionsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({transactionId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (transactionId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.transactionId,
+                                referencedTable:
+                                    $$OutboxFieldCorrectionsTableReferences
+                                        ._transactionIdTable(db),
+                                referencedColumn:
+                                    $$OutboxFieldCorrectionsTableReferences
+                                        ._transactionIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$OutboxFieldCorrectionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $OutboxFieldCorrectionsTable,
+      OutboxFieldCorrection,
+      $$OutboxFieldCorrectionsTableFilterComposer,
+      $$OutboxFieldCorrectionsTableOrderingComposer,
+      $$OutboxFieldCorrectionsTableAnnotationComposer,
+      $$OutboxFieldCorrectionsTableCreateCompanionBuilder,
+      $$OutboxFieldCorrectionsTableUpdateCompanionBuilder,
+      (OutboxFieldCorrection, $$OutboxFieldCorrectionsTableReferences),
+      OutboxFieldCorrection,
+      PrefetchHooks Function({bool transactionId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6288,4 +7654,9 @@ class $AppDatabaseManager {
       $$CategoryConfigCacheTableTableManager(_db, _db.categoryConfigCache);
   $$PendingImportsTableTableManager get pendingImports =>
       $$PendingImportsTableTableManager(_db, _db.pendingImports);
+  $$OutboxFieldCorrectionsTableTableManager get outboxFieldCorrections =>
+      $$OutboxFieldCorrectionsTableTableManager(
+        _db,
+        _db.outboxFieldCorrections,
+      );
 }

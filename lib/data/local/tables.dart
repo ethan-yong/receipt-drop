@@ -116,6 +116,57 @@ class OutboxTransactions extends Table {
   Set<Column<Object>>? get primaryKey => {id};
 }
 
+/// Predicted-vs-confirmed diffs captured by `ReceiptConfirmSheet` — the
+/// single local source-of-truth event log the feedback-learning surfaces
+/// (merchant alias write-back, category preference, OCR misread patterns)
+/// derive from. Deliberately named distinctly from [OutboxTransactions.
+/// ocrCorrectionsJson], which is an unrelated concept (LLM OCR-cleanup
+/// per-line diffs, not user-edit records) — see
+/// `docs/plans/2026-07-23-feedback-learning-system.md`.
+@DataClassName('OutboxFieldCorrection')
+class OutboxFieldCorrections extends Table {
+  @override
+  String get tableName => 'outbox_field_corrections';
+
+  TextColumn get id => text()();
+
+  TextColumn get userId => text()();
+
+  TextColumn get transactionId => text().references(
+        OutboxTransactions,
+        #id,
+        onDelete: KeyAction.cascade,
+      )();
+
+  /// 'merchant' | 'amount' | 'category' | 'line_item_price'.
+  TextColumn get field => text()();
+
+  TextColumn get predictedValue => text()();
+
+  TextColumn get confirmedValue => text()();
+
+  /// Merchant text this correction is associated with, regardless of
+  /// [field] — always the *predicted* merchant name at capture time.
+  TextColumn get merchantRaw => text().nullable()();
+
+  RealColumn get confidence => real().nullable()();
+
+  /// For field == 'merchant' only: 'free_text' | 'user_locked'.
+  TextColumn get correctionType => text().nullable()();
+
+  /// For field == 'line_item_price' only: which item index changed.
+  IntColumn get lineItemIndex => integer().nullable()();
+
+  DateTimeColumn get createdAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  TextColumn get syncStatus =>
+      text().withDefault(const Constant('pending'))();
+
+  @override
+  Set<Column<Object>>? get primaryKey => {id};
+}
+
 @DataClassName('OutboxArtifact')
 class OutboxArtifacts extends Table {
   @override

@@ -269,6 +269,11 @@ Options:
   --e2e                       Persist to in-memory outbox + preview sync payload
   --skip-health-check         Skip GET /health before processing
   -h, --help                  Show this help
+
+Adaptive OCR batch tuning (server-side env on the ocr-api process, not this CLI):
+  OCR_BUDGET_MODE=batch       Relax interactive time budget; allow more passes
+  ADAPTIVE_OCR_ENABLED=1      Use classifier-informed PSM/variant selection
+  ADAPTIVE_OCR_SHADOW=1       Log adaptive decisions while returning legacy OCR
 ''');
 }
 

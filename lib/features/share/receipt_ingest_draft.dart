@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../data/repositories/ingest_receipt_request.dart';
 import '../../domain/logic/merchant_extractor.dart';
+import '../../domain/models/field_correction.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/receipt_understanding.dart';
 
@@ -35,6 +36,12 @@ class ReceiptIngestDraft {
     this.pickedPlaceLat,
     this.pickedPlaceLng,
     this.pickedPlaceLocked = false,
+    this.amountAlternativeMyr,
+    this.amountSuspicious = false,
+    this.amountFieldLowConfidence = false,
+    this.merchantAmbiguous = false,
+    this.merchantConfidence,
+    this.fieldCorrections = const [],
   });
 
   final String localFilePath;
@@ -86,6 +93,28 @@ class ReceiptIngestDraft {
   final double? pickedPlaceLng;
   final bool pickedPlaceLocked;
 
+  /// Runner-up amount (MYR) when the top pick is suspicious/ambiguous.
+  final double? amountAlternativeMyr;
+
+  /// Routes into the existing "Save for later" path more precisely.
+  final bool amountSuspicious;
+
+  /// Per-field: amount's underlying OCR confidence was low.
+  final bool amountFieldLowConfidence;
+
+  /// Top-2 merchant candidates are close — surface "not this?" affordance.
+  final bool merchantAmbiguous;
+
+  /// Top merchant candidate's extraction confidence.
+  final double? merchantConfidence;
+
+  /// Predicted-vs-confirmed diffs captured by [ReceiptConfirmSheet] just
+  /// before it overwrites the originals — feeds the feedback-learning
+  /// surfaces (merchant alias write-back, category preference, OCR misread
+  /// patterns). Empty on the freshly-parsed draft; populated only on the
+  /// edited draft returned from the confirm sheet's save flow.
+  final List<FieldCorrection> fieldCorrections;
+
   ReceiptIngestDraft copyWith({
     double? amountMyr,
     bool? needsAmount,
@@ -98,6 +127,12 @@ class ReceiptIngestDraft {
     double? pickedPlaceLat,
     double? pickedPlaceLng,
     bool? pickedPlaceLocked,
+    double? amountAlternativeMyr,
+    bool? amountSuspicious,
+    bool? amountFieldLowConfidence,
+    bool? merchantAmbiguous,
+    double? merchantConfidence,
+    List<FieldCorrection>? fieldCorrections,
   }) {
     return ReceiptIngestDraft(
       localFilePath: localFilePath,
@@ -128,6 +163,13 @@ class ReceiptIngestDraft {
       pickedPlaceLat: pickedPlaceLat ?? this.pickedPlaceLat,
       pickedPlaceLng: pickedPlaceLng ?? this.pickedPlaceLng,
       pickedPlaceLocked: pickedPlaceLocked ?? this.pickedPlaceLocked,
+      amountAlternativeMyr: amountAlternativeMyr ?? this.amountAlternativeMyr,
+      amountSuspicious: amountSuspicious ?? this.amountSuspicious,
+      amountFieldLowConfidence:
+          amountFieldLowConfidence ?? this.amountFieldLowConfidence,
+      merchantAmbiguous: merchantAmbiguous ?? this.merchantAmbiguous,
+      merchantConfidence: merchantConfidence ?? this.merchantConfidence,
+      fieldCorrections: fieldCorrections ?? this.fieldCorrections,
     );
   }
 
@@ -164,6 +206,7 @@ class ReceiptIngestDraft {
       pickedPlaceLat: pickedPlaceLat,
       pickedPlaceLng: pickedPlaceLng,
       pickedPlaceLocked: pickedPlaceLocked,
+      fieldCorrections: fieldCorrections,
     );
   }
 
@@ -200,6 +243,7 @@ class ReceiptIngestDraft {
       pickedPlaceLat: pickedPlaceLat,
       pickedPlaceLng: pickedPlaceLng,
       pickedPlaceLocked: pickedPlaceLocked,
+      fieldCorrections: fieldCorrections,
     );
   }
 }

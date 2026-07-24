@@ -9,6 +9,7 @@ import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/places_repository.dart';
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
+import '../../domain/models/field_correction.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
@@ -120,10 +121,18 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   PlaceResult? _pickedPlace;
   late final bool _needsManualAmount;
   late final bool _lowConfidence;
+  late final bool _amountFieldLow;
+  late final bool _merchantFieldLow;
+  late final bool _amountSuspicious;
+  late final bool _merchantAmbiguous;
+  late final double? _amountAlternative;
   late final TextEditingController _amountController;
   String? _categoryOverride;
   ImpactLevel? _impactOverride;
   bool _saving = false;
+  bool _showAmountAlternative = true;
+  bool _showMerchantAlternative = true;
+  double? _amountOverride;
 
   @override
   void initState() {
@@ -136,6 +145,14 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _vendorKnown = widget.draft.merchantRaw?.trim().isNotEmpty ?? false;
     _needsManualAmount = widget.draft.needsAmount;
     _lowConfidence = vm.isLowConfidence;
+    _amountSuspicious = widget.draft.amountSuspicious;
+    _amountFieldLow =
+        widget.draft.amountFieldLowConfidence || _amountSuspicious;
+    _merchantAmbiguous = widget.draft.merchantAmbiguous;
+    _merchantFieldLow = _merchantAmbiguous ||
+        (widget.draft.merchantConfidence != null &&
+            widget.draft.merchantConfidence! < 0.5);
+    _amountAlternative = widget.draft.amountAlternativeMyr;
     _vendorController = TextEditingController();
     _vendorFocus.addListener(() {
       if (!_vendorFocus.hasFocus && _editingVendor) _commitVendor();
@@ -168,7 +185,8 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   /// items don't add up to the total; an edited item's delta from its
   /// original OCR price is folded in on top of that baseline.
   double? get _total {
-    final base = widget.draft.amountMyr ??
+    final base = _amountOverride ??
+        widget.draft.amountMyr ??
         (_items.isEmpty
             ? null
             : _items.fold<double>(0, (sum, item) => sum + item.priceMyr));
@@ -182,6 +200,15 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       }
     }
     return total < 0 ? 0 : total;
+  }
+
+  void _acceptAmountAlternative() {
+    final alt = _amountAlternative;
+    if (alt == null) return;
+    setState(() {
+      _amountOverride = alt;
+      _showAmountAlternative = false;
+    });
   }
 
   /// The amount actually used to save: the manual field for drafts OCR
@@ -199,7 +226,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
 
   bool get _canSaveForLater =>
       widget.onSaveForLater != null &&
-      (widget.draft.needsAmount || _lowConfidence);
+      (widget.draft.needsAmount || _lowConfidence || _amountSuspicious);
 
   int get _includedCount => _checked.where((c) => c).length;
 
@@ -348,7 +375,76 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       pickedPlaceLat: _pickedPlace?.lat,
       pickedPlaceLng: _pickedPlace?.lng,
       pickedPlaceLocked: _pickedPlace != null,
+      fieldCorrections: _buildFieldCorrections(),
     );
+  }
+
+  /// Captures a predicted-vs-confirmed diff for every field the user
+  /// actually changed, at the one point both values are still simultaneously
+  /// in scope — immediately before the call above folds the confirmed
+  /// values into the saved draft, after which the originals are
+  /// unrecoverable (see `docs/plans/2026-07-23-feedback-learning-system.md`,
+  /// Problem Statement #1). Fields left unchanged emit nothing, so storage
+  /// isn't flooded with "no correction" noise.
+  List<FieldCorrection> _buildFieldCorrections() {
+    final corrections = <FieldCorrection>[];
+    final predictedMerchant = widget.draft.merchantRaw;
+
+    if (_vendorEdited &&
+        predictedMerchant != null &&
+        predictedMerchant != _vendorName) {
+      corrections.add(FieldCorrection(
+        field: FieldCorrection.fieldMerchant,
+        predictedValue: predictedMerchant,
+        confirmedValue: _vendorName,
+        merchantRaw: predictedMerchant,
+        confidence: widget.draft.merchantConfidence,
+        // A picker pick is a deliberate, multi-step action — a much
+        // stronger signal than a quick free-text rename (Decision Logic).
+        correctionType: _pickedPlace != null
+            ? FieldCorrection.correctionTypeUserLocked
+            : FieldCorrection.correctionTypeFreeText,
+      ));
+    }
+
+    if (_categoryOverride != null &&
+        _categoryOverride != widget.draft.categoryGuess) {
+      corrections.add(FieldCorrection(
+        field: FieldCorrection.fieldCategory,
+        predictedValue: widget.draft.categoryGuess,
+        confirmedValue: _categoryOverride!,
+        merchantRaw: predictedMerchant,
+        confidence: widget.draft.categoryConfidence,
+      ));
+    }
+
+    final predictedAmount = widget.draft.amountMyr;
+    if (_amountOverride != null &&
+        predictedAmount != null &&
+        _amountOverride != predictedAmount) {
+      corrections.add(FieldCorrection(
+        field: FieldCorrection.fieldAmount,
+        predictedValue: FieldCorrection.formatAmount(predictedAmount),
+        confirmedValue: FieldCorrection.formatAmount(_amountOverride!),
+        merchantRaw: predictedMerchant,
+        confidence: widget.draft.ocrConfidence,
+      ));
+    }
+
+    for (var i = 0; i < _items.length; i++) {
+      if (_prices[i] != _items[i].priceMyr) {
+        corrections.add(FieldCorrection(
+          field: FieldCorrection.fieldLineItemPrice,
+          predictedValue: FieldCorrection.formatAmount(_items[i].priceMyr),
+          confirmedValue: FieldCorrection.formatAmount(_prices[i]),
+          merchantRaw: predictedMerchant,
+          confidence: _items[i].confidence,
+          lineItemIndex: i,
+        ));
+      }
+    }
+
+    return corrections;
   }
 
   Future<void> _save() async {
@@ -434,7 +530,32 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _editingVendor ? _vendorField() : _vendorLabel(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _FieldConfidenceWrap(
+                    lowConfidence: _merchantFieldLow,
+                    child: _editingVendor ? _vendorField() : _vendorLabel(),
+                  ),
+                  if (_merchantAmbiguous &&
+                      _showMerchantAlternative &&
+                      widget.draft.merchantCandidates.length >= 2) ...[
+                    const SizedBox(height: 6),
+                    _AlternativeChip(
+                      label:
+                          'Not this? ${widget.draft.merchantCandidates[1].text}',
+                      onTap: () {
+                        setState(() {
+                          _vendorName =
+                              widget.draft.merchantCandidates[1].text;
+                          _vendorEdited = true;
+                          _showMerchantAlternative = false;
+                        });
+                      },
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(width: 12),
             Material(
@@ -467,15 +588,39 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
         const SizedBox(height: 14),
         _needsManualAmount
             ? AmountField(controller: _amountController)
-            : Text(
-                total != null ? 'RM ${total.toStringAsFixed(2)}' : '–',
-                style: balooText(
-                  38,
-                  FontWeight.w800,
-                  color: total != null
-                      ? ReceiptSheetColors.ink
-                      : ReceiptSheetColors.subLight,
-                  letterSpacing: -0.6,
+            : _FieldConfidenceWrap(
+                lowConfidence: _amountFieldLow,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      total != null ? 'RM ${total.toStringAsFixed(2)}' : '–',
+                      style: balooText(
+                        38,
+                        FontWeight.w800,
+                        color: total != null
+                            ? ReceiptSheetColors.ink
+                            : ReceiptSheetColors.subLight,
+                        letterSpacing: -0.6,
+                      ),
+                    ),
+                    if (_amountAlternative != null &&
+                        _showAmountAlternative &&
+                        total != null &&
+                        (_amountAlternative - total).abs() >= 0.01) ...[
+                      const SizedBox(height: 6),
+                      _AlternativeChip(
+                        label:
+                            'Did you mean RM ${_amountAlternative.toStringAsFixed(2)}?',
+                        onTap: () {
+                          setState(() {
+                            _showAmountAlternative = false;
+                          });
+                          _acceptAmountAlternative();
+                        },
+                      ),
+                    ],
+                  ],
                 ),
               ),
         const SizedBox(height: 14),
@@ -524,6 +669,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
                   price: _prices[i],
                   checked: _checked[i],
                   editing: _editingPriceIndex == i,
+                  lowConfidence: (_items[i].confidence ?? 1.0) < 0.5,
                   priceController: _priceController,
                   priceFocus: _priceFocus,
                   onToggle: () => _toggleItem(i),
@@ -533,12 +679,16 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
             ),
           ),
         ],
-        if (_lowConfidence) ...[
+        if (_lowConfidence || _amountSuspicious) ...[
           const SizedBox(height: 14),
           _NoticeBanner(
             text: widget.draft.needsAmount
                 ? "We couldn't read the amount — enter it above."
-                : "Double-check this amount — we're not fully sure.",
+                : _amountSuspicious
+                    ? "This total looks uncertain — check the highlighted fields or save for later."
+                    : _amountFieldLow || _merchantFieldLow
+                        ? "Double-check the highlighted fields — we're not fully sure."
+                        : "Double-check this amount — we're not fully sure.",
           ),
         ],
       ],
@@ -798,12 +948,14 @@ class _ItemRow extends StatelessWidget {
     required this.priceFocus,
     required this.onToggle,
     required this.onEditPrice,
+    this.lowConfidence = false,
   });
 
   final ReceiptLineItem item;
   final double price;
   final bool checked;
   final bool editing;
+  final bool lowConfidence;
   final TextEditingController priceController;
   final FocusNode priceFocus;
   final VoidCallback onToggle;
@@ -811,71 +963,75 @@ class _ItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: GestureDetector(
-            onTap: onToggle,
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: checked ? ReceiptSheetColors.gold : Colors.white,
-                    borderRadius: BorderRadius.circular(7),
-                    border: Border.all(
-                      color: checked
-                          ? ReceiptSheetColors.gold
-                          : ReceiptSheetColors.checkboxBorder,
-                      width: 2,
+    return _FieldConfidenceWrap(
+      lowConfidence: lowConfidence,
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: onToggle,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: checked ? ReceiptSheetColors.gold : Colors.white,
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(
+                        color: checked
+                            ? ReceiptSheetColors.gold
+                            : ReceiptSheetColors.checkboxBorder,
+                        width: 2,
+                      ),
                     ),
+                    child: checked
+                        ? const Icon(
+                            Icons.check_rounded,
+                            size: 15,
+                            color: Colors.white,
+                          )
+                        : null,
                   ),
-                  child: checked
-                      ? const Icon(
-                          Icons.check_rounded,
-                          size: 15,
-                          color: Colors.white,
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Opacity(
-                    opacity: checked ? 1 : 0.4,
-                    child: Text(
-                      item.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: balooText(
-                        15,
-                        FontWeight.w700,
-                        decoration: checked ? null : TextDecoration.lineThrough,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Opacity(
+                      opacity: checked ? 1 : 0.4,
+                      child: Text(
+                        item.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: balooText(
+                          15,
+                          FontWeight.w700,
+                          decoration:
+                              checked ? null : TextDecoration.lineThrough,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Opacity(
-          opacity: checked ? 1 : 0.4,
-          child: Text(
-            '×${item.quantity ?? 1}',
-            style: balooText(
-              13,
-              FontWeight.w600,
-              color: ReceiptSheetColors.subLight,
+          const SizedBox(width: 10),
+          Opacity(
+            opacity: checked ? 1 : 0.4,
+            child: Text(
+              '×${item.quantity ?? 1}',
+              style: balooText(
+                13,
+                FontWeight.w600,
+                color: ReceiptSheetColors.subLight,
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        editing ? _priceField() : _priceLabel(),
-      ],
+          const SizedBox(width: 10),
+          editing ? _priceField() : _priceLabel(),
+        ],
+      ),
     );
   }
 
@@ -991,6 +1147,70 @@ class _NoticeBanner extends StatelessWidget {
             child: Text(text, style: balooText(13.5, FontWeight.w600)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Subtle warning-tinted border around a low-confidence field.
+class _FieldConfidenceWrap extends StatelessWidget {
+  const _FieldConfidenceWrap({
+    required this.lowConfidence,
+    required this.child,
+  });
+
+  final bool lowConfidence;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!lowConfidence) return child;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: AppColors.impactMed.withValues(alpha: 0.7),
+          width: 1.5,
+        ),
+        color: AppColors.impactMed.withValues(alpha: 0.06),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            size: 16,
+            color: AppColors.impactMed.withValues(alpha: 0.9),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact "did you mean / not this?" affordance for ambiguous candidates.
+class _AlternativeChip extends StatelessWidget {
+  const _AlternativeChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: balooText(
+          13,
+          FontWeight.w700,
+          color: ReceiptSheetColors.linkStrong,
+        ),
       ),
     );
   }

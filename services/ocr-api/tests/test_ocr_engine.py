@@ -247,7 +247,8 @@ def test_run_ocr_detailed_computes_height_ratio(
     )
     monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
 
-    lines, _ = ocr_engine.run_ocr_detailed(np.zeros((200, 100), dtype=np.uint8))
+    result = ocr_engine.run_ocr_detailed(np.zeros((200, 100), dtype=np.uint8))
+    lines = result.lines
 
     assert len(lines) == 2
     header, body = lines
@@ -264,10 +265,10 @@ def test_run_ocr_detailed_empty_returns_no_lines(
     data = _fake_data([("", -1, (1, 1, 1)), ("   ", -1, (1, 1, 1))])
     monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
 
-    lines, confidence = ocr_engine.run_ocr_detailed(np.zeros((10, 10), dtype=np.uint8))
+    result = ocr_engine.run_ocr_detailed(np.zeros((10, 10), dtype=np.uint8))
 
-    assert lines == []
-    assert confidence == 0.0
+    assert result.lines == []
+    assert result.confidence == 0.0
 
 
 def test_run_ocr_detailed_computes_per_line_confidence(
@@ -287,9 +288,9 @@ def test_run_ocr_detailed_computes_per_line_confidence(
     )
     monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
 
-    lines, mean_confidence = ocr_engine.run_ocr_detailed(
-        np.zeros((10, 10), dtype=np.uint8)
-    )
+    result = ocr_engine.run_ocr_detailed(np.zeros((10, 10), dtype=np.uint8))
+    lines = result.lines
+    mean_confidence = result.confidence
 
     assert len(lines) == 2
     header, body = lines
@@ -326,7 +327,8 @@ def test_run_ocr_detailed_computes_line_bbox_ratios(
     )
     monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
 
-    lines, _ = ocr_engine.run_ocr_detailed(np.zeros((200, 100), dtype=np.uint8))
+    result = ocr_engine.run_ocr_detailed(np.zeros((200, 100), dtype=np.uint8))
+    lines = result.lines
 
     assert len(lines) == 2
     first, second = lines
@@ -335,3 +337,245 @@ def test_run_ocr_detailed_computes_line_bbox_ratios(
     assert first.width_ratio == pytest.approx((70 - 10) / 100)
     assert second.left_ratio == pytest.approx(5 / 100)
     assert second.width_ratio == pytest.approx(15 / 100)
+
+
+def test_config_accepts_explicit_psm() -> None:
+    assert "--psm 4" in ocr_engine._config(psm="4")
+    assert "--psm 11" in ocr_engine._config(psm="11")
+    assert "--psm 6" in ocr_engine._config(psm=None) or "psm" in ocr_engine._config()
+
+
+def test_adaptive_alt_psm_retry_on_ambiguous_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_api.receipt_classifier import OcrStrategy
+
+    low_conf = _fake_data([("blah", 20, (1, 1, 1))])
+    better = _fake_data(
+        [
+            ("SAMPLE", 90, (1, 1, 1)),
+            ("TOTAL", 90, (1, 1, 2)),
+            ("RM", 90, (1, 1, 2)),
+            ("7.70", 90, (1, 1, 2)),
+        ]
+    )
+    configs: list[str] = []
+
+    def fake_image_to_data(image, **kwargs):
+        configs.append(kwargs.get("config", ""))
+        return low_conf if len(configs) == 1 else better
+
+    monkeypatch.setenv("ADAPTIVE_OCR_ENABLED", "1")
+    monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
+    monkeypatch.setattr(
+        "ocr_api.receipt_classifier.classify_receipt_image",
+        lambda _img: OcrStrategy(
+            bucket="default",
+            psm="6",
+            image_variant="standard",
+            boundary_confidence=0.2,  # ambiguous → alternate PSM
+            alternate_psm="4",
+        ),
+    )
+    # Force pass 1 below good-enough so retry fires.
+    monkeypatch.setenv("ADAPTIVE_OCR_GOOD_ENOUGH_SCORE", "0.95")
+
+    result = ocr_engine.run_ocr_detailed(np.zeros((100, 50), dtype=np.uint8))
+
+    assert len(configs) == 2
+    assert "--psm 6" in configs[0]
+    assert "--psm 4" in configs[1]
+    assert result.strategy_bucket == "default"
+    assert result.pass_count == 2
+    assert "TOTAL" in "\n".join(line.text for line in result.lines)
+
+
+def test_adaptive_binarize_retry_on_confident_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_api.receipt_classifier import OcrStrategy
+
+    low_conf = _fake_data([("blah", 20, (1, 1, 1))])
+    better = _fake_data(
+        [
+            ("ITEM", 90, (1, 1, 1)),
+            ("TOTAL", 90, (1, 1, 2)),
+            ("RM", 90, (1, 1, 2)),
+            ("5.00", 90, (1, 1, 2)),
+        ]
+    )
+    images: list = []
+
+    def fake_image_to_data(image, **_kwargs):
+        images.append(image)
+        return low_conf if len(images) == 1 else better
+
+    monkeypatch.setenv("ADAPTIVE_OCR_ENABLED", "1")
+    monkeypatch.delenv("PREPROCESS_ADAPTIVE_BINARIZE", raising=False)
+    monkeypatch.setenv("ADAPTIVE_OCR_GOOD_ENOUGH_SCORE", "0.95")
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
+    monkeypatch.setattr(
+        "ocr_api.preprocessing.shadow_binarize", lambda image: image + 1
+    )
+    monkeypatch.setattr(
+        "ocr_api.receipt_classifier.classify_receipt_image",
+        lambda _img: OcrStrategy(
+            bucket="default",
+            psm="6",
+            image_variant="standard",
+            boundary_confidence=0.9,  # confident → binarize
+            alternate_psm="4",
+        ),
+    )
+
+    result = ocr_engine.run_ocr_detailed(np.zeros((100, 50), dtype=np.uint8))
+
+    assert len(images) == 2
+    # Second pass must have used the binarized image (image + 1).
+    assert not np.array_equal(images[0], images[1])
+    assert result.pass_count == 2
+    assert result.strategy_psm == "6"
+
+
+def test_adaptive_near_blank_skips_tesseract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_api.receipt_classifier import OcrStrategy
+
+    calls = []
+
+    def fake_image_to_data(image, **_kwargs):
+        calls.append(image)
+        return _fake_data([("should", 90, (1, 1, 1))])
+
+    monkeypatch.setenv("ADAPTIVE_OCR_ENABLED", "1")
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", fake_image_to_data)
+    monkeypatch.setattr(
+        "ocr_api.receipt_classifier.classify_receipt_image",
+        lambda _img: OcrStrategy(
+            bucket="near_blank",
+            psm="6",
+            image_variant="standard",
+            boundary_confidence=1.0,
+            alternate_psm="6",
+            skip_tesseract=True,
+        ),
+    )
+
+    result = ocr_engine.run_ocr_detailed(np.zeros((100, 50), dtype=np.uint8))
+
+    assert calls == []
+    assert result.lines == []
+    assert result.pass_count == 0
+    assert result.strategy_bucket == "near_blank"
+
+
+def test_run_ocr_detailed_retains_per_word_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Word-level retention must not change line/request means (calibrate(mean),
+    # not mean(calibrate)) — a regression here silently breaks every threshold.
+    data = _fake_data(
+        [
+            ("TEH", 90, (1, 1, 1), 20, 10, 5, 20),
+            ("TARIK", 80, (1, 1, 1), 20, 40, 5, 30),
+            ("RM", 70, (1, 1, 2), 20, 5, 50, 15),
+            ("2.50", 60, (1, 1, 2), 20, 30, 50, 25),
+        ]
+    )
+    monkeypatch.setattr(ocr_engine.pytesseract, "image_to_data", lambda *a, **k: data)
+
+    result = ocr_engine.run_ocr_detailed(np.zeros((200, 100), dtype=np.uint8))
+    lines = result.lines
+
+    assert len(lines) == 2
+    header, body = lines
+    assert len(header.words) == 2
+    assert header.words[0].text == "TEH"
+    assert header.words[0].confidence == pytest.approx(
+        ocr_engine._calibrate_confidence(0.90)
+    )
+    assert header.words[0].left_ratio == pytest.approx(10 / 100)
+    assert header.words[0].width_ratio == pytest.approx(20 / 100)
+    assert header.words[0].digit_corrected is False
+    assert header.words[1].text == "TARIK"
+    # Line mean must still be calibrate(mean(raw)), not mean(calibrate(raw)).
+    assert header.confidence == pytest.approx(
+        ocr_engine._calibrate_confidence((90 + 80) / 2 / 100.0)
+    )
+    assert body.confidence == pytest.approx(
+        ocr_engine._calibrate_confidence((70 + 60) / 2 / 100.0)
+    )
+    raw_mean = (90 + 80 + 70 + 60) / 4 / 100.0
+    assert result.confidence == pytest.approx(
+        ocr_engine._calibrate_confidence(raw_mean)
+    )
+
+
+def test_normalize_ocr_amount_words_flags_digit_corrected() -> None:
+    words = [
+        ocr_engine.OcrWordResult(text="TOTAL", confidence=0.9),
+        ocr_engine.OcrWordResult(text="RM", confidence=0.85),
+        ocr_engine.OcrWordResult(text="Z.50", confidence=0.7),
+        ocr_engine.OcrWordResult(text="OK", confidence=0.95),
+    ]
+    text, out = ocr_engine._normalize_ocr_amount_words(words)
+    assert text == "TOTAL RM 2.50 OK"
+    assert out[0].digit_corrected is False
+    assert out[1].digit_corrected is False
+    assert out[2].text == "2.50"
+    assert out[2].digit_corrected is True
+    assert out[3].digit_corrected is False
+
+
+def test_normalize_ocr_amount_words_no_correction_leaves_flags_false() -> None:
+    words = [
+        ocr_engine.OcrWordResult(text="RM", confidence=0.9),
+        ocr_engine.OcrWordResult(text="7.70", confidence=0.9),
+    ]
+    text, out = ocr_engine._normalize_ocr_amount_words(words)
+    assert text == "RM 7.70"
+    assert all(not w.digit_corrected for w in out)
+
+
+def test_public_ocr_line_selective_enrichment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_api.main import _public_ocr_line
+    from ocr_api.ocr_engine import OcrLineResult, OcrWordResult
+
+    monkeypatch.setenv("TOKEN_LEVEL_CONFIDENCE", "1")
+    monkeypatch.setenv("OCR_WORD_ENRICHMENT_THRESHOLD", "0.7")
+
+    low = OcrLineResult(
+        text="blurry",
+        height_ratio=0.05,
+        confidence=0.4,
+        words=(OcrWordResult(text="blurry", confidence=0.4),),
+    )
+    high = OcrLineResult(
+        text="CLEAR",
+        height_ratio=0.05,
+        confidence=0.9,
+        words=(OcrWordResult(text="CLEAR", confidence=0.9),),
+    )
+    low_pub = _public_ocr_line(low)
+    high_pub = _public_ocr_line(high)
+    assert low_pub.confidence == pytest.approx(0.4)
+    assert low_pub.words is not None and len(low_pub.words) == 1
+    assert high_pub.confidence == pytest.approx(0.9)
+    assert high_pub.words is None
+
+
+def test_public_ocr_line_omits_confidence_when_flag_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ocr_api.main import _public_ocr_line
+    from ocr_api.ocr_engine import OcrLineResult
+
+    monkeypatch.delenv("TOKEN_LEVEL_CONFIDENCE", raising=False)
+    line = OcrLineResult(text="TOTAL", height_ratio=0.05, confidence=0.5)
+    pub = _public_ocr_line(line)
+    assert pub.confidence is None
+    assert pub.words is None

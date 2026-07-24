@@ -400,11 +400,34 @@ def _build_cleanup_line_block(lines: list[OcrLineResult]) -> str:
     cleanup, each line numbered and tagged with its own calibrated
     confidence — this structural, one-line-to-one-line format is itself a
     constraint that limits the model's ability to freely restructure or
-    invent content, and is a prerequisite for [_apply_cleanup_guard]."""
-    return "\n".join(
-        f"[{i}] (confidence {line.confidence:.2f}) {line.text}"
-        for i, line in enumerate(lines)
-    )
+    invent content, and is a prerequisite for [_apply_cleanup_guard].
+
+    Word-level confidence is inlined only for lines below the enrichment
+    threshold (same gate as the client response's selective words list).
+    """
+    from ocr_api.ocr_engine import word_enrichment_threshold
+
+    threshold = word_enrichment_threshold()
+    rendered: list[str] = []
+    for i, line in enumerate(lines):
+        base = f"[{i}] (confidence {line.confidence:.2f}) {line.text}"
+        if line.words and line.confidence < threshold:
+            word_tags = " ".join(
+                f"{{{w.text}|{w.confidence:.2f}{'|corr' if w.digit_corrected else ''}}}"
+                for w in line.words
+            )
+            base = f"{base}\n  words: {word_tags}"
+        rendered.append(base)
+    return "\n".join(rendered)
+
+
+def _build_confidence_tagged_line_block(lines: list[OcrLineResult]) -> str:
+    """Same per-line confidence tagging as cleanup, for the main extraction
+    prompt when cleanup is off. Separated so the cleanup instruction addendum
+    is not required for the tags to be meaningful (see
+    [_CONFIDENCE_TAG_INSTRUCTION_ADDENDUM]).
+    """
+    return _build_cleanup_line_block(lines)
 
 
 def _select_cleanup_lines(
@@ -503,9 +526,27 @@ _CLEANUP_INSTRUCTION_ADDENDUM = (
     "unchanged if it is already correct or you are unsure."
 )
 
+# Short, cleanup-independent explanation of the confidence-tag format used
+# when the main extraction prompt receives tagged lines without requesting
+# cleaned_lines. Without this, the LLM may treat "(confidence 0.87)" as
+# receipt content rather than metadata.
+_CONFIDENCE_TAG_INSTRUCTION_ADDENDUM = (
+    "\n\nINPUT FORMAT — The OCR transcript below is numbered per line and "
+    "tagged with Tesseract's calibrated confidence for that line (0-1). "
+    "Some low-confidence lines also include a compact `words:` annotation "
+    "with per-word confidence (and `|corr` when a digit-confusion "
+    "correction was applied). Treat the tags as reliability metadata, not "
+    "receipt content. Prefer fields read from high-confidence lines when "
+    "candidates conflict; do not invent content from low-confidence noise."
+)
+
 
 def _skill_prompt_with_cleanup(base_prompt: str) -> str:
     return base_prompt + _CLEANUP_INSTRUCTION_ADDENDUM
+
+
+def _skill_prompt_with_confidence_tags(base_prompt: str) -> str:
+    return base_prompt + _CONFIDENCE_TAG_INSTRUCTION_ADDENDUM
 
 
 def parse_receipt_understanding(
@@ -625,16 +666,19 @@ def _build_messages(
     *,
     system_prompt: str,
     cleanup_lines: list[OcrLineResult] | None = None,
+    tagged_lines: list[OcrLineResult] | None = None,
 ) -> list[dict[str, str]]:
     # cleanup_lines has already been budget-checked by _select_cleanup_lines,
     # so it's used verbatim here rather than re-truncated — truncating a
     # numbered per-line block risks a partial last line and a response the
-    # guard can't length-match against.
-    content = (
-        _build_cleanup_line_block(cleanup_lines)
-        if cleanup_lines
-        else ocr_text[:MAX_OCR_PROMPT_CHARS]
-    )
+    # guard can't length-match against. tagged_lines (main-prompt confidence
+    # tags without cleanup) is likewise pre-checked for budget.
+    if cleanup_lines is not None:
+        content = _build_cleanup_line_block(cleanup_lines)
+    elif tagged_lines is not None:
+        content = _build_confidence_tagged_line_block(tagged_lines)
+    else:
+        content = ocr_text[:MAX_OCR_PROMPT_CHARS]
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": content},
@@ -733,10 +777,21 @@ async def call_receipt_understanding(
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
     cleanup_lines = _select_cleanup_lines(lines)
+    tagged_lines: list[OcrLineResult] | None = None
     if cleanup_lines is not None:
         skill_prompt = _skill_prompt_with_cleanup(skill_prompt)
+    elif lines:
+        # Main extraction prompt still gets confidence tags when cleanup is
+        # off — same rendering, separate instruction explaining the tags.
+        candidate = _build_confidence_tagged_line_block(lines)
+        if len(candidate) <= MAX_OCR_PROMPT_CHARS:
+            tagged_lines = lines
+            skill_prompt = _skill_prompt_with_confidence_tags(skill_prompt)
     messages = _build_messages(
-        ocr_text, system_prompt=skill_prompt, cleanup_lines=cleanup_lines
+        ocr_text,
+        system_prompt=skill_prompt,
+        cleanup_lines=cleanup_lines,
+        tagged_lines=tagged_lines,
     )
 
     def _body(with_response_format: bool) -> dict[str, object]:

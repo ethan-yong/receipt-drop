@@ -4,6 +4,7 @@ import 'package:receipt_drop/core/theme/app_theme.dart';
 import 'package:receipt_drop/core/theme/receipt_sheet_theme.dart';
 import 'package:receipt_drop/domain/logic/category_matcher.dart';
 import 'package:receipt_drop/domain/logic/impact_level.dart';
+import 'package:receipt_drop/domain/models/field_correction.dart';
 import 'package:receipt_drop/domain/models/receipt_line_item.dart';
 import 'package:receipt_drop/features/share/receipt_confirm_sheet.dart';
 import 'package:receipt_drop/features/share/receipt_ingest_draft.dart';
@@ -298,6 +299,113 @@ void main() {
       savedDraft!.lineItems.firstWhere((i) => i.name == 'Rsb Biasa').priceMyr,
       closeTo(9.50, 0.001),
     );
+  });
+
+  group('field-correction capture', () {
+    testWidgets('untouched save captures no field corrections', (tester) async {
+      ReceiptIngestDraft? savedDraft;
+      await _openSheet(
+        tester,
+        _draft(),
+        (_) {},
+        onSave: (amount, draft, impact) async => savedDraft = draft,
+      );
+
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(savedDraft!.fieldCorrections, isEmpty);
+    });
+
+    testWidgets(
+        'renaming the vendor captures a free-text merchant correction',
+        (tester) async {
+      ReceiptIngestDraft? savedDraft;
+      await _openSheet(
+        tester,
+        _draft(),
+        (_) {},
+        onSave: (amount, draft, impact) async => savedDraft = draft,
+      );
+
+      await tester.tap(find.text('Sf Cafe'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 'Nasi Kandar Pelita');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(savedDraft!.fieldCorrections, hasLength(1));
+      final correction = savedDraft!.fieldCorrections.single;
+      expect(correction.field, FieldCorrection.fieldMerchant);
+      expect(correction.predictedValue, 'SF CAFE SDN BHD');
+      expect(correction.confirmedValue, 'Nasi Kandar Pelita');
+      expect(
+        correction.correctionType,
+        FieldCorrection.correctionTypeFreeText,
+      );
+    });
+
+    testWidgets('changing the category captures a category correction',
+        (tester) async {
+      ReceiptIngestDraft? savedDraft;
+      await _openSheet(
+        tester,
+        _draft(),
+        (_) {},
+        onSave: (amount, draft, impact) async => savedDraft = draft,
+      );
+
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Others').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final categoryCorrections = savedDraft!.fieldCorrections
+          .where((c) => c.field == FieldCorrection.fieldCategory);
+      expect(categoryCorrections, hasLength(1));
+      expect(categoryCorrections.single.predictedValue, 'Food & Drink');
+      expect(categoryCorrections.single.confirmedValue, 'Others');
+    });
+
+    testWidgets(
+        'editing an item price captures a line-item-price correction with its index',
+        (tester) async {
+      ReceiptIngestDraft? savedDraft;
+      await _openSheet(
+        tester,
+        _draft(),
+        (_) {},
+        onSave: (amount, draft, impact) async => savedDraft = draft,
+      );
+
+      await tester.ensureVisible(find.text('RM 7.00'));
+      await tester.pump();
+      await tester.tap(find.text('RM 7.00'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), '9.50');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+
+      await tester.tap(find.text('Save'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final priceCorrections = savedDraft!.fieldCorrections
+          .where((c) => c.field == FieldCorrection.fieldLineItemPrice);
+      expect(priceCorrections, hasLength(1));
+      expect(priceCorrections.single.predictedValue, '7.00');
+      expect(priceCorrections.single.confirmedValue, '9.50');
+      expect(priceCorrections.single.lineItemIndex, 0);
+    });
   });
 
   testWidgets('tapping an Impact chip overrides the derived impact on save',

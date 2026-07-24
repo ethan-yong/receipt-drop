@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/domain/logic/category_matcher.dart';
 import 'package:receipt_drop/domain/logic/category_matcher_bundled.dart';
+import 'package:receipt_drop/domain/models/category_preference_hint.dart';
 import 'package:receipt_drop/domain/models/ocr_line.dart';
 import 'package:receipt_drop/domain/models/receipt_understanding.dart';
 import 'package:receipt_drop/features/share/receipt_parse_pipeline.dart';
@@ -608,6 +609,74 @@ TOTAL RM 42.50
         ),
         returnsNormally,
       );
+    });
+  });
+
+  group('categoryPreferenceHint', () {
+    final testCategories = CategoryConfig.fromJson({
+      'version': 'test',
+      'default_category': 'Others',
+      'rules': [
+        {
+          'category': 'Food & Drink',
+          'any_of': ['cafe', 'restoran'],
+        },
+      ],
+    });
+
+    test(
+        'overrides a low-confidence default guess once corroborated at '
+        'least twice', () {
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/unknown.png',
+        ocrText: 'UNKNOWN MERCHANT\nNo keyword on this receipt\n',
+        categories: testCategories,
+        categoryPreferenceHint: const CategoryPreferenceHint(
+          category: 'Groceries',
+          correctionCount: 2,
+        ),
+      );
+
+      expect(result.categoryGuess, 'Groceries');
+      expect(result.categoryConfidence, categoryPreferenceConfidence);
+    });
+
+    test('does not override when the corroboration gate is not met', () {
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/unknown.png',
+        ocrText: 'UNKNOWN MERCHANT\nNo keyword on this receipt\n',
+        categories: testCategories,
+        categoryPreferenceHint: const CategoryPreferenceHint(
+          category: 'Groceries',
+          correctionCount: 1,
+        ),
+      );
+
+      expect(result.categoryGuess, testCategories.defaultCategory);
+    });
+
+    test('does not override a confident merchant-keyword hit', () {
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/cafe.png',
+        ocrText: 'ROCK CAFE SDN BHD\nNo other keyword here\n',
+        categories: testCategories,
+        categoryPreferenceHint: const CategoryPreferenceHint(
+          category: 'Groceries',
+          correctionCount: 5,
+        ),
+      );
+
+      expect(result.categoryGuess, 'Food & Drink');
+    });
+
+    test('a null hint changes nothing (today\'s baseline behavior)', () {
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/unknown.png',
+        ocrText: 'UNKNOWN MERCHANT\nNo keyword on this receipt\n',
+        categories: testCategories,
+      );
+
+      expect(result.categoryGuess, testCategories.defaultCategory);
     });
   });
 }

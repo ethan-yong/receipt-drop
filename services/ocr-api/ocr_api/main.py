@@ -13,8 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ocr_api.auth import verify_ocr_secret
-from ocr_api.models import OcrLine, OcrResponse
-from ocr_api.ocr_engine import run_ocr_detailed
+from ocr_api.models import OcrLine, OcrResponse, OcrWord
+from ocr_api.ocr_engine import (
+    _token_level_confidence_enabled,
+    run_ocr_detailed,
+    word_enrichment_threshold,
+)
 from ocr_api.preprocessing import InvalidImageError, preprocess
 from ocr_api.receipt_understanding import (
     ReceiptUnderstandingError,
@@ -145,22 +149,31 @@ async def ocr(request: Request) -> OcrResponse:
         raise HTTPException(status_code=400, detail="invalid_image")
 
     try:
-        lines, confidence = await asyncio.to_thread(run_ocr_detailed, processed)
+        result = await asyncio.to_thread(run_ocr_detailed, processed)
     except Exception:
         logger.exception(
             "OCR processing failed after %.2fs", time.perf_counter() - start
         )
         raise HTTPException(status_code=500, detail="processing_failed")
 
+    lines = result.lines
+    confidence = result.confidence
     text = "\n".join(line.text for line in lines)
     elapsed = time.perf_counter() - start
     logger.info(
-        "done in %.2fs: %d chars across %d lines, confidence %.0f%% (%s)",
+        "done in %.2fs: %d chars across %d lines, confidence %.0f%% (%s)%s",
         elapsed,
         len(text),
         len(lines),
         confidence * 100,
         _confidence_label(confidence),
+        (
+            f", adaptive bucket={result.strategy_bucket} psm={result.strategy_psm} "
+            f"passes={result.pass_count} composite="
+            f"{result.composite_score if result.composite_score is not None else 'n/a'}"
+            if result.strategy_bucket is not None
+            else ""
+        ),
     )
     if text:
         logger.info("extracted text:\n%s", text)
@@ -205,18 +218,54 @@ async def ocr(request: Request) -> OcrResponse:
     return OcrResponse(
         text=text,
         confidence=confidence,
-        lines=[
-            OcrLine(
-                text=line.text,
-                height_ratio=line.height_ratio,
-                left_ratio=line.left_ratio,
-                top_ratio=line.top_ratio,
-                width_ratio=line.width_ratio,
-            )
-            for line in lines
-        ],
+        lines=[_public_ocr_line(line) for line in lines],
         understanding=understanding,
         understanding_error=understanding_error,
+        strategy_psm=result.strategy_psm,
+        strategy_bucket=result.strategy_bucket,
+        pass_count=result.pass_count,
+        composite_score=result.composite_score,
+    )
+
+
+def _public_ocr_line(line) -> OcrLine:
+    """Map an internal OcrLineResult to the public OcrLine contract.
+
+    When TOKEN_LEVEL_CONFIDENCE is off, confidence/words stay None so the
+    response shape matches the pre-feature payload for older clients.
+    When on: always include line confidence; attach words only below the
+    enrichment threshold.
+    """
+    if not _token_level_confidence_enabled():
+        return OcrLine(
+            text=line.text,
+            height_ratio=line.height_ratio,
+            left_ratio=line.left_ratio,
+            top_ratio=line.top_ratio,
+            width_ratio=line.width_ratio,
+        )
+    enrich_words = line.confidence < word_enrichment_threshold()
+    return OcrLine(
+        text=line.text,
+        height_ratio=line.height_ratio,
+        left_ratio=line.left_ratio,
+        top_ratio=line.top_ratio,
+        width_ratio=line.width_ratio,
+        confidence=line.confidence,
+        words=(
+            [
+                OcrWord(
+                    text=w.text,
+                    confidence=w.confidence,
+                    digit_corrected=w.digit_corrected,
+                    left_ratio=w.left_ratio,
+                    width_ratio=w.width_ratio,
+                )
+                for w in line.words
+            ]
+            if enrich_words and line.words
+            else None
+        ),
     )
 
 

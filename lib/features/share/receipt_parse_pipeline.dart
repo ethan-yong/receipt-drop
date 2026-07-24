@@ -7,6 +7,7 @@ import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/logic/receipt_layout_analyzer.dart';
 import '../../domain/logic/receipt_line_item_extractor.dart';
 import '../../domain/logic/rm_amount_parser.dart';
+import '../../domain/models/category_preference_hint.dart';
 import '../../domain/models/ocr_line.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/receipt_understanding.dart';
@@ -38,6 +39,23 @@ const combinedScanWeight = 0.4;
 /// guess.
 const combinedScanCeilingMargin = 0.25;
 
+/// Decision Logic: only surface a learned category once it's been corrected
+/// consistently at least twice for this merchant — a single correction could
+/// be a one-off mistake.
+const categoryPreferenceMinCorroboration = 2;
+
+/// A learned signal only fills in when the current-request signal is itself
+/// low-confidence — it must never override a strong live read (a keyword hit
+/// at 0.85, or a confident LLM category read).
+const categoryPreferenceOverrideConfidenceCeiling = 0.7;
+
+/// Confidence assigned when a category preference overrides the guess —
+/// deliberately between the OCR-body keyword tier (0.55) and the
+/// merchant-name keyword tier (0.85): a personal history of corrections is a
+/// stronger signal than an incidental keyword match, but still weaker than
+/// this receipt's own strong current-request signal.
+const categoryPreferenceConfidence = 0.80;
+
 /// Parsed fields from a receipt image or OCR text (before user confirmation).
 class ReceiptParseResult {
   const ReceiptParseResult({
@@ -61,6 +79,11 @@ class ReceiptParseResult {
     this.ocrHeaderText,
     this.understanding,
     this.understandingError,
+    this.amountCandidates = const [],
+    this.amountAlternative,
+    this.amountSuspicious = false,
+    this.amountOcrConfidence,
+    this.merchantAmbiguous = false,
   });
 
   final String filePath;
@@ -118,6 +141,26 @@ class ReceiptParseResult {
   /// [understanding] is `null` but OCR itself succeeded.
   final String? understandingError;
 
+  /// Ranked amount candidates from [parseRmAmountCandidates].
+  final List<AmountCandidate> amountCandidates;
+
+  /// Runner-up amount when [amountSuspicious] or top-2 are close.
+  final AmountCandidate? amountAlternative;
+
+  /// Suspicious total: low OCR confidence + no corroboration + alternative.
+  final bool amountSuspicious;
+
+  /// OCR reliability of the winning amount's source line/word, when known.
+  final double? amountOcrConfidence;
+
+  /// True when top-2 merchant candidates are within [merchantAmbiguousDelta].
+  final bool merchantAmbiguous;
+
+  /// Top merchant candidate's extraction confidence (mirrors [ocrConfidence]
+  /// for amount). Null when no merchant candidates exist.
+  double? get merchantConfidence =>
+      merchantCandidates.isEmpty ? null : merchantCandidates.first.confidence;
+
   /// Blend of extraction confidence and scan quality, min-gated so a bad scan
   /// caps the ceiling regardless of how clean the parse looked.
   ///
@@ -137,7 +180,8 @@ class ReceiptParseResult {
   bool get lowConfidence =>
       !needsAmount &&
       (combinedConfidence < lowOcrConfidenceThreshold ||
-          amountSource == AmountParseSource.totalKeywordFallback.name);
+          amountSource == AmountParseSource.totalKeywordFallback.name ||
+          amountSuspicious);
 
   Map<String, dynamic> toJson({bool includeOcrText = false}) {
     return {
@@ -165,6 +209,13 @@ class ReceiptParseResult {
       if (ocrHeaderText != null) 'ocrHeaderText': ocrHeaderText,
       if (understanding != null) 'understanding': understanding!.toJson(),
       if (understandingError != null) 'understandingError': understandingError,
+      if (merchantConfidence != null) 'merchantConfidence': merchantConfidence,
+      'amountSuspicious': amountSuspicious,
+      'merchantAmbiguous': merchantAmbiguous,
+      if (amountAlternative != null)
+        'amountAlternative': amountAlternative!.toJson(),
+      if (amountOcrConfidence != null)
+        'amountOcrConfidence': amountOcrConfidence,
     };
   }
 
@@ -188,6 +239,7 @@ ReceiptParseResult parseReceiptOcrText({
   List<OcrLine>? ocrLines,
   ReceiptUnderstanding? understanding,
   String? understandingError,
+  CategoryPreferenceHint? categoryPreferenceHint,
 }) {
   // Prefer the LLM OCR-cleanup step's corrected transcript as the heuristic
   // extractors' input whenever it's present (opt-in server-side via
@@ -218,6 +270,13 @@ ReceiptParseResult parseReceiptOcrText({
                   leftRatio: ocrLines[i].leftRatio,
                   topRatio: ocrLines[i].topRatio,
                   widthRatio: ocrLines[i].widthRatio,
+                  confidence: ocrLines[i].confidence,
+                  // Word texts may no longer align after cleanup edits — keep
+                  // confidence/digit_corrected signals only when the cleaned
+                  // line text still matches the original word join.
+                  words: cleanedLines[i] == ocrLines[i].text
+                      ? ocrLines[i].words
+                      : null,
                 ),
             ]
           : ocrLines;
@@ -258,7 +317,11 @@ ReceiptParseResult parseReceiptOcrText({
   // The heuristic pass always runs first: its line-item subtotal feeds the
   // amount-parsing cross-check below regardless of the LLM's own extraction,
   // and it's the fallback whenever the LLM found nothing or failed outright.
-  final extracted = extractReceiptLineItems(heuristicText, layout: layout);
+  final extracted = extractReceiptLineItems(
+    heuristicText,
+    layout: layout,
+    ocrLines: heuristicOcrLines,
+  );
   final largestItemPrice = extracted.items.isEmpty
       ? null
       : extracted.items
@@ -271,6 +334,7 @@ ReceiptParseResult parseReceiptOcrText({
     largestItemPriceMyr: largestItemPrice,
     lineItemCount: extracted.items.length,
     layout: layout,
+    ocrLines: heuristicOcrLines,
   );
   // For payment and transport receipts the LLM skill extracts the actual
   // transaction amount (distinguishing it from account balance / surcharges).
@@ -311,9 +375,14 @@ ReceiptParseResult parseReceiptOcrText({
       merchantCandidates.isEmpty ? null : merchantCandidates.first.text;
   final headerText = extractOcrHeaderText(heuristicText);
 
+  final merchantAmbiguous = merchantCandidates.length >= 2 &&
+      (merchantCandidates[0].confidence - merchantCandidates[1].confidence)
+              .abs() <=
+          merchantAmbiguousDelta;
+
   final llmCategory = understanding?.vendorCategory;
-  final String categoryGuess;
-  final double categoryConfidence;
+  String categoryGuess;
+  double categoryConfidence;
   if (llmCategory != null) {
     categoryGuess =
         vendorCategoryToDisplayCategory[llmCategory] ?? categories.defaultCategory;
@@ -323,6 +392,19 @@ ReceiptParseResult parseReceiptOcrText({
         categories.guessWithConfidence(merchantRaw ?? '', heuristicText);
     categoryGuess = category;
     categoryConfidence = confidence;
+  }
+
+  // Learned per-user category preference: only fills in when this
+  // receipt's own category signal is itself weak, and only once corrected
+  // consistently enough to trust (Decision Logic) — never overrides a
+  // confident keyword hit or LLM read.
+  if (categoryPreferenceHint != null &&
+      categoryPreferenceHint.correctionCount >=
+          categoryPreferenceMinCorroboration &&
+      categoryConfidence < categoryPreferenceOverrideConfidenceCeiling &&
+      categoryPreferenceHint.category != categoryGuess) {
+    categoryGuess = categoryPreferenceHint.category;
+    categoryConfidence = categoryPreferenceConfidence;
   }
 
   return ReceiptParseResult(
@@ -346,6 +428,13 @@ ReceiptParseResult parseReceiptOcrText({
     ocrHeaderText: headerText.isEmpty ? null : headerText,
     understanding: understanding,
     understandingError: understandingError,
+    amountCandidates: parseResult.candidates,
+    amountAlternative: parseResult.alternative,
+    amountSuspicious: parseResult.suspicious,
+    amountOcrConfidence: parseResult.candidates.isEmpty
+        ? null
+        : parseResult.candidates.first.ocrConfidence,
+    merchantAmbiguous: merchantAmbiguous,
   );
 }
 
