@@ -66,6 +66,19 @@ batch/import-session id) before it's resolved. See `docs/system/decisions.md`,
 
 ---
 
+## Merchant-intelligence: skip Google Places calls for known locations
+
+**Deferred, not pre-ship.** The merchant-intelligence layer (`docs/plans/2026-07-24-merchant-intelligence-layer.md`, `supabase/functions/_shared/merchant_resolution.ts`, `supabase/migrations/20260724030000_merchant_intelligence_reconciliation.sql`) as shipped still calls Google Places on every enrichment before it ever reconciles against the `merchants`/`merchant_locations` catalog — `decideMerchantResolution()` needs the Places winner's name/types to score brand-vs-place agreement, and `reconcile_merchant_resolution` needs the winner's `place_id`/lat/lng regardless of outcome. So today the catalog is purely a downstream bookkeeping/identity layer; it does not yet reduce Places API call volume or quota cost, even though `merchant_locations.hit_count` already tracks exactly the repeat-visit signal a Places-skip optimization would need.
+
+**Why deferred**: no real production traffic exists yet to tell whether this is worth the risk. Skipping a live Places call on a `merchant_locations` hit means trusting a potentially-stale record — a business can close, move, or rebrand between visits, and `merchant_aliases`' existing decay/floor logic (`ALIAS_MIN_TRUST_CONFIDENCE`, see `supabase/functions/_shared/place_matching.ts`) exists precisely because that already happened enough to need a floor for the *cheaper* alias fast-path. A location-level skip is a bigger bet: it would remove the "does Places still agree this venue exists/serves the same category" check entirely for a hit, not just widen a cache. `supabase/scripts/20260724_merchant_intelligence_quality_report.sql` (added alongside the reconciliation RPCs) is meant to be run periodically once `MERCHANT_INTELLIGENCE_MODE=on` has accumulated real traffic — its hit-count/observation-count distributions and duplicate-merchant detector are the data this decision should be based on, not a guess made pre-launch.
+
+**Proposed design sketch** (needs real usage data before being finalized, not ready to implement as-is):
+- A second-tier fast path in `enrich-transaction`, analogous to the existing alias fast-path but keyed on `merchant_locations` (brand text + geohash bucket, via `lookup_merchant_candidates`'s existing trigram/alias-evidence query) instead of the exact-text `merchant_aliases` cache — only short-circuits Places when a candidate clears a *separate, likely higher* confidence floor than `ALIAS_MIN_TRUST_CONFIDENCE`, since a location skip is a stronger claim than an alias-text skip.
+- A staleness re-verification requirement even on a hit — e.g. re-run a live Places call at most once every N days per `merchant_locations` row (tracked via a new `last_places_verified_at` column) regardless of `hit_count`, so a permanently-skipped location can never silently drift from reality (closed business, rebrand, category change).
+- Ship behind its own separate flag from `MERCHANT_INTELLIGENCE_MODE`, gated on first observing at least one full rollout cycle of the reconciliation-only feature (no Places-call reduction) in production, per the quality-report script above.
+
+---
+
 <!--
 DONE (2026-07-14, achievements branch): Achievements page with grounded badge design.
 Tiered SVG achievements, Postgres-computed progress (`20260714000000_achievements.sql`,

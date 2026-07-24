@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
   ALIAS_GEOHASH_PRECISION,
+  ALIAS_MIN_TRUST_CONFIDENCE,
   ALIAS_SAVE_CONFIDENCE_THRESHOLD,
   SEARCH_RADIUS_METERS,
   geohashEncode,
@@ -8,6 +9,11 @@ import {
   normalizeForCompare,
   scoreCandidate,
 } from "../_shared/place_matching.ts";
+import {
+  decideMerchantResolution,
+  deriveBrandCandidates,
+  type MerchantCandidateForScoring,
+} from "../_shared/merchant_resolution.ts";
 import {
   adjustScoreForTypeMatch,
   buildLlmTextQueries,
@@ -28,6 +34,21 @@ function normalizeMerchant(raw: string | null | undefined): string | null {
   if (raw == null) return null;
   const collapsed = String(raw).trim().replace(/\s+/g, " ");
   return collapsed.length === 0 ? null : collapsed;
+}
+
+type MerchantIntelligenceMode = "off" | "shadow" | "on";
+
+/// Reads MERCHANT_INTELLIGENCE_MODE, defaulting to "off" — the safe default —
+/// for anything unset or unrecognized. "off": no merchant/location
+/// reconciliation at all (today's behavior, unchanged). "shadow": scores a
+/// decision via decideMerchantResolution() and logs it, but never calls
+/// reconcile_merchant_resolution. "on": additionally calls
+/// reconcile_merchant_resolution to persist the decision. A later rollout
+/// task is responsible for flipping this per environment; this task must not
+/// change production behavior on its own.
+function getMerchantIntelligenceMode(): MerchantIntelligenceMode {
+  const raw = Deno.env.get("MERCHANT_INTELLIGENCE_MODE");
+  return raw === "shadow" || raw === "on" ? raw : "off";
 }
 
 function stripPlacesResourcePrefix(id: string): string {
@@ -134,7 +155,21 @@ async function markPlacesFailure(
   return error == null;
 }
 
-Deno.serve(async (req) => {
+/// Extracted from the top-level `Deno.serve(...)` call (structural-only
+/// change, see `if (import.meta.main)` guard at the bottom of this file) so
+/// `index.test.ts` can `import { handleEnrichTransactionRequest }` and drive
+/// the full handler in-process — no real HTTP server, no real network calls
+/// to Google Places — without binding a port or hitting production APIs.
+/// Mirrors the `fetchFn: typeof fetch = fetch` injection pattern already
+/// used by `callReceiptUnderstanding` (receipt_understanding.ts): `deps` is
+/// optional and defaults every injectable to its real implementation, so
+/// this is a no-op for the actual Supabase Edge Runtime invocation in
+/// production/local `supabase functions serve`.
+export async function handleEnrichTransactionRequest(
+  req: Request,
+  deps?: { fetchFn?: typeof fetch },
+): Promise<Response> {
+  const fetchFn = deps?.fetchFn ?? fetch;
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -240,6 +275,155 @@ Deno.serve(async (req) => {
       row.share_location_lat as number | null | undefined,
       row.share_location_lng as number | null | undefined,
     );
+
+    // MERCHANT INTELLIGENCE (shadow/on) for a user-locked place pick: same
+    // fail-open, mode-gated reconciliation as the main Places-search path
+    // further below, but against the transaction's already-persisted place
+    // fields — there is no live Places call in this early-return branch,
+    // since the user directly picked this place via the confirm-sheet
+    // picker. See supabase/functions/_shared/merchant_resolution.ts and
+    // supabase/migrations/20260724030000_merchant_intelligence_reconciliation.sql.
+    const userLockedMiMode = getMerchantIntelligenceMode();
+    const userLockedShareLat = row.share_location_lat as number | null | undefined;
+    const userLockedShareLng = row.share_location_lng as number | null | undefined;
+    const userLockedPlaceLat = row.place_lat as number | null | undefined;
+    const userLockedPlaceLng = row.place_lng as number | null | undefined;
+    const userLockedPlaceId = row.place_google_place_id as string | null | undefined;
+    const userLockedPlaceName = row.place_name as string | null | undefined;
+
+    if (
+      userLockedMiMode !== "off" &&
+      typeof userLockedShareLat === "number" &&
+      typeof userLockedShareLng === "number" &&
+      typeof userLockedPlaceLat === "number" &&
+      typeof userLockedPlaceLng === "number" &&
+      userLockedPlaceId &&
+      userLockedPlaceName
+    ) {
+      try {
+        // Best-effort, defensive parse purely to feed deriveBrandCandidates —
+        // `row.llm_understanding` may be null, a stored `_error` record, or a
+        // valid ReceiptUnderstanding-shaped object. Mirrors the same
+        // defensive handling the PRECOMPUTED UNDERSTANDING section further
+        // below in this function uses for the same column.
+        const userLockedRawUnderstanding = row.llm_understanding as
+          | Record<string, unknown>
+          | null
+          | undefined;
+        const userLockedUnderstanding =
+          userLockedRawUnderstanding &&
+            typeof userLockedRawUnderstanding === "object" &&
+            !("_error" in userLockedRawUnderstanding)
+            ? parseReceiptUnderstanding(JSON.stringify(userLockedRawUnderstanding))
+            : null;
+        const userLockedBrandCandidates = userLockedUnderstanding
+          ? deriveBrandCandidates(userLockedUnderstanding)
+          : [];
+
+        if (userLockedBrandCandidates.length > 0) {
+          const userLockedGeohash = geohashEncode(
+            userLockedShareLat,
+            userLockedShareLng,
+            ALIAS_GEOHASH_PRECISION,
+          );
+          const { data: userLockedCandidateRows, error: userLockedCandidatesError } =
+            await supabase.rpc("lookup_merchant_candidates", {
+              p_normalized_text: normalizeForCompare(userLockedBrandCandidates[0]),
+              p_geohash: userLockedGeohash,
+            });
+
+          if (userLockedCandidatesError) {
+            console.warn(
+              `enrich-transaction[${transactionId}]: merchant-intelligence ` +
+                `(${userLockedMiMode}, user_locked) candidate lookup failed — ` +
+                `${userLockedCandidatesError.message}`,
+            );
+          } else {
+            const userLockedMerchantCandidates: MerchantCandidateForScoring[] = (
+              Array.isArray(userLockedCandidateRows) ? userLockedCandidateRows : []
+            ).map((
+              r: {
+                merchant_id: string;
+                canonical_name: string;
+                typical_place_types: string[] | null;
+              },
+            ) => ({
+              id: r.merchant_id,
+              canonical_name: r.canonical_name,
+              typical_place_types: r.typical_place_types,
+            }));
+            // No live Places call in this branch, so no `types` for the
+            // "winner" — decideMerchantResolution treats a missing types
+            // side as neutral (see typesAgree()).
+            const userLockedDecision = decideMerchantResolution(
+              userLockedBrandCandidates,
+              { name: userLockedPlaceName, types: null },
+              userLockedMerchantCandidates,
+            );
+
+            console.log(
+              `enrich-transaction[${transactionId}]: merchant-intelligence ` +
+                `${userLockedMiMode} (user_locked) — action=${userLockedDecision.action}, ` +
+                `reason=${userLockedDecision.reason}, ` +
+                `confidence=${userLockedDecision.confidence.toFixed(2)}, ` +
+                `brandCandidate=${JSON.stringify(userLockedDecision.brandCandidate)}, ` +
+                `placesWinner=${JSON.stringify(userLockedPlaceName)} (${userLockedPlaceId})`,
+            );
+
+            if (userLockedMiMode === "on") {
+              // Fixed, high trust tier: this is a deliberate, multi-step
+              // human pick, not an algorithmic guess — same 0.90 "user_locked"
+              // correction trust tier as
+              // 20260724010000_feedback_learning_hardening.sql's
+              // upsert_merchant_alias_from_correction (v_base for
+              // p_correction_type = 'user_locked'), not derived from
+              // userLockedDecision.confidence.
+              const { error: userLockedReconcileError } = await supabase.rpc(
+                "reconcile_merchant_resolution",
+                {
+                  p_transaction_id: transactionId,
+                  p_action: userLockedDecision.action,
+                  p_google_place_id: userLockedPlaceId,
+                  p_place_name: userLockedPlaceName,
+                  p_lat: userLockedPlaceLat,
+                  p_lng: userLockedPlaceLng,
+                  p_geohash: userLockedGeohash,
+                  p_resolution_method: "user_locked",
+                  p_resolution_confidence: 0.9,
+                  p_merchant_id: userLockedDecision.action === "attach_existing"
+                    ? userLockedDecision.merchantId
+                    : null,
+                  p_canonical_name_for_new: userLockedDecision.action === "create_new"
+                    ? userLockedDecision.canonicalNameForNew
+                    : null,
+                  p_normalized_name_key_for_new:
+                    userLockedDecision.action === "create_new" &&
+                      userLockedDecision.canonicalNameForNew
+                      ? normalizeForCompare(userLockedDecision.canonicalNameForNew)
+                      : null,
+                  p_vendor_category: userLockedUnderstanding?.vendor_category ?? null,
+                  p_typical_place_types: null,
+                  p_location_confidence: 0.9,
+                },
+              );
+              if (userLockedReconcileError) {
+                console.warn(
+                  `enrich-transaction[${transactionId}]: merchant-intelligence ` +
+                    `(on, user_locked) reconcile failed — ` +
+                    `${userLockedReconcileError.message}`,
+                );
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(
+          `enrich-transaction[${transactionId}]: merchant-intelligence ` +
+            `(${userLockedMiMode}, user_locked) reconciliation failed, ` +
+            `continuing without it — ${String(e)}`,
+        );
+      }
+    }
 
     return new Response(JSON.stringify({ ok: true, skipped_places: true }), {
       status: 200,
@@ -484,7 +668,10 @@ Deno.serve(async (req) => {
         { p_alias_text: aliasKey, p_geohash: geohash },
       );
       const alias = Array.isArray(aliasRows) ? aliasRows[0] : null;
-      if (alias) {
+      // A hit below ALIAS_MIN_TRUST_CONFIDENCE has decayed too far to trust
+      // as authoritative — fall through to the normal Places flow exactly as
+      // if there had been no alias hit at all (see place_matching.ts).
+      if (alias && alias.confidence >= ALIAS_MIN_TRUST_CONFIDENCE) {
         const { error: aliasUpErr } = await supabase
           .from("transactions")
           .update({
@@ -600,7 +787,7 @@ Deno.serve(async (req) => {
       };
     }
     try {
-      const resp = await fetch(
+      const resp = await fetchFn(
         "https://places.googleapis.com/v1/places:searchText",
         {
           method: "POST",
@@ -623,7 +810,7 @@ Deno.serve(async (req) => {
   async function fetchNearbySearch(): Promise<GooglePlace[] | null> {
     if (!hasLocation) return null;
     try {
-      const resp = await fetch(
+      const resp = await fetchFn(
         "https://places.googleapis.com/v1/places:searchNearby",
         {
           method: "POST",
@@ -809,6 +996,123 @@ Deno.serve(async (req) => {
     });
   }
 
+  // MERCHANT INTELLIGENCE (shadow/on): fail-open, mode-gated brand/location
+  // reconciliation against the global merchants/merchant_locations catalog —
+  // separate from (and never affecting) the alias cache below. No-ops
+  // entirely in "off" mode (the default) — zero extra RPC calls, latency, or
+  // logging. See supabase/functions/_shared/merchant_resolution.ts and
+  // supabase/migrations/20260724030000_merchant_intelligence_reconciliation.sql.
+  const merchantIntelligenceMode = getMerchantIntelligenceMode();
+  if (
+    merchantIntelligenceMode !== "off" &&
+    hasLocation &&
+    winner.lat != null &&
+    winner.lng != null &&
+    winner.name
+  ) {
+    try {
+      const brandCandidates = deriveBrandCandidates(understanding);
+      if (brandCandidates.length > 0) {
+        // Deliberately the SAME geohash formula/inputs as the alias
+        // fast-path above (geohashEncode(shareLat, shareLng, ...)), not one
+        // derived from the Places winner's own coordinates — this keeps the
+        // bucketing scheme aligned with merchant_aliases, so
+        // lookup_merchant_candidates' alias-evidence signal actually lines
+        // up with existing alias rows for this same location.
+        const miGeohash = geohashEncode(shareLat, shareLng, ALIAS_GEOHASH_PRECISION);
+        const { data: candidateRows, error: candidatesError } = await supabase
+          .rpc("lookup_merchant_candidates", {
+            p_normalized_text: normalizeForCompare(brandCandidates[0]),
+            p_geohash: miGeohash,
+          });
+
+        if (candidatesError) {
+          console.warn(
+            `enrich-transaction[${transactionId}]: merchant-intelligence ` +
+              `(${merchantIntelligenceMode}) candidate lookup failed — ` +
+              `${candidatesError.message}`,
+          );
+        } else {
+          const merchantCandidates: MerchantCandidateForScoring[] = (
+            Array.isArray(candidateRows) ? candidateRows : []
+          ).map((
+            r: {
+              merchant_id: string;
+              canonical_name: string;
+              typical_place_types: string[] | null;
+            },
+          ) => ({
+            id: r.merchant_id,
+            canonical_name: r.canonical_name,
+            typical_place_types: r.typical_place_types,
+          }));
+          const decision = decideMerchantResolution(
+            brandCandidates,
+            { name: winner.name, types: winner.types },
+            merchantCandidates,
+          );
+          // The transaction's own already-computed Places-match confidence
+          // (same value written to place_confidence above) — not
+          // decision.confidence, which only measures brand-vs-Places
+          // internal agreement and is still fine to log for visibility.
+          const roundedWinnerConfidence = Math.round(winnerConfidence * 100) / 100;
+
+          console.log(
+            `enrich-transaction[${transactionId}]: merchant-intelligence ` +
+              `${merchantIntelligenceMode} — action=${decision.action}, ` +
+              `reason=${decision.reason}, confidence=${decision.confidence.toFixed(2)}, ` +
+              `brandCandidate=${JSON.stringify(decision.brandCandidate)}, ` +
+              `placesWinner=${JSON.stringify(winner.name)} (${winner.id})`,
+          );
+
+          if (merchantIntelligenceMode === "on") {
+            const { error: reconcileError } = await supabase.rpc(
+              "reconcile_merchant_resolution",
+              {
+                p_transaction_id: transactionId,
+                p_action: decision.action,
+                p_google_place_id: winner.id,
+                p_place_name: winner.name,
+                p_lat: winner.lat,
+                p_lng: winner.lng,
+                p_geohash: miGeohash,
+                p_resolution_method: decision.action === "attach_existing"
+                  ? "fuzzy_brand"
+                  : "places_search",
+                p_resolution_confidence: roundedWinnerConfidence,
+                p_merchant_id: decision.action === "attach_existing"
+                  ? decision.merchantId
+                  : null,
+                p_canonical_name_for_new: decision.action === "create_new"
+                  ? decision.canonicalNameForNew
+                  : null,
+                p_normalized_name_key_for_new:
+                  decision.action === "create_new" && decision.canonicalNameForNew
+                    ? normalizeForCompare(decision.canonicalNameForNew)
+                    : null,
+                p_vendor_category: understanding.vendor_category,
+                p_typical_place_types: winner.types,
+                p_location_confidence: roundedWinnerConfidence,
+              },
+            );
+            if (reconcileError) {
+              console.warn(
+                `enrich-transaction[${transactionId}]: merchant-intelligence ` +
+                  `(on) reconcile failed — ${reconcileError.message}`,
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(
+        `enrich-transaction[${transactionId}]: merchant-intelligence ` +
+          `(${merchantIntelligenceMode}) reconciliation failed, continuing ` +
+          `without it — ${String(e)}`,
+      );
+    }
+  }
+
   // Remember this resolution for future scans of the same merchant near the
   // same location, so they can skip Places entirely (see the alias
   // fast-path above). Best-effort — a failed write here doesn't affect this
@@ -852,4 +1156,12 @@ Deno.serve(async (req) => {
     status: 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-});
+}
+
+// Only bind a real port when this file is run as the entry script (the
+// actual Supabase Edge Runtime always invokes index.ts directly, so
+// `import.meta.main` is true there) — not when a test file imports
+// `handleEnrichTransactionRequest` from it.
+if (import.meta.main) {
+  Deno.serve((req) => handleEnrichTransactionRequest(req));
+}

@@ -18,6 +18,7 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   ALIAS_GEOHASH_PRECISION,
+  ALIAS_MIN_TRUST_CONFIDENCE,
   buildTextSearchQueries,
   diceCoefficient,
   geohashEncode,
@@ -198,4 +199,18 @@ Deno.test("scoreCandidate: a candidate with no name scores 0 on text alone", () 
   const candidate = { name: null, lat: null, lng: null };
   const score = scoreCandidate(candidate, ["anything"], weights, null);
   assertAlmostEquals(score, 0.05); // floor, since raw text score is 0
+});
+
+// The gating this constant drives (enrich-transaction's alias fast-path
+// falling through to Places when a decayed alias hit is below this floor)
+// lives in the live Edge Function handler against a real
+// lookup_merchant_alias RPC result — too entangled with request/DB state to
+// unit test cleanly here, consistent with this file's own header comment
+// about DB-dependent behavior being verified manually instead. This test
+// only pins the constant itself to the documented, reasoned band between
+// lookup_merchant_alias's 0.05 hard decay floor and the ~0.7+ "established"
+// alias tier used elsewhere in the same migration.
+Deno.test("ALIAS_MIN_TRUST_CONFIDENCE sits between the read-path decay floor (0.05) and the established-alias tier (~0.7)", () => {
+  assert(ALIAS_MIN_TRUST_CONFIDENCE > 0.05);
+  assert(ALIAS_MIN_TRUST_CONFIDENCE < 0.7);
 });
