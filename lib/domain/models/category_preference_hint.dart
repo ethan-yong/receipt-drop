@@ -9,12 +9,19 @@ class CategoryPreferenceHint {
   const CategoryPreferenceHint({
     required this.category,
     required this.correctionCount,
+    required this.confidence,
   });
 
   final String category;
 
   /// How many consecutive corrections agreed on [category] — the
   /// corroboration gate (Decision Logic: only surface a learned category
-  /// once corrected consistently at least twice for this merchant).
+  /// once corrected consistently at least twice for this merchant). Also
+  /// enforced server-side in `lookup_category_preference`.
   final int correctionCount;
+
+  /// Decayed, corroboration-weighted confidence from
+  /// `lookup_category_preference` — `f(correction_count, last_corrected_at)`,
+  /// not a fixed constant.
+  final double confidence;
 }

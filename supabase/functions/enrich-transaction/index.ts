@@ -78,7 +78,7 @@ async function maybeWriteBackMerchantAliasFromCorrection(
   try {
     const { data: corrections } = await client
       .from("user_field_corrections")
-      .select("predicted_value, confirmed_value")
+      .select("predicted_value, confirmed_value, confidence")
       .eq("transaction_id", transactionId)
       .eq("user_id", userId)
       .eq("field", "merchant")
@@ -97,6 +97,10 @@ async function maybeWriteBackMerchantAliasFromCorrection(
       : correction.confirmed_value;
     if (!isUsableMerchantText(aliasText)) return;
 
+    const ocrConfidence = typeof correction.confidence === "number"
+      ? correction.confidence
+      : null;
+
     await client.rpc("upsert_merchant_alias_from_correction", {
       p_alias_text: normalizeForCompare(aliasText),
       p_geohash: geohashEncode(shareLat, shareLng, ALIAS_GEOHASH_PRECISION),
@@ -105,6 +109,8 @@ async function maybeWriteBackMerchantAliasFromCorrection(
       p_lat: place.lat,
       p_lng: place.lng,
       p_correction_type: correctionType,
+      p_transaction_id: transactionId,
+      p_ocr_confidence: ocrConfidence,
     });
   } catch {
     // Non-fatal — see function doc comment above.

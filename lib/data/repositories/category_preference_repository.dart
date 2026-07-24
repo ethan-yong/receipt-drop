@@ -34,10 +34,14 @@ class CategoryPreferenceRepository {
       if (row is! Map) return null;
       final category = row['category'];
       final count = row['correction_count'];
-      if (category is! String || count is! num) return null;
+      final confidence = row['confidence'];
+      if (category is! String || count is! num || confidence is! num) {
+        return null;
+      }
       return CategoryPreferenceHint(
         category: category,
         correctionCount: count.toInt(),
+        confidence: confidence.toDouble(),
       );
     } catch (_) {
       // Never block capture on a failed/slow lookup.

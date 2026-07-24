@@ -634,11 +634,28 @@ TOTAL RM 42.50
         categoryPreferenceHint: const CategoryPreferenceHint(
           category: 'Groceries',
           correctionCount: 2,
+          confidence: 0.65,
         ),
       );
 
       expect(result.categoryGuess, 'Groceries');
-      expect(result.categoryConfidence, categoryPreferenceConfidence);
+      expect(result.categoryConfidence, 0.65);
+    });
+
+    test('uses the hint\'s dynamic confidence, not a fixed constant', () {
+      final result = parseReceiptOcrText(
+        filePath: '/tmp/unknown.png',
+        ocrText: 'UNKNOWN MERCHANT\nNo keyword on this receipt\n',
+        categories: testCategories,
+        categoryPreferenceHint: const CategoryPreferenceHint(
+          category: 'Groceries',
+          correctionCount: 6,
+          confidence: 0.85,
+        ),
+      );
+
+      expect(result.categoryGuess, 'Groceries');
+      expect(result.categoryConfidence, 0.85);
     });
 
     test('does not override when the corroboration gate is not met', () {
@@ -649,6 +666,7 @@ TOTAL RM 42.50
         categoryPreferenceHint: const CategoryPreferenceHint(
           category: 'Groceries',
           correctionCount: 1,
+          confidence: 0.60,
         ),
       );
 
@@ -663,6 +681,7 @@ TOTAL RM 42.50
         categoryPreferenceHint: const CategoryPreferenceHint(
           category: 'Groceries',
           correctionCount: 5,
+          confidence: 0.80,
         ),
       );
 

@@ -49,13 +49,6 @@ const categoryPreferenceMinCorroboration = 2;
 /// at 0.85, or a confident LLM category read).
 const categoryPreferenceOverrideConfidenceCeiling = 0.7;
 
-/// Confidence assigned when a category preference overrides the guess —
-/// deliberately between the OCR-body keyword tier (0.55) and the
-/// merchant-name keyword tier (0.85): a personal history of corrections is a
-/// stronger signal than an incidental keyword match, but still weaker than
-/// this receipt's own strong current-request signal.
-const categoryPreferenceConfidence = 0.80;
-
 /// Parsed fields from a receipt image or OCR text (before user confirmation).
 class ReceiptParseResult {
   const ReceiptParseResult({
@@ -396,15 +389,17 @@ ReceiptParseResult parseReceiptOcrText({
 
   // Learned per-user category preference: only fills in when this
   // receipt's own category signal is itself weak, and only once corrected
-  // consistently enough to trust (Decision Logic) — never overrides a
-  // confident keyword hit or LLM read.
+  // consistently enough to trust (Decision Logic; also gated in SQL by
+  // lookup_category_preference) — never overrides a confident keyword hit
+  // or LLM read. Confidence comes from the RPC
+  // (f(correction_count, last_corrected_at)), not a fixed constant.
   if (categoryPreferenceHint != null &&
       categoryPreferenceHint.correctionCount >=
           categoryPreferenceMinCorroboration &&
       categoryConfidence < categoryPreferenceOverrideConfidenceCeiling &&
       categoryPreferenceHint.category != categoryGuess) {
     categoryGuess = categoryPreferenceHint.category;
-    categoryConfidence = categoryPreferenceConfidence;
+    categoryConfidence = categoryPreferenceHint.confidence;
   }
 
   return ReceiptParseResult(
