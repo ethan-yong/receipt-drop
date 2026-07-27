@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../core/platform/adaptive_sheet.dart';
@@ -12,7 +13,6 @@ import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/models/field_correction.dart';
 import '../../domain/models/receipt_line_item.dart';
-import '../../widgets/amount_field.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
 import '../places/place_picker_screen.dart';
 import '../places/places_search_screen.dart';
@@ -131,7 +131,6 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   PlaceResult? _pickedPlace;
   PlaceResult? _previewPlace;
   bool _previewLoading = true;
-  late final bool _needsManualAmount;
   late final bool _lowConfidence;
   late final bool _amountFieldLow;
   late final bool _merchantFieldLow;
@@ -143,7 +142,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   ImpactLevel? _impactOverride;
   bool _saving = false;
   bool _showAmountAlternative = true;
-  bool _showMerchantAlternative = true;
+  bool _amountManuallyEdited = false;
   double? _amountOverride;
 
   @override
@@ -155,7 +154,6 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _prices = [for (final item in _items) item.priceMyr];
     _vendorName = vm.merchantDisplay;
     _vendorKnown = widget.draft.merchantRaw?.trim().isNotEmpty ?? false;
-    _needsManualAmount = widget.draft.needsAmount;
     _lowConfidence = vm.isLowConfidence;
     _amountSuspicious = widget.draft.amountSuspicious;
     _amountFieldLow =
@@ -176,8 +174,18 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       }
     });
     _amountController = TextEditingController();
+    _amountController.text = _total != null ? _total!.toStringAsFixed(2) : '';
     _amountController.addListener(() => setState(() {}));
     unawaited(_resolvePreviewLocation());
+  }
+
+  /// Keeps the (editable) total field following the item checkboxes/price
+  /// edits, unless the user has typed into it directly — once they have, an
+  /// item toggle must not silently overwrite what they typed.
+  void _syncAmountFromItems() {
+    if (_amountManuallyEdited) return;
+    final total = _total;
+    _amountController.text = total != null ? total.toStringAsFixed(2) : '';
   }
 
   @override
@@ -221,17 +229,16 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     setState(() {
       _amountOverride = alt;
       _showAmountAlternative = false;
+      _syncAmountFromItems();
     });
   }
 
-  /// The amount actually used to save: the manual field for drafts OCR
-  /// couldn't find a total on, otherwise the item-adjusted OCR total above.
+  /// The amount actually used to save — always whatever the (now always
+  /// editable) total field currently shows, whether that came from OCR, an
+  /// item-sum fallback, or the user typing over it directly.
   double? get _effectiveAmount {
-    if (_needsManualAmount) {
-      final raw = _amountController.text.trim().replaceAll(',', '');
-      return raw.isEmpty ? null : double.tryParse(raw);
-    }
-    return _total;
+    final raw = _amountController.text.trim().replaceAll(',', '');
+    return raw.isEmpty ? null : double.tryParse(raw);
   }
 
   ImpactLevel get _effectiveImpact =>
@@ -262,6 +269,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       } else if (_undoIndex == index) {
         _undoIndex = null;
       }
+      _syncAmountFromItems();
     });
     if (!nowChecked) {
       _undoTimer = Timer(const Duration(seconds: 4), () {
@@ -277,6 +285,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     setState(() {
       _checked[index] = true;
       _undoIndex = null;
+      _syncAmountFromItems();
     });
   }
 
@@ -324,6 +333,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     setState(() {
       if (parsed != null && parsed >= 0) _prices[index] = parsed;
       _editingPriceIndex = null;
+      _syncAmountFromItems();
     });
   }
 
@@ -607,21 +617,6 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           lowConfidence: _merchantFieldLow,
           child: _editingVendor ? _vendorField() : _vendorLabel(),
         ),
-        if (_merchantAmbiguous &&
-            _showMerchantAlternative &&
-            widget.draft.merchantCandidates.length >= 2) ...[
-          const SizedBox(height: 6),
-          _AlternativeChip(
-            label: 'Not this? ${widget.draft.merchantCandidates[1].text}',
-            onTap: () {
-              setState(() {
-                _vendorName = widget.draft.merchantCandidates[1].text;
-                _vendorEdited = true;
-                _showMerchantAlternative = false;
-              });
-            },
-          ),
-        ],
         const SizedBox(height: 10),
         _MapPreview(
           loading: _previewLoading && _pickedPlace == null,
@@ -638,43 +633,65 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           onChanged: (v) => setState(() => _categoryOverride = v),
         ),
         const SizedBox(height: 14),
-        _needsManualAmount
-            ? AmountField(controller: _amountController)
-            : _FieldConfidenceWrap(
-                lowConfidence: _amountFieldLow,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      total != null ? 'RM ${total.toStringAsFixed(2)}' : '–',
-                      style: balooText(
-                        38,
-                        FontWeight.w800,
-                        color: total != null
-                            ? ReceiptSheetColors.ink
-                            : ReceiptSheetColors.subLight,
-                        letterSpacing: -0.6,
-                      ),
-                    ),
-                    if (_amountAlternative != null &&
-                        _showAmountAlternative &&
-                        total != null &&
-                        (_amountAlternative - total).abs() >= 0.01) ...[
-                      const SizedBox(height: 6),
-                      _AlternativeChip(
-                        label:
-                            'Did you mean RM ${_amountAlternative.toStringAsFixed(2)}?',
-                        onTap: () {
-                          setState(() {
-                            _showAmountAlternative = false;
-                          });
-                          _acceptAmountAlternative();
-                        },
-                      ),
-                    ],
-                  ],
+        _FieldConfidenceWrap(
+          lowConfidence: _amountFieldLow,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                key: const Key('receipt-amount-field'),
+                controller: _amountController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+                ],
+                onChanged: (_) => _amountManuallyEdited = true,
+                style: balooText(
+                  38,
+                  FontWeight.w800,
+                  color: ReceiptSheetColors.ink,
+                  letterSpacing: -0.6,
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                  prefixText: 'RM ',
+                  prefixStyle: balooText(
+                    38,
+                    FontWeight.w800,
+                    color: ReceiptSheetColors.ink,
+                    letterSpacing: -0.6,
+                  ),
+                  hintText: '0.00',
+                  hintStyle: balooText(
+                    38,
+                    FontWeight.w800,
+                    color: ReceiptSheetColors.subLight,
+                    letterSpacing: -0.6,
+                  ),
                 ),
               ),
+              if (_amountAlternative != null &&
+                  _showAmountAlternative &&
+                  total != null &&
+                  (_amountAlternative - total).abs() >= 0.01) ...[
+                const SizedBox(height: 6),
+                _AlternativeChip(
+                  label:
+                      'Did you mean RM ${_amountAlternative.toStringAsFixed(2)}?',
+                  onTap: () {
+                    setState(() {
+                      _showAmountAlternative = false;
+                    });
+                    _acceptAmountAlternative();
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
         const SizedBox(height: 14),
         Text('Impact', style: balooText(13, FontWeight.w700, color: ReceiptSheetColors.subLight)),
         const SizedBox(height: 8),
@@ -823,6 +840,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       borderSide: BorderSide(color: ReceiptSheetColors.gold, width: 2),
     );
     return TextField(
+      key: const Key('receipt-vendor-field'),
       controller: _vendorController,
       focusNode: _vendorFocus,
       autofocus: true,
@@ -848,8 +866,8 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
 }
 
 /// Category dropdown, ported from the now-removed `ShareSaveSheet`. Deliberately
-/// Material-styled (not `balooText`/`ReceiptSheetColors`), same as [AmountField]
-/// below — both are reused as-is rather than re-skinned for this sheet.
+/// Material-styled (not `balooText`/`ReceiptSheetColors`) — reused as-is rather
+/// than re-skinned for this sheet.
 class _CategoryDropdown extends StatelessWidget {
   const _CategoryDropdown({
     required this.value,
@@ -1108,6 +1126,7 @@ class _ItemRow extends StatelessWidget {
     return SizedBox(
       width: 78,
       child: TextField(
+        key: const Key('receipt-price-field'),
         controller: priceController,
         focusNode: priceFocus,
         autofocus: true,

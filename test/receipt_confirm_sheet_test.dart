@@ -8,7 +8,6 @@ import 'package:receipt_drop/domain/models/field_correction.dart';
 import 'package:receipt_drop/domain/models/receipt_line_item.dart';
 import 'package:receipt_drop/features/share/receipt_confirm_sheet.dart';
 import 'package:receipt_drop/features/share/receipt_ingest_draft.dart';
-import 'package:receipt_drop/widgets/amount_field.dart';
 
 final _testCategories = CategoryConfig.fromJson({
   'version': 'test',
@@ -88,6 +87,16 @@ Future<void> _openSheet(
   await tester.pump(const Duration(milliseconds: 400)); // sheet entrance
 }
 
+/// The total field is now always a live editable [TextField] (not a plain
+/// `Text`), so its value has to be read off the controller rather than
+/// matched via `find.text('RM ...')`.
+String _amountFieldText(WidgetTester tester) {
+  return tester
+      .widget<TextField>(find.byKey(const Key('receipt-amount-field')))
+      .controller!
+      .text;
+}
+
 void main() {
   setUpAll(() {
     // No Google Fonts fetches in tests (same reason buildReceiptDropTestTheme
@@ -101,7 +110,7 @@ void main() {
     await _openSheet(tester, _draft(), (_) {});
 
     expect(find.text('Sf Cafe'), findsOneWidget); // cleaned merchant
-    expect(find.text('RM 19.90'), findsOneWidget);
+    expect(_amountFieldText(tester), '19.90');
     expect(find.text('Food & Drink'), findsWidgets); // chip + dropdown
     expect(find.text('3 of 3 items'), findsOneWidget);
     expect(find.text('Rsb Biasa'), findsOneWidget);
@@ -144,14 +153,14 @@ void main() {
     await tester.tap(find.text('Rsb Biasa'));
     await tester.pump();
 
-    expect(find.text('RM 12.90'), findsOneWidget);
+    expect(_amountFieldText(tester), '12.90');
     expect(find.text('2 of 3 items'), findsOneWidget);
     expect(find.text('Rsb Biasa excluded'), findsOneWidget);
 
     await tester.tap(find.text('Undo'));
     await tester.pump();
 
-    expect(find.text('RM 19.90'), findsOneWidget);
+    expect(_amountFieldText(tester), '19.90');
     expect(find.text('3 of 3 items'), findsOneWidget);
     expect(find.text('Rsb Biasa excluded'), findsNothing);
   });
@@ -171,7 +180,7 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
 
     expect(find.text('Rsb Biasa excluded'), findsNothing);
-    expect(find.text('RM 12.90'), findsOneWidget);
+    expect(_amountFieldText(tester), '12.90');
   });
 
   testWidgets('Save invokes onSave with exclusions applied and pops true',
@@ -248,12 +257,13 @@ void main() {
     await tester.tap(find.text('Sf Cafe'));
     await tester.pump();
 
-    expect(find.byType(TextField), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'Nasi Kandar Pelita');
+    final vendorField = find.byKey(const Key('receipt-vendor-field'));
+    expect(vendorField, findsOneWidget);
+    await tester.enterText(vendorField, 'Nasi Kandar Pelita');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
 
-    expect(find.byType(TextField), findsNothing);
+    expect(vendorField, findsNothing);
     expect(find.text('Nasi Kandar Pelita'), findsOneWidget);
 
     await tester.tap(find.text('Save'));
@@ -283,13 +293,14 @@ void main() {
     await tester.tap(find.text('RM 7.00'));
     await tester.pump();
 
-    expect(find.byType(TextField), findsOneWidget);
-    await tester.enterText(find.byType(TextField), '9.50');
+    final priceField = find.byKey(const Key('receipt-price-field'));
+    expect(priceField, findsOneWidget);
+    await tester.enterText(priceField, '9.50');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
 
-    expect(find.byType(TextField), findsNothing);
-    expect(find.text('RM 22.40'), findsOneWidget); // 19.90 + (9.50 - 7.00)
+    expect(priceField, findsNothing);
+    expect(_amountFieldText(tester), '22.40'); // 19.90 + (9.50 - 7.00)
 
     await tester.tap(find.text('Save'));
     await tester.pump();
@@ -332,7 +343,10 @@ void main() {
 
       await tester.tap(find.text('Sf Cafe'));
       await tester.pump();
-      await tester.enterText(find.byType(TextField), 'Nasi Kandar Pelita');
+      await tester.enterText(
+        find.byKey(const Key('receipt-vendor-field')),
+        'Nasi Kandar Pelita',
+      );
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
 
@@ -392,7 +406,10 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('RM 7.00'));
       await tester.pump();
-      await tester.enterText(find.byType(TextField), '9.50');
+      await tester.enterText(
+        find.byKey(const Key('receipt-price-field')),
+        '9.50',
+      );
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
 
@@ -493,12 +510,13 @@ void main() {
   });
 
   testWidgets(
-      'needs-amount draft shows an inline amount field instead of the dash total',
+      'needs-amount draft with no line items shows an empty, editable amount field',
       (tester) async {
     await _openSheet(tester, _draft(amount: null, lineItems: const []), (_) {});
 
     expect(find.text('–'), findsNothing);
-    expect(find.byType(AmountField), findsOneWidget);
+    expect(find.byKey(const Key('receipt-amount-field')), findsOneWidget);
+    expect(_amountFieldText(tester), '');
     expect(find.text('Save'), findsOneWidget);
     expect(
       find.text("We couldn't read the amount — enter it above."),
@@ -520,7 +538,10 @@ void main() {
       onSave: (amount, draft, impact) async => savedAmount = amount,
     );
 
-    await tester.enterText(find.byType(TextField), '25.00');
+    await tester.enterText(
+      find.byKey(const Key('receipt-amount-field')),
+      '25.00',
+    );
     await tester.pump();
 
     await tester.tap(find.text('Save'));
@@ -528,6 +549,61 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(savedAmount, closeTo(25.00, 0.001));
+  });
+
+  testWidgets(
+      'needs-amount draft with line items pre-fills the total from their sum',
+      (tester) async {
+    double? savedAmount;
+    await _openSheet(
+      tester,
+      _draft(amount: null), // default _items sum to 7.00 + 8.70 + 4.20 = 19.90
+      (_) {},
+      onSave: (amount, draft, impact) async => savedAmount = amount,
+    );
+
+    expect(_amountFieldText(tester), '19.90');
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(savedAmount, closeTo(19.90, 0.001));
+  });
+
+  testWidgets(
+      'the total field stays editable on a confident draft and overrides item math',
+      (tester) async {
+    double? savedAmount;
+    await _openSheet(
+      tester,
+      _draft(),
+      (_) {},
+      onSave: (amount, draft, impact) async => savedAmount = amount,
+    );
+
+    expect(_amountFieldText(tester), '19.90');
+
+    await tester.enterText(
+      find.byKey(const Key('receipt-amount-field')),
+      '50.00',
+    );
+    await tester.pump();
+
+    // Excluding an item afterwards must not silently overwrite what the
+    // user just typed directly into the total.
+    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.pump();
+    await tester.tap(find.text('Rsb Biasa'));
+    await tester.pump();
+
+    expect(_amountFieldText(tester), '50.00');
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(savedAmount, closeTo(50.00, 0.001));
   });
 
   testWidgets('offers Save for later on a needs-amount draft and invokes it',
@@ -624,8 +700,9 @@ void main() {
 
       await tester.tap(find.text('RM 14.00')); // Line Item 13's price
       await tester.pump();
-      expect(find.byType(TextField), findsOneWidget);
-      await tester.enterText(find.byType(TextField), '20.00');
+      final priceField = find.byKey(const Key('receipt-price-field'));
+      expect(priceField, findsOneWidget);
+      await tester.enterText(priceField, '20.00');
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
       expect(find.text('RM 20.00'), findsOneWidget);

@@ -1,17 +1,26 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/config/env.dart';
 import '../../domain/logic/avatar_mood.dart';
+import '../../domain/models/receipt_display_image.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/transaction_view.dart';
+import '../../features/share/receipt_file_store.dart';
 import '../local/app_database.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
 import 'places_repository.dart';
 import 'sync_worker.dart';
+
+/// Signed URL lifetime for private receipt photos. Short-lived and never
+/// persisted — regenerated each time the detail/viewer screen opens.
+const _signedUrlExpirySeconds = 60 * 60;
 
 const bool _kDebugMode = !bool.fromEnvironment('dart.vm.product');
 
@@ -37,9 +46,9 @@ class TransactionRepository {
   ) async {
     final views = <TransactionView>[];
     for (final row in rows) {
-      final path = await _artifactPathFor(row.id);
+      final artifact = await _artifactFor(row.id);
       final items = await _lineItemsFor(row.id);
-      views.add(_mapRow(row, path, items));
+      views.add(_mapRow(row, artifact, items));
     }
     return views;
   }
@@ -49,9 +58,45 @@ class TransactionRepository {
       _db.outboxTransactions,
     )..where((t) => t.id.equals(id))).getSingleOrNull();
     if (row == null) return null;
-    final path = await _artifactPathFor(id);
+    final artifact = await _artifactFor(id);
     final items = await _lineItemsFor(id);
-    return _mapRow(row, path, items);
+    return _mapRow(row, artifact, items);
+  }
+
+  /// Local file if it still exists; else a short-lived signed Storage URL;
+  /// else unavailable (never synced / wiped before upload).
+  Future<ReceiptDisplayImage> resolveDisplayImage(String transactionId) async {
+    final artifact = await _artifactFor(transactionId);
+    if (artifact == null) return const ReceiptDisplayImage.unavailable();
+
+    final localPath = artifact.localFilePath;
+    if (localPath.isNotEmpty && !localPath.startsWith('web:')) {
+      try {
+        if (await File(localPath).exists()) {
+          return ReceiptDisplayImage.local(localPath);
+        }
+      } catch (_) {
+        // Fall through to signed-URL / unavailable.
+      }
+    }
+
+    final storagePath = artifact.storagePath;
+    if (storagePath != null &&
+        storagePath.isNotEmpty &&
+        Env.hasSupabaseConfig) {
+      try {
+        final url = await Supabase.instance.client.storage
+            .from('receipts')
+            .createSignedUrl(storagePath, _signedUrlExpirySeconds);
+        if (url.isNotEmpty) {
+          return ReceiptDisplayImage.remote(url);
+        }
+      } catch (_) {
+        // Fall through to unavailable.
+      }
+    }
+
+    return const ReceiptDisplayImage.unavailable();
   }
 
   Future<TransactionView> ingestReceipt(IngestReceiptRequest request) async {
@@ -60,6 +105,7 @@ class TransactionRepository {
     final now = DateTime.now();
     final amountSource = request.needsAmount ? null : 'ocr';
     final pipelineStatus = request.needsReview ? 'needs_review' : 'provisional';
+    final encoded = _encodeOcrSideChannels(request);
 
     await _db
         .into(_db.outboxTransactions)
@@ -86,34 +132,14 @@ class TransactionRepository {
             impactUser: Value(request.impactUser),
             syncStatus: const Value('pending'),
             pipelineStatus: Value(pipelineStatus),
-            merchantCandidatesJson: Value(
-              request.merchantCandidates.isEmpty
-                  ? null
-                  : jsonEncode(
-                      request.merchantCandidates
-                          .map((c) => c.toJson())
-                          .toList(),
-                    ),
-            ),
+            merchantCandidatesJson: Value(encoded.merchantCandidatesJson),
             ocrHeaderText: Value(request.ocrHeaderText),
-            llmUnderstandingJson: Value(
-              request.understanding == null
-                  ? null
-                  : jsonEncode(request.understanding!.toJson()),
-            ),
+            llmUnderstandingJson: Value(encoded.llmUnderstandingJson),
             // Own columns (not just nested inside llmUnderstandingJson above)
             // so cleanup output stays independently queryable — mirrors
             // rawOcrText's own-column precedent alongside the LLM blob.
-            cleanedOcrText: Value(request.understanding?.cleanedOcrText),
-            ocrCorrectionsJson: Value(
-              (request.understanding?.corrections.isEmpty ?? true)
-                  ? null
-                  : jsonEncode(
-                      request.understanding!.corrections
-                          .map((c) => c.toJson())
-                          .toList(),
-                    ),
-            ),
+            cleanedOcrText: Value(encoded.cleanedOcrText),
+            ocrCorrectionsJson: Value(encoded.ocrCorrectionsJson),
             placeName: Value(
               request.pickedPlaceLocked ? request.pickedPlaceName : null,
             ),
@@ -147,21 +173,7 @@ class TransactionRepository {
         );
 
     if (request.lineItems.isNotEmpty) {
-      await _db.batch((batch) {
-        batch.insertAll(_db.outboxLineItems, [
-          for (var i = 0; i < request.lineItems.length; i++)
-            OutboxLineItemsCompanion.insert(
-              id: _uuid.v4(),
-              userId: request.userId,
-              transactionId: id,
-              name: request.lineItems[i].name,
-              priceMyr: request.lineItems[i].priceMyr,
-              quantity: Value(request.lineItems[i].quantity),
-              confidence: Value(request.lineItems[i].confidence),
-              sortOrder: i,
-            ),
-        ]);
-      });
+      await _insertLineItems(id, request.userId, request.lineItems);
     }
 
     if (request.fieldCorrections.isNotEmpty) {
@@ -207,6 +219,7 @@ class TransactionRepository {
       syncStatus: 'pending',
       pipelineStatus: pipelineStatus,
       localThumbnailPath: request.localFilePath,
+      remoteStoragePath: null,
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
       lineItems: request.lineItems,
@@ -215,6 +228,85 @@ class TransactionRepository {
       shareLocationLat: request.shareLocationLat,
       shareLocationLng: request.shareLocationLng,
     );
+  }
+
+  /// Replace the single artifact for [transactionId] and overwrite OCR-derived
+  /// fields from a retake confirm. Preserves user-owned fields
+  /// (`categoryUser` unless freshly set, `placeStatus`/`place*` unless newly
+  /// locked, `impactUser` unless freshly set). Always leaves exactly one
+  /// `outbox_artifacts` row so [SyncWorker.run]'s `getSingleOrNull()` stays
+  /// valid.
+  Future<TransactionView> replaceArtifactAndReprocess(
+    String transactionId,
+    IngestReceiptRequest request,
+  ) async {
+    final existing = await (_db.select(
+      _db.outboxTransactions,
+    )..where((t) => t.id.equals(transactionId))).getSingleOrNull();
+    if (existing == null) {
+      throw StateError('Transaction $transactionId not found');
+    }
+
+    final oldArtifact = await _artifactFor(transactionId);
+    final oldLocalPath = oldArtifact?.localFilePath;
+
+    final newArtifactId = _uuid.v4();
+    final pipelineStatus = request.needsReview ? 'needs_review' : 'provisional';
+
+    await _db.transaction(() async {
+      if (oldArtifact != null) {
+        await (_db.delete(
+          _db.outboxArtifacts,
+        )..where((a) => a.id.equals(oldArtifact.id))).go();
+      }
+
+      await _db
+          .into(_db.outboxArtifacts)
+          .insert(
+            OutboxArtifactsCompanion.insert(
+              id: newArtifactId,
+              userId: request.userId.isEmpty ? existing.userId : request.userId,
+              transactionId: transactionId,
+              mimeType: request.mimeType,
+              localFilePath: request.localFilePath,
+            ),
+          );
+
+      await (_db.delete(
+        _db.outboxLineItems,
+      )..where((li) => li.transactionId.equals(transactionId))).go();
+
+      if (request.lineItems.isNotEmpty) {
+        await _insertLineItems(
+          transactionId,
+          existing.userId,
+          request.lineItems,
+        );
+      }
+
+      await (_db.update(
+        _db.outboxTransactions,
+      )..where((t) => t.id.equals(transactionId))).write(
+        _ocrDerivedUpdateCompanion(request, pipelineStatus: pipelineStatus),
+      );
+    });
+
+    // Local file cleanup is best-effort and never blocks the replace.
+    // Remote Storage / receipt_artifacts cleanup runs asynchronously in
+    // SyncWorker after the new artifact uploads (single-version replace).
+    if (oldLocalPath != null &&
+        oldLocalPath.isNotEmpty &&
+        oldLocalPath != request.localFilePath) {
+      await deleteStoredReceipt(oldLocalPath);
+    }
+
+    unawaited(SyncWorker.run(_db, transactionId));
+
+    final updated = await getById(transactionId);
+    if (updated == null) {
+      throw StateError('Transaction $transactionId missing after replace');
+    }
+    return updated;
   }
 
   /// Receipts parked in the review queue, newest first.
@@ -384,11 +476,10 @@ class TransactionRepository {
     }
   }
 
-  Future<String?> _artifactPathFor(String transactionId) async {
-    final artifact = await (_db.select(
+  Future<OutboxArtifact?> _artifactFor(String transactionId) async {
+    return (_db.select(
       _db.outboxArtifacts,
     )..where((a) => a.transactionId.equals(transactionId))).getSingleOrNull();
-    return artifact?.localFilePath;
   }
 
   Future<List<ReceiptLineItem>> _lineItemsFor(String transactionId) async {
@@ -409,9 +500,114 @@ class TransactionRepository {
         .toList();
   }
 
+  Future<void> _insertLineItems(
+    String transactionId,
+    String userId,
+    List<ReceiptLineItem> items,
+  ) async {
+    await _db.batch((batch) {
+      batch.insertAll(_db.outboxLineItems, [
+        for (var i = 0; i < items.length; i++)
+          OutboxLineItemsCompanion.insert(
+            id: _uuid.v4(),
+            userId: userId,
+            transactionId: transactionId,
+            name: items[i].name,
+            priceMyr: items[i].priceMyr,
+            quantity: Value(items[i].quantity),
+            confidence: Value(items[i].confidence),
+            sortOrder: i,
+          ),
+      ]);
+    });
+  }
+
+  /// Shared OCR-derived field encoding for [ingestReceipt] and
+  /// [replaceArtifactAndReprocess] — keep both paths in sync.
+  ({
+    String? merchantCandidatesJson,
+    String? llmUnderstandingJson,
+    String? cleanedOcrText,
+    String? ocrCorrectionsJson,
+  }) _encodeOcrSideChannels(IngestReceiptRequest request) {
+    return (
+      merchantCandidatesJson: request.merchantCandidates.isEmpty
+          ? null
+          : jsonEncode(
+              request.merchantCandidates.map((c) => c.toJson()).toList(),
+            ),
+      llmUnderstandingJson: request.understanding == null
+          ? null
+          : jsonEncode(request.understanding!.toJson()),
+      cleanedOcrText: request.understanding?.cleanedOcrText,
+      ocrCorrectionsJson:
+          (request.understanding?.corrections.isEmpty ?? true)
+              ? null
+              : jsonEncode(
+                  request.understanding!.corrections
+                      .map((c) => c.toJson())
+                      .toList(),
+                ),
+    );
+  }
+
+  /// OCR-derived fields overwritten on retake. User-owned place lock is left
+  /// alone unless the confirm sheet newly locked a place. [categoryUser] /
+  /// [impactUser] are only written when the confirm sheet supplies them.
+  OutboxTransactionsCompanion _ocrDerivedUpdateCompanion(
+    IngestReceiptRequest request, {
+    required String pipelineStatus,
+  }) {
+    final amountSource = request.needsAmount ? null : 'ocr';
+    final encoded = _encodeOcrSideChannels(request);
+
+    return OutboxTransactionsCompanion(
+      amountMyr: Value(request.amountMyr),
+      amountSource: Value(amountSource),
+      needsAmount: Value(request.needsAmount),
+      merchantRaw: Value(request.merchantRaw),
+      categoryGuess: Value(request.categoryGuess),
+      categoryConfidence: Value(request.categoryConfidence),
+      categoryUser: request.categoryUser != null
+          ? Value(request.categoryUser)
+          : const Value.absent(),
+      ocrConfidence: Value(request.ocrConfidence),
+      rawOcrText: Value(request.rawOcrText),
+      ocrServiceConfidence: Value(request.ocrServiceConfidence),
+      lineItemsConfidence: Value(request.lineItemsConfidence),
+      parseFailureReason: Value(request.parseFailureReason),
+      merchantCandidatesJson: Value(encoded.merchantCandidatesJson),
+      ocrHeaderText: Value(request.ocrHeaderText),
+      llmUnderstandingJson: Value(encoded.llmUnderstandingJson),
+      cleanedOcrText: Value(encoded.cleanedOcrText),
+      ocrCorrectionsJson: Value(encoded.ocrCorrectionsJson),
+      impactUser: request.impactUser != null
+          ? Value(request.impactUser)
+          : const Value.absent(),
+      placeName: request.pickedPlaceLocked
+          ? Value(request.pickedPlaceName)
+          : const Value.absent(),
+      placeGooglePlaceId: request.pickedPlaceLocked
+          ? Value(request.pickedPlaceGooglePlaceId)
+          : const Value.absent(),
+      placeLat: request.pickedPlaceLocked
+          ? Value(request.pickedPlaceLat)
+          : const Value.absent(),
+      placeLng: request.pickedPlaceLocked
+          ? Value(request.pickedPlaceLng)
+          : const Value.absent(),
+      placeStatus: request.pickedPlaceLocked
+          ? const Value('user_locked')
+          : const Value.absent(),
+      pipelineStatus: Value(pipelineStatus),
+      syncStatus: const Value('pending'),
+      retryCount: const Value(0),
+    );
+  }
+
   TransactionView _mapRow(
     OutboxTransaction row,
-    String? localPath,
+    OutboxArtifact? artifact,
     List<ReceiptLineItem> lineItems,
   ) {
     return TransactionView(
@@ -428,7 +624,8 @@ class TransactionRepository {
       placeLng: row.placeLng,
       syncStatus: row.syncStatus,
       pipelineStatus: row.pipelineStatus,
-      localThumbnailPath: localPath,
+      localThumbnailPath: artifact?.localFilePath,
+      remoteStoragePath: artifact?.storagePath,
       impactUser: row.impactUser,
       lineItems: lineItems,
       rawOcrText: row.rawOcrText,

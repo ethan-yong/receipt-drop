@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
+import '../../domain/models/receipt_display_image.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../data/repositories/places_repository.dart';
@@ -11,12 +12,13 @@ import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../features/places/place_picker_screen.dart';
+import '../../features/share/receipt_retake_flow.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/place_block.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
-import '../../widgets/receipt_strip.dart';
 import '../../widgets/receipt_thumbnail.dart';
 import '../../widgets/skeleton.dart';
+import 'receipt_image_viewer_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
   const TransactionDetailScreen({super.key, required this.transactionId});
@@ -42,6 +44,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   bool _loading = true;
   CategoryConfig? _categoryConfig;
   List<ReceiptLineItem> _lineItems = const [];
+  ReceiptDisplayImage? _displayImage;
+  bool _needsReview = false;
+  bool _resolvingImage = false;
 
   @override
   void dispose() {
@@ -70,7 +75,21 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       _impactOverride = impactLevelFromStorage(tx.impactUser);
       _categoryConfig = config;
       _lineItems = tx.lineItems ?? const [];
+      _needsReview = tx.needsReview;
       _loading = false;
+      _resolvingImage = true;
+    });
+    await _resolveImage();
+  }
+
+  Future<void> _resolveImage() async {
+    final image = await AppServices.transactions.resolveDisplayImage(
+      widget.transactionId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _displayImage = image;
+      _resolvingImage = false;
     });
   }
 
@@ -78,6 +97,32 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _openViewer() async {
+    final image = _displayImage;
+    if (image == null || !image.isAvailable) return;
+    await ReceiptImageViewerScreen.push(
+      context,
+      image: image,
+      onRetake: () {
+        // Defer so the viewer finishes popping before the capture menu opens.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _startRetake();
+        });
+      },
+    );
+  }
+
+  Future<void> _startRetake() async {
+    final replaced = await ReceiptRetakeFlow.start(
+      context,
+      transactionId: widget.transactionId,
+    );
+    if (replaced && mounted) {
+      setState(() => _loading = true);
+      await _load();
+    }
   }
 
   Future<void> _save() async {
@@ -200,6 +245,74 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }.toList();
   }
 
+  Widget _buildThumbnailSection() {
+    final image = _displayImage;
+    final available = image?.isAvailable ?? false;
+
+    Widget thumb;
+    if (_resolvingImage) {
+      thumb = const Skeleton(
+        child: SkeletonBox(
+          width: 200,
+          height: 200,
+          radius: AppSpacing.cardRadius,
+        ),
+      );
+    } else {
+      thumb = ReceiptThumbnail(
+        size: 200,
+        radius: AppSpacing.cardRadius,
+        localPath: image?.localPath,
+        imageUrl: image?.imageUrl,
+      );
+    }
+
+    return Column(
+      children: [
+        if (available)
+          GestureDetector(
+            onTap: _openViewer,
+            child: thumb,
+          )
+        else
+          thumb,
+        if (!available && !_resolvingImage) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Photo not available on this device yet',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AppColors.textMuted,
+                ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+        if (_needsReview) ...[
+          const SizedBox(height: AppSpacing.sm),
+          GestureDetector(
+            onTap: available ? _openViewer : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: 4,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.accentOrange.withValues(alpha: 0.12),
+                borderRadius: AppSpacing.chipBorderRadius,
+              ),
+              child: Text(
+                'check this scan',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AppColors.accentOrange,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -229,9 +342,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: ReceiptThumbnail(size: 200, radius: AppSpacing.cardRadius),
-            ),
+            // Extracted fields stay primary; photo is a verification affordance.
+            Center(child: _buildThumbnailSection()),
             const SizedBox(height: AppSpacing.lg),
             Card(
               child: Padding(
@@ -297,11 +409,11 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 ],
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
-            Center(child: ReceiptStrip(impact: effectiveImpact)),
             const SizedBox(height: AppSpacing.md),
             PlaceBlock(
               placeName: _placeName,
+              lat: _placeLat,
+              lng: _placeLng,
               onChangePlace: _pickPlace,
             ),
             const SizedBox(height: AppSpacing.md),
@@ -401,11 +513,17 @@ class _TxDetailSkeleton extends StatelessWidget {
             const SizedBox(height: AppSpacing.sm),
             const Row(
               children: [
-                Expanded(child: SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
+                Expanded(
+                    child:
+                        SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
                 SizedBox(width: AppSpacing.sm),
-                Expanded(child: SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
+                Expanded(
+                    child:
+                        SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
                 SizedBox(width: AppSpacing.sm),
-                Expanded(child: SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
+                Expanded(
+                    child:
+                        SkeletonBox(height: 40, radius: AppSpacing.chipRadius)),
               ],
             ),
             const SizedBox(height: AppSpacing.md),

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../domain/logic/avatar_mood.dart';
+import '../../domain/models/receipt_display_image.dart';
 import '../../domain/models/transaction_view.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
@@ -29,6 +30,17 @@ class TransactionRepository {
     return null;
   }
 
+  /// Web has no Storage/artifact table — return in-memory local path only.
+  Future<ReceiptDisplayImage> resolveDisplayImage(String transactionId) async {
+    final row = await getById(transactionId);
+    if (row == null) return const ReceiptDisplayImage.unavailable();
+    final path = row.localThumbnailPath;
+    if (path != null && path.isNotEmpty && !path.startsWith('web:')) {
+      return ReceiptDisplayImage.local(path);
+    }
+    return const ReceiptDisplayImage.unavailable();
+  }
+
   Future<TransactionView> ingestReceipt(IngestReceiptRequest request) async {
     final id = _uuid.v4();
     final now = DateTime.now();
@@ -47,6 +59,7 @@ class TransactionRepository {
       syncStatus: 'pending',
       pipelineStatus: request.needsReview ? 'needs_review' : 'provisional',
       localThumbnailPath: request.localFilePath,
+      remoteStoragePath: null,
       thumbnailBytes: request.thumbnailBytes,
       impactUser: request.impactUser,
       lineItems: request.lineItems,
@@ -56,6 +69,54 @@ class TransactionRepository {
     _rows.add(view);
     _emit();
     return view;
+  }
+
+  /// In-memory stub: overwrite OCR-derived fields, keep one logical artifact
+  /// path. No Storage cleanup (web has none).
+  Future<TransactionView> replaceArtifactAndReprocess(
+    String transactionId,
+    IngestReceiptRequest request,
+  ) async {
+    final i = _rows.indexWhere((r) => r.id == transactionId);
+    if (i < 0) {
+      throw StateError('Transaction $transactionId not found');
+    }
+    final row = _rows[i];
+    final updated = TransactionView(
+      id: row.id,
+      occurredAt: row.occurredAt,
+      amountMyr: request.amountMyr,
+      needsAmount: request.needsAmount,
+      merchantRaw: request.merchantRaw,
+      categoryGuess: request.categoryGuess,
+      categoryUser: request.categoryUser ?? row.categoryUser,
+      placeName: request.pickedPlaceLocked
+          ? request.pickedPlaceName
+          : row.placeName,
+      placeGooglePlaceId: request.pickedPlaceLocked
+          ? request.pickedPlaceGooglePlaceId
+          : row.placeGooglePlaceId,
+      placeLat: request.pickedPlaceLocked
+          ? request.pickedPlaceLat
+          : row.placeLat,
+      placeLng: request.pickedPlaceLocked
+          ? request.pickedPlaceLng
+          : row.placeLng,
+      syncStatus: 'pending',
+      pipelineStatus: request.needsReview ? 'needs_review' : 'provisional',
+      localThumbnailPath: request.localFilePath,
+      remoteStoragePath: null,
+      thumbnailBytes: request.thumbnailBytes,
+      impactUser: request.impactUser ?? row.impactUser,
+      lineItems: request.lineItems,
+      rawOcrText: request.rawOcrText,
+      ocrConfidence: request.ocrConfidence,
+      shareLocationLat: row.shareLocationLat,
+      shareLocationLng: row.shareLocationLng,
+    );
+    _rows[i] = updated;
+    _emit();
+    return updated;
   }
 
   final _needsReviewController =
@@ -97,6 +158,7 @@ class TransactionRepository {
       syncStatus: 'pending',
       pipelineStatus: 'provisional',
       localThumbnailPath: row.localThumbnailPath,
+      remoteStoragePath: row.remoteStoragePath,
       thumbnailBytes: row.thumbnailBytes,
       impactUser: impactUser ?? row.impactUser,
       lineItems: row.lineItems,
@@ -145,6 +207,7 @@ class TransactionRepository {
           syncStatus: 'pending',
           pipelineStatus: _rows[i].pipelineStatus,
           localThumbnailPath: _rows[i].localThumbnailPath,
+          remoteStoragePath: _rows[i].remoteStoragePath,
           thumbnailBytes: _rows[i].thumbnailBytes,
           impactUser: _rows[i].impactUser,
           lineItems: _rows[i].lineItems,
