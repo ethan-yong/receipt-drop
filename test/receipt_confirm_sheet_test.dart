@@ -75,6 +75,7 @@ Future<void> _openSheet(
               onSave: onSave ?? (_, _, _) async {},
               onCancel: onCancel ?? (_) async {},
               onSaveForLater: onSaveForLater,
+              mapOverride: const SizedBox.shrink(),
             ));
           },
           child: const Text('Open'),
@@ -418,6 +419,7 @@ void main() {
       onSave: (amount, draft, impact) async => savedImpact = impact,
     );
 
+    await tester.ensureVisible(find.text('High'));
     await tester.tap(find.text('High'));
     await tester.pump();
 
