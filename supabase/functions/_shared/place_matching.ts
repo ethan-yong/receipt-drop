@@ -10,6 +10,22 @@ export const ALIAS_GEOHASH_PRECISION = 7;
  * confident enough to trust for future scans without a human in the loop. */
 export const ALIAS_SAVE_CONFIDENCE_THRESHOLD = 0.85;
 
+/** Below this confidence, a `lookup_merchant_alias` hit is too decayed to
+ * treat as authoritative. `lookup_merchant_alias`'s read-path exponential
+ * decay (20260724010000_feedback_learning_hardening.sql, 90-day half-life)
+ * can return a hit as low as its own hard floor of 0.05 — a value that has
+ * decayed through many half-lives and carries essentially no residual
+ * evidence, yet the alias fast-path used to trust *any* returned row
+ * unconditionally. Set comfortably above that 0.05 floor (so a
+ * barely-alive alias can't stay authoritative forever just because it once
+ * matched) and well below the ~0.7+ "established" tier already used
+ * elsewhere for the same alias table (e.g.
+ * `upsert_merchant_alias_from_correction`'s `v_established` gate in the
+ * same migration) — a decayed-but-not-ancient alias in between those two
+ * tiers is still worth trusting; only once it has aged out below this floor
+ * should a fresh Places lookup be forced instead. */
+export const ALIAS_MIN_TRUST_CONFIDENCE = 0.25;
+
 /** Normalizes text for both alias-key comparison and Dice-coefficient
  * scoring: lowercase, then collapses every run of punctuation/whitespace
  * (spaces, tabs, hyphens, punctuation, ...) into a single space, so

@@ -14,6 +14,7 @@ part 'app_database.g.dart';
     OutboxLineItems,
     CategoryConfigCache,
     PendingImports,
+    OutboxFieldCorrections,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -27,7 +28,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 11;
 
   /// True when [column] already exists on [table] (SQLite `PRAGMA table_info`).
   ///
@@ -102,6 +103,15 @@ class AppDatabase extends _$AppDatabase {
                 'ALTER TABLE ${outboxTransactions.actualTableName} DROP COLUMN ritualled_at',
               );
             }
+          }
+          if (from < 10) {
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.cleanedOcrText);
+            await _addColumnIfAbsent(
+                m, outboxTransactions, outboxTransactions.ocrCorrectionsJson);
+          }
+          if (from < 11) {
+            await m.createTable(outboxFieldCorrections);
           }
         },
         // sqlite disables FK enforcement by default; needed for cascade

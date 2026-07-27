@@ -59,8 +59,9 @@ class OutboxTransactions extends Table {
 
   RealColumn get ocrConfidence => real().nullable()();
 
-  /// Raw OCR text, kept only when the parse failed or was low-confidence —
-  /// the evidence needed to fix parser rules later.
+  /// Raw OCR text — always populated (client caps it ~8000 chars) since the
+  /// LLM receipt-understanding step, not only for failed/low-confidence
+  /// parses; still doubles as labeled data for fixing parser rules later.
   TextColumn get rawOcrText => text().nullable()();
 
   /// OCR engine's scan-quality confidence (mean word confidence, 0..1).
@@ -98,6 +99,69 @@ class OutboxTransactions extends Table {
   /// capture time and synced to `transactions.llm_understanding` (jsonb) so
   /// `enrich-transaction` can skip calling the LLM itself.
   TextColumn get llmUnderstandingJson => text().nullable()();
+
+  /// LLM OCR-cleanup step's corrected transcript (opt-in server-side via
+  /// `LLM_CLEANUP_ENABLED`), synced to `transactions.cleaned_ocr_text` —
+  /// additive alongside (never replacing) [rawOcrText]. Null when cleanup
+  /// wasn't attempted or produced nothing the server's per-line
+  /// edit-distance guard accepted.
+  TextColumn get cleanedOcrText => text().nullable()();
+
+  /// Per-line corrections the cleanup guard accepted (JSON-encoded list of
+  /// `{line_index, original, corrected}`), synced to
+  /// `transactions.ocr_corrections` (jsonb).
+  TextColumn get ocrCorrectionsJson => text().nullable()();
+
+  @override
+  Set<Column<Object>>? get primaryKey => {id};
+}
+
+/// Predicted-vs-confirmed diffs captured by `ReceiptConfirmSheet` — the
+/// single local source-of-truth event log the feedback-learning surfaces
+/// (merchant alias write-back, category preference, OCR misread patterns)
+/// derive from. Deliberately named distinctly from [OutboxTransactions.
+/// ocrCorrectionsJson], which is an unrelated concept (LLM OCR-cleanup
+/// per-line diffs, not user-edit records) — see
+/// `docs/plans/2026-07-23-feedback-learning-system.md`.
+@DataClassName('OutboxFieldCorrection')
+class OutboxFieldCorrections extends Table {
+  @override
+  String get tableName => 'outbox_field_corrections';
+
+  TextColumn get id => text()();
+
+  TextColumn get userId => text()();
+
+  TextColumn get transactionId => text().references(
+        OutboxTransactions,
+        #id,
+        onDelete: KeyAction.cascade,
+      )();
+
+  /// 'merchant' | 'amount' | 'category' | 'line_item_price'.
+  TextColumn get field => text()();
+
+  TextColumn get predictedValue => text()();
+
+  TextColumn get confirmedValue => text()();
+
+  /// Merchant text this correction is associated with, regardless of
+  /// [field] — always the *predicted* merchant name at capture time.
+  TextColumn get merchantRaw => text().nullable()();
+
+  RealColumn get confidence => real().nullable()();
+
+  /// For field == 'merchant' only: 'free_text' | 'user_locked'.
+  TextColumn get correctionType => text().nullable()();
+
+  /// For field == 'line_item_price' only: which item index changed.
+  IntColumn get lineItemIndex => integer().nullable()();
+
+  DateTimeColumn get createdAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  TextColumn get syncStatus =>
+      text().withDefault(const Constant('pending'))();
 
   @override
   Set<Column<Object>>? get primaryKey => {id};

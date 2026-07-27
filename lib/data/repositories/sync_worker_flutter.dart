@@ -5,6 +5,9 @@ import 'package:drift/drift.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/env.dart';
+import '../../core/utils/text_normalize.dart';
+import '../../domain/logic/misread_pattern_extractor.dart';
+import '../../domain/models/field_correction.dart';
 import '../local/app_database.dart';
 
 /// Maps a partial remote `transactions` row (as returned by a `select(...)`
@@ -118,6 +121,14 @@ class SyncWorker {
         'llm_understanding': row.llmUnderstandingJson == null
             ? null
             : jsonDecode(row.llmUnderstandingJson!),
+        // LLM OCR-cleanup step's corrected transcript (opt-in server-side
+        // via LLM_CLEANUP_ENABLED) — additive alongside, never replacing,
+        // raw_ocr_text above. Usually null (feature defaults off / no
+        // correction accepted).
+        'cleaned_ocr_text': row.cleanedOcrText,
+        'ocr_corrections': row.ocrCorrectionsJson == null
+            ? null
+            : jsonDecode(row.ocrCorrectionsJson!),
       });
 
       await Supabase.instance.client.from('receipt_artifacts').upsert({
@@ -150,6 +161,86 @@ class SyncWorker {
       await (db.update(db.outboxArtifacts)
             ..where((a) => a.id.equals(artifact.id)))
           .write(OutboxArtifactsCompanion(storagePath: Value(storagePath)));
+
+      // Field corrections must land before enrich-transaction runs below —
+      // its merchant-alias write-back (see
+      // docs/plans/2026-07-23-feedback-learning-system.md) reads this
+      // transaction's pending corrections from `user_field_corrections`.
+      final pendingCorrections = await (db.select(db.outboxFieldCorrections)
+            ..where(
+              (c) =>
+                  c.transactionId.equals(transactionId) &
+                  c.syncStatus.equals('pending'),
+            ))
+          .get();
+      if (pendingCorrections.isNotEmpty) {
+        await Supabase.instance.client.from('user_field_corrections').upsert([
+          for (final c in pendingCorrections)
+            {
+              'id': c.id,
+              'user_id': userId,
+              'transaction_id': row.id,
+              'field': c.field,
+              'predicted_value': c.predictedValue,
+              'confirmed_value': c.confirmedValue,
+              'merchant_raw': c.merchantRaw,
+              'confidence': c.confidence,
+              'correction_type': c.correctionType,
+              'line_item_index': c.lineItemIndex,
+              'created_at': c.createdAt.toUtc().toIso8601String(),
+            },
+        ]);
+
+        // Category preference + OCR-misread-pattern consumption: both are
+        // "online/immediate" per the feature's online/offline treatment —
+        // a running counter updated at write time, no batch job required.
+        // Best-effort per correction: a missed update here never blocks the
+        // transaction's own sync, which has already succeeded above.
+        for (final c in pendingCorrections) {
+          if (c.field == FieldCorrection.fieldCategory) {
+            final merchant = c.merchantRaw?.trim();
+            if (merchant != null && merchant.isNotEmpty) {
+              try {
+                await Supabase.instance.client.rpc(
+                  'upsert_category_preference',
+                  params: {
+                    'p_merchant_normalized': normalizeForCompare(merchant),
+                    'p_category': c.confirmedValue,
+                  },
+                );
+              } catch (_) {
+                // Next correction to the same merchant will retry the gate.
+              }
+            }
+          } else if (c.field == FieldCorrection.fieldAmount ||
+              c.field == FieldCorrection.fieldLineItemPrice) {
+            // Abstraction already happened client-side — the actual amount
+            // never appears past this point, only the character classes.
+            final patterns =
+                extractMisreadPatterns(c.predictedValue, c.confirmedValue);
+            for (final p in patterns) {
+              try {
+                await Supabase.instance.client.rpc(
+                  'upsert_misread_pattern',
+                  params: {
+                    'p_from_char': p.fromChar,
+                    'p_to_char': p.toChar,
+                  },
+                );
+              } catch (_) {
+                // Non-fatal — a missed aggregation count is not correctness-
+                // critical for any single transaction's own sync.
+              }
+            }
+          }
+        }
+
+        await (db.update(db.outboxFieldCorrections)
+              ..where((c) => c.transactionId.equals(transactionId)))
+            .write(
+          const OutboxFieldCorrectionsCompanion(syncStatus: Value('synced')),
+        );
+      }
 
       // Rows awaiting human review are uploaded but not enriched — the edge
       // function would stamp pipeline_status to 'enriched'/'failed_enrichment'

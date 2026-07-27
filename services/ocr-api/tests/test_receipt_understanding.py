@@ -5,9 +5,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ocr_api.main import app
+from ocr_api.ocr_engine import OcrLineResult
 from ocr_api.receipt_understanding import (
     ReceiptUnderstandingError,
+    _apply_cleanup_guard,
+    _build_cleanup_line_block,
+    _coerce_cleanup_fields,
+    _select_cleanup_lines,
     call_receipt_understanding,
+    edit_distance_ratio,
     parse_receipt_understanding,
     resolve_llm_config,
 )
@@ -255,6 +261,217 @@ def test_more_than_three_queries_capped() -> None:
 
 
 # ---------------------------------------------------------------------------
+# OCR cleanup: pure helpers (edit_distance_ratio, guard, line selection)
+# ---------------------------------------------------------------------------
+
+
+def test_edit_distance_ratio_zero_for_identical_lines() -> None:
+    assert edit_distance_ratio("TOTAL RM7.70", "TOTAL RM7.70") == 0.0
+
+
+def test_edit_distance_ratio_low_for_single_char_confusion() -> None:
+    # "T0TAL" -> "TOTAL": one substitution over 5 chars.
+    ratio = edit_distance_ratio("T0TAL", "TOTAL")
+    assert 0.0 < ratio <= 0.25
+
+
+def test_edit_distance_ratio_high_for_rewritten_line() -> None:
+    ratio = edit_distance_ratio("RESTORAN AME", "Restoran Anwar Maju Sdn Bhd")
+    assert ratio > 0.5
+
+
+def test_edit_distance_ratio_bounded_for_empty_strings() -> None:
+    assert edit_distance_ratio("", "") == 0.0
+    assert edit_distance_ratio("abc", "") == 1.0
+
+
+def test_apply_cleanup_guard_accepts_low_distance_correction() -> None:
+    cleaned, corrections = _apply_cleanup_guard(
+        ["T0TAL RM7.70", "Kedai Ali"], ["TOTAL RM7.70", "Kedai Ali"]
+    )
+    assert cleaned == ["TOTAL RM7.70", "Kedai Ali"]
+    assert len(corrections) == 1
+    assert corrections[0].line_index == 0
+    assert corrections[0].original == "T0TAL RM7.70"
+    assert corrections[0].corrected == "TOTAL RM7.70"
+
+
+def test_apply_cleanup_guard_reverts_high_distance_line_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_CLEANUP_EDIT_DISTANCE_THRESHOLD", "0.3")
+    cleaned, corrections = _apply_cleanup_guard(
+        ["T0TAL RM7.70", "RESTORAN AME"],
+        ["TOTAL RM7.70", "Restoran Anwar Maju Sdn Bhd"],
+    )
+    # Line 0's low-distance fix is kept; line 1's high-distance rewrite is
+    # discarded independently — one bad line doesn't sink the whole pass.
+    assert cleaned == ["TOTAL RM7.70", "RESTORAN AME"]
+    assert len(corrections) == 1
+    assert corrections[0].line_index == 0
+
+
+def test_apply_cleanup_guard_noop_when_lines_identical() -> None:
+    cleaned, corrections = _apply_cleanup_guard(
+        ["Kedai Ali", "TOTAL RM7.70"], ["Kedai Ali", "TOTAL RM7.70"]
+    )
+    assert cleaned == ["Kedai Ali", "TOTAL RM7.70"]
+    assert corrections == []
+
+
+def test_apply_cleanup_guard_rejects_wrong_length_candidate() -> None:
+    cleaned, corrections = _apply_cleanup_guard(["A", "B"], ["A"])
+    assert cleaned is None
+    assert corrections == []
+
+
+def test_apply_cleanup_guard_rejects_non_list_candidate() -> None:
+    cleaned, corrections = _apply_cleanup_guard(["A", "B"], "not a list")
+    assert cleaned is None
+    assert corrections == []
+
+
+def test_apply_cleanup_guard_rejects_non_string_entries() -> None:
+    cleaned, corrections = _apply_cleanup_guard(["A", "B"], ["A", 123])
+    # Entry 1 isn't a usable string -> treated as "no correction", original kept.
+    assert cleaned == ["A", "B"]
+    assert corrections == []
+
+
+def test_coerce_cleanup_fields_none_when_no_cleanup_attempted() -> None:
+    cleaned, text, corrections = _coerce_cleanup_fields(["X"], cleanup_lines=None)
+    assert cleaned is None
+    assert text is None
+    assert corrections == []
+
+
+def test_coerce_cleanup_fields_builds_joined_text() -> None:
+    lines = [
+        OcrLineResult(text="T0TAL RM7.70", height_ratio=0.05, confidence=0.4),
+        OcrLineResult(text="Kedai Ali", height_ratio=0.1, confidence=0.9),
+    ]
+    cleaned, text, corrections = _coerce_cleanup_fields(
+        ["TOTAL RM7.70", "Kedai Ali"], cleanup_lines=lines
+    )
+    assert cleaned == ["TOTAL RM7.70", "Kedai Ali"]
+    assert text == "TOTAL RM7.70\nKedai Ali"
+    assert len(corrections) == 1
+
+
+def test_coerce_cleanup_fields_never_raises_on_malformed_candidate() -> None:
+    lines = [OcrLineResult(text="A", height_ratio=0.1, confidence=0.5)]
+    # A deeply malformed candidate (nested dict where a string is expected)
+    # must degrade to "no cleanup," never raise past this boundary — the
+    # exact regression this function exists to prevent (see main.py's
+    # OCR-succeeds-even-if-LLM-fails contract).
+    cleaned, text, corrections = _coerce_cleanup_fields(
+        [{"unexpected": "shape"}], cleanup_lines=lines
+    )
+    assert cleaned == ["A"]
+    assert text == "A"
+    assert corrections == []
+
+
+def test_build_cleanup_line_block_numbers_and_tags_confidence() -> None:
+    lines = [
+        OcrLineResult(text="TOTAL RM7.70", height_ratio=0.05, confidence=0.91),
+        OcrLineResult(text="Kedai Ali", height_ratio=0.1, confidence=0.42),
+    ]
+    block = _build_cleanup_line_block(lines)
+    assert block == (
+        "[0] (confidence 0.91) TOTAL RM7.70\n[1] (confidence 0.42) Kedai Ali"
+    )
+
+
+def test_select_cleanup_lines_none_when_disabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LLM_CLEANUP_ENABLED", raising=False)
+    lines = [OcrLineResult(text="TOTAL RM7.70 Kedai Ali food", height_ratio=0.05)]
+    assert _select_cleanup_lines(lines) is None
+
+
+def test_select_cleanup_lines_none_when_no_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_CLEANUP_ENABLED", "1")
+    assert _select_cleanup_lines(None) is None
+    assert _select_cleanup_lines([]) is None
+
+
+def test_select_cleanup_lines_none_below_word_floor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_CLEANUP_ENABLED", "1")
+    monkeypatch.setenv("LLM_CLEANUP_MIN_WORDS", "4")
+    lines = [OcrLineResult(text="hi there", height_ratio=0.05)]  # 2 words
+    assert _select_cleanup_lines(lines) is None
+
+
+def test_select_cleanup_lines_present_when_enabled_and_enough_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_CLEANUP_ENABLED", "1")
+    monkeypatch.setenv("LLM_CLEANUP_MIN_WORDS", "4")
+    lines = [OcrLineResult(text="TOTAL RM7.70 Kedai Ali food", height_ratio=0.05)]
+    assert _select_cleanup_lines(lines) == lines
+
+
+def test_select_cleanup_lines_none_when_over_prompt_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_CLEANUP_ENABLED", "1")
+    monkeypatch.setenv("LLM_CLEANUP_MIN_WORDS", "1")
+    import ocr_api.receipt_understanding as ru
+
+    monkeypatch.setattr(ru, "MAX_OCR_PROMPT_CHARS", 20)
+    lines = [OcrLineResult(text="a fairly long receipt line of text", height_ratio=0.1)]
+    assert _select_cleanup_lines(lines) is None
+
+
+# ---------------------------------------------------------------------------
+# parse_receipt_understanding: cleaned_lines/cleaned_ocr_text/corrections
+# ---------------------------------------------------------------------------
+
+
+def test_parse_receipt_understanding_applies_cleanup_guard() -> None:
+    payload = dict(MCD_JSON)
+    payload["cleaned_lines"] = ["MCDONALD'S PAVILION KL", "TOTAL RM7.70"]
+    cleanup_lines = [
+        OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.1),
+        OcrLineResult(text="T0TAL RM7.70", height_ratio=0.05),
+    ]
+    u = parse_receipt_understanding(json.dumps(payload), cleanup_lines=cleanup_lines)
+    assert u is not None
+    # Line 0 unchanged; line 1's single-char fix is well under the guard's
+    # default edit-distance threshold.
+    assert u.cleaned_lines == ["MCDONALD'S PAVILION KL", "TOTAL RM7.70"]
+    assert u.cleaned_ocr_text == "MCDONALD'S PAVILION KL\nTOTAL RM7.70"
+    assert len(u.corrections) == 1
+    assert u.corrections[0].line_index == 1
+
+
+def test_parse_receipt_understanding_no_cleanup_fields_when_not_attempted() -> None:
+    u = parse_receipt_understanding(json.dumps(MCD_JSON))
+    assert u is not None
+    assert u.cleaned_lines is None
+    assert u.cleaned_ocr_text is None
+    assert u.corrections == []
+
+
+def test_parse_receipt_understanding_ignores_malformed_cleaned_lines() -> None:
+    payload = dict(MCD_JSON)
+    payload["cleaned_lines"] = "not a list"
+    cleanup_lines = [OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.1)]
+    u = parse_receipt_understanding(json.dumps(payload), cleanup_lines=cleanup_lines)
+    assert u is not None
+    assert u.cleaned_lines is None
+    assert u.corrections == []
+    # The rest of the response is unaffected by the malformed cleanup field.
+    assert u.merchant_name == "McDonald's Pavilion KL"
+
+
+# ---------------------------------------------------------------------------
 # call_receipt_understanding (httpx.MockTransport — no real network)
 # ---------------------------------------------------------------------------
 
@@ -269,6 +486,7 @@ def _set_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DEEPSEEK_BASE_URL", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_MODEL_NAME", raising=False)
+    monkeypatch.delenv("LLM_CLEANUP_ENABLED", raising=False)
 
 
 async def test_call_returns_validated_understanding() -> None:
@@ -279,6 +497,81 @@ async def test_call_returns_validated_understanding() -> None:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await call_receipt_understanding("MCDONALD'S...", http_client=client)
     assert result.merchant_name == "McDonald's Pavilion KL"
+
+
+async def test_call_with_lines_but_cleanup_disabled_sends_confidence_tags() -> None:
+    # LLM_CLEANUP_ENABLED unset (default off, via the autouse fixture above) —
+    # passing `lines` still tags the main extraction prompt with per-line
+    # confidence (token-level confidence tracking), but does not request
+    # cleaned_lines / run the cleanup path.
+    lines = [
+        OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.1, confidence=0.9),
+        OcrLineResult(
+            text="T0TAL RM5O.OO fast food burger", height_ratio=0.05, confidence=0.4
+        ),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        system_content = body["messages"][0]["content"]
+        user_content = body["messages"][1]["content"]
+        assert "[0] (confidence 0.90) MCDONALD'S PAVILION KL" in user_content
+        assert "[1] (confidence 0.40) T0TAL RM5O.OO fast food burger" in user_content
+        assert "reliability metadata" in system_content
+        assert "cleaned_lines" not in system_content
+        return httpx.Response(200, content=_chat_content(json.dumps(MCD_JSON)))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await call_receipt_understanding(
+            "MCDONALD'S PAVILION KL\nT0TAL RM5O.OO fast food burger",
+            http_client=client,
+            lines=lines,
+        )
+    assert result.merchant_name == "McDonald's Pavilion KL"
+    assert result.cleaned_lines is None
+
+
+async def test_call_with_cleanup_enabled_sends_per_line_confidence_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_CLEANUP_ENABLED", "1")
+    lines = [
+        OcrLineResult(text="MCDONALD'S PAVILION KL", height_ratio=0.1, confidence=0.9),
+        OcrLineResult(
+            text="T0TAL RM5O.OO fast food burger", height_ratio=0.05, confidence=0.4
+        ),
+    ]
+    cleanup_payload = dict(MCD_JSON)
+    cleanup_payload["cleaned_lines"] = [
+        "MCDONALD'S PAVILION KL",
+        "TOTAL RM50.00 fast food burger",
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        system_content = body["messages"][0]["content"]
+        user_content = body["messages"][1]["content"]
+        # Prompt-input reshape actually happened — not just prompt text.
+        assert "[0] (confidence 0.90) MCDONALD'S PAVILION KL" in user_content
+        assert "[1] (confidence 0.40) T0TAL RM5O.OO fast food burger" in user_content
+        assert "cleaned_lines" in system_content
+        return httpx.Response(200, content=_chat_content(json.dumps(cleanup_payload)))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await call_receipt_understanding(
+            "MCDONALD'S PAVILION KL\nT0TAL RM5O.OO fast food burger",
+            http_client=client,
+            lines=lines,
+        )
+    assert result.cleaned_lines == [
+        "MCDONALD'S PAVILION KL",
+        "TOTAL RM50.00 fast food burger",
+    ]
+    assert result.cleaned_ocr_text == (
+        "MCDONALD'S PAVILION KL\nTOTAL RM50.00 fast food burger"
+    )
+    assert len(result.corrections) == 1
+    assert result.corrections[0].line_index == 1
 
 
 async def test_call_retries_without_response_format_on_400() -> None:

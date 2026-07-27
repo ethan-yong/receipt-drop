@@ -385,6 +385,64 @@ Deno.test("actionable via line_items only", () => {
 });
 
 // ---------------------------------------------------------------------------
+// OCR cleanup fields (cleaned_lines/cleaned_ocr_text/corrections) — mirrors
+// ocr-api's ReceiptUnderstandingResponse additions. In practice
+// parseReceiptUnderstanding never sees these today (POST /understand, the
+// only caller in this codebase, never sends per-line data — see
+// receipt_understanding.ts's ReceiptUnderstanding doc comment), but this
+// mirror must not silently drop them if that ever changes.
+// ---------------------------------------------------------------------------
+
+Deno.test("cleanup fields are parsed through when present", () => {
+  const u = parseReceiptUnderstanding(JSON.stringify({
+    ...MCD_RESPONSE_OBJ,
+    cleaned_lines: ["MCDONALD'S PAVILION KL", "TOTAL RM7.70"],
+    cleaned_ocr_text: "MCDONALD'S PAVILION KL\nTOTAL RM7.70",
+    corrections: [
+      { line_index: 1, original: "T0TAL RM7.70", corrected: "TOTAL RM7.70" },
+    ],
+  }));
+  assert(u !== null);
+  assertEquals(u!.cleaned_lines, ["MCDONALD'S PAVILION KL", "TOTAL RM7.70"]);
+  assertEquals(u!.cleaned_ocr_text, "MCDONALD'S PAVILION KL\nTOTAL RM7.70");
+  assertEquals(u!.corrections, [
+    { line_index: 1, original: "T0TAL RM7.70", corrected: "TOTAL RM7.70" },
+  ]);
+});
+
+Deno.test("cleanup fields are absent (not null/empty-array) when the LLM response omits them", () => {
+  const u = parseReceiptUnderstanding(MCD_RESPONSE);
+  assert(u !== null);
+  assertEquals(u!.cleaned_lines, undefined);
+  assertEquals(u!.cleaned_ocr_text, undefined);
+  assertEquals(u!.corrections, undefined);
+});
+
+Deno.test("malformed corrections entries are dropped, not fatal", () => {
+  const u = parseReceiptUnderstanding(JSON.stringify({
+    ...MCD_RESPONSE_OBJ,
+    corrections: [
+      { line_index: 0, original: "A", corrected: "B" },
+      { line_index: "not a number", original: "C", corrected: "D" },
+      { original: "missing line_index", corrected: "X" },
+      "not an object",
+      null,
+    ],
+  }));
+  assert(u !== null);
+  assertEquals(u!.corrections, [{ line_index: 0, original: "A", corrected: "B" }]);
+});
+
+Deno.test("cleaned_ocr_text falls back to joined cleaned_lines when absent", () => {
+  const u = parseReceiptUnderstanding(JSON.stringify({
+    ...MCD_RESPONSE_OBJ,
+    cleaned_lines: ["Line one", "Line two"],
+  }));
+  assert(u !== null);
+  assertEquals(u!.cleaned_ocr_text, "Line one\nLine two");
+});
+
+// ---------------------------------------------------------------------------
 // adjustScoreForTypeMatch
 // ---------------------------------------------------------------------------
 

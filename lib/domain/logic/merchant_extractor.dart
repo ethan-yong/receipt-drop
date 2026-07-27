@@ -1,4 +1,5 @@
 import '../models/ocr_line.dart';
+import '../models/receipt_line_zone.dart';
 import 'category_matcher.dart';
 
 /// Only the lines near the top of the receipt are worth considering — the
@@ -14,6 +15,14 @@ const merchantScanLines = 15;
 /// near-uniform size, so a real header/logo line usually clears this by a
 /// wide margin; tune after batch runs, same as the OCR engine's constants.
 const _largeTextRatioThreshold = 1.4;
+
+/// How strongly line-level OCR confidence blends into merchant candidate
+/// scores. Missing confidence → neutral (no change).
+const _ocrConfidenceBlendWeight = 0.15;
+
+/// When top-2 merchant candidate confidences differ by less than this,
+/// treat as ambiguous and surface both in the UI.
+const merchantAmbiguousDelta = 0.08;
 
 final boilerplateHints = RegExp(
   r'(tax invoice|simplified tax invoice|cash bill|official receipt|'
@@ -54,14 +63,20 @@ bool looksLikeBoilerplate(String line) =>
 
 /// Lines that are clearly metadata rather than a merchant name — phone
 /// numbers, dates, addresses, postcodes — even though they contain letters
-/// and would otherwise pass [_lettersRun]. Applied only when ranking
-/// candidates; the last-resort fallback in [extractMerchantCandidates] still
-/// prefers any line with real content over nothing at all.
-bool _looksLikeMetadata(String line) =>
+/// and would otherwise pass [_lettersRun]. Shared with
+/// [receipt_layout_analyzer.dart] and [receipt_line_item_extractor.dart].
+bool looksLikeReceiptMetadata(String line) =>
     _phoneNumberHint.hasMatch(line) ||
     _dateHint.hasMatch(line) ||
     _addressHint.hasMatch(line) ||
     _postcodeHint.hasMatch(line);
+
+/// Lines that are clearly metadata rather than a merchant name — phone
+/// numbers, dates, addresses, postcodes — even though they contain letters
+/// and would otherwise pass [_lettersRun]. Applied only when ranking
+/// candidates; the last-resort fallback in [extractMerchantCandidates] still
+/// prefers any line with real content over nothing at all.
+bool _looksLikeMetadata(String line) => looksLikeReceiptMetadata(line);
 
 // A real merchant name has at least one run of 3+ letters. OCR scene junk
 // from cluttered photo backgrounds ("- : a a ~~ . ;", "oo a") passes the
@@ -147,6 +162,7 @@ List<MerchantCandidate> extractMerchantCandidates(
   String ocrText,
   CategoryConfig categories, {
   List<OcrLine>? ocrLines,
+  ReceiptLayoutAnalysis? layout,
 }) {
   final rawLines = ocrText
       .split(RegExp(r'\r?\n'))
@@ -155,6 +171,29 @@ List<MerchantCandidate> extractMerchantCandidates(
       .take(merchantScanLines)
       .toList();
   if (rawLines.isEmpty) return const [];
+
+  // Pre-compute raw-line index once (avoids O(n) scan per candidate).
+  final allLines = ocrText.split(RegExp(r'\r?\n'));
+  final rawIndexByTrimmed = <String, int>{};
+  for (var i = 0; i < allLines.length; i++) {
+    rawIndexByTrimmed.putIfAbsent(allLines[i].trim(), () => i);
+  }
+
+  double? ocrConfFor(String trimmedLine) {
+    final idx = rawIndexByTrimmed[trimmedLine];
+    if (idx == null || ocrLines == null || idx >= ocrLines.length) return null;
+    // Prefer index alignment over text-keyed lookup.
+    final line = ocrLines[idx];
+    if (line.text.trim() != trimmedLine) return null;
+    return line.confidence;
+  }
+
+  double blendOcr(double base, String line) {
+    final conf = ocrConfFor(line);
+    if (conf == null) return base;
+    // Soft blend: high OCR confidence lifts slightly, low confidence lowers.
+    return (base + (conf - 0.5) * _ocrConfidenceBlendWeight).clamp(0.05, 0.98);
+  }
 
   // Edge junk is stripped from a winning line only (not before matching: the
   // raw line is what boilerplate/keyword/metadata patterns were tuned
@@ -172,7 +211,11 @@ List<MerchantCandidate> extractMerchantCandidates(
     if (text.isEmpty) return;
     if (!seenNormalized.add(text.toLowerCase())) return;
     candidates.add(
-      MerchantCandidate(text: text, confidence: confidence, source: source),
+      MerchantCandidate(
+        text: text,
+        confidence: blendOcr(confidence, line),
+        source: source,
+      ),
     );
   }
 
@@ -190,8 +233,17 @@ List<MerchantCandidate> extractMerchantCandidates(
 
   // Pass 2: generic business/venue-type words, skipping anything that reads
   // as metadata (phone/date/address/postcode) even if it has real letters.
+  // When layout zones are reliable, skip business-word hits inside the body
+  // zone (e.g. Kopitiam Fried Rice) — they stay eligible in header/ambiguous.
   for (final line in rawLines) {
     if (looksLikeBoilerplate(line) || _looksLikeMetadata(line)) continue;
+    if (layout?.isReliable == true) {
+      final rawIndex = rawIndexByTrimmed[line];
+      if (rawIndex != null &&
+          layout!.zoneAt(rawIndex) == ReceiptLineZone.body) {
+        continue;
+      }
+    }
     if (_businessWordHints.hasMatch(line) && _lettersRun.hasMatch(line)) {
       addCandidate(line, 0.82, 'keyword');
     }
@@ -233,17 +285,17 @@ List<MerchantCandidate> extractMerchantCandidates(
   // Pass 3: fallback over whatever's left, scored mainly by how much real
   // letter content the line has — a proxy for "looks like a substantive
   // name/header" rather than an isolated OCR-noise fragment — with position
-  // as a secondary tiebreak only. Pure position-decay used to let a short
-  // garbled word (e.g. "mel", 3 letters — real OCR noise from a receipt
-  // header Tesseract otherwise butchered) outrank a much longer line that
-  // was actually the (badly garbled) merchant header, just because it
-  // appeared a line or two earlier and happened to survive the
-  // boilerplate/metadata filters. Real receipt headers are essentially never
-  // shorter than this, even garbled, so total letter count is a much more
-  // reliable signal here than raw position.
+  // as a secondary tiebreak only.
   var positionRank = 0;
   for (final line in rawLines) {
     if (looksLikeBoilerplate(line) || _looksLikeMetadata(line)) continue;
+    if (layout?.isReliable == true) {
+      final rawIndex = rawIndexByTrimmed[line];
+      if (rawIndex != null &&
+          layout!.zoneAt(rawIndex) == ReceiptLineZone.body) {
+        continue;
+      }
+    }
     final letterCount = line.replaceAll(RegExp(r'[^A-Za-z]'), '').length;
     if (letterCount < 4) continue;
     final lengthScore = (letterCount / 20).clamp(0.0, 1.0);

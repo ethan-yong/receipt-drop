@@ -168,6 +168,14 @@ export interface ReceiptUnderstandingConfidence {
   line_items: number;
 }
 
+/** One accepted OCR-cleanup edit — mirrors ocr-api's `ReceiptLineCorrection`
+ * (services/ocr-api/ocr_api/receipt_understanding.py). */
+export interface ReceiptUnderstandingCorrection {
+  line_index: number;
+  original: string;
+  corrected: string;
+}
+
 /** One purchased item reconstructed from noisy OCR text — see ocr-api's
  * ReceiptLineItemUnderstanding (app/receipt_understanding.py). */
 export interface ReceiptUnderstandingLineItem {
@@ -199,6 +207,17 @@ export interface ReceiptUnderstanding {
   booking_reference?: string | null;
   origin?: string | null;
   destination?: string | null;
+  // LLM OCR-cleanup step (opt-in server-side via LLM_CLEANUP_ENABLED) — a
+  // corrected, line-aligned transcript, additive alongside (never
+  // replacing) the OCR-original text. Undefined/null in practice today:
+  // POST /understand (the only caller of parseReceiptUnderstanding in this
+  // codebase) never sends per-line data, so ocr-api never attempts cleanup
+  // for this path — kept here so a future schema change doesn't silently
+  // drop these fields the way this mirror once would have (see
+  // docs/system/decisions.md).
+  cleaned_lines?: string[] | null;
+  cleaned_ocr_text?: string | null;
+  corrections?: ReceiptUnderstandingCorrection[];
 }
 
 /**
@@ -264,6 +283,31 @@ function asLineItems(v: unknown): ReceiptUnderstandingLineItem[] {
     if (items.length >= MAX_LINE_ITEMS) break;
   }
   return items;
+}
+
+/** Coerces the LLM response's raw `corrections` array — mirrors ocr-api's
+ * `ReceiptLineCorrection` coercion. Any malformed entry is dropped rather
+ * than failing the whole parse, same "hint, not authority" stance as every
+ * other field here. */
+function asCorrections(v: unknown): ReceiptUnderstandingCorrection[] {
+  if (!Array.isArray(v)) return [];
+  const corrections: ReceiptUnderstandingCorrection[] = [];
+  for (const entry of v) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      continue;
+    }
+    const obj = entry as Record<string, unknown>;
+    const lineIndex = typeof obj.line_index === "number"
+      ? obj.line_index
+      : Number(obj.line_index);
+    const original = asTrimmedStringOrNull(obj.original);
+    const corrected = asTrimmedStringOrNull(obj.corrected);
+    if (!Number.isFinite(lineIndex) || original === null || corrected === null) {
+      continue;
+    }
+    corrections.push({ line_index: lineIndex, original, corrected });
+  }
+  return corrections;
 }
 
 /**
@@ -337,6 +381,13 @@ export function parseReceiptUnderstanding(
   const origin = asTrimmedStringOrNull(obj.origin);
   const destination = asTrimmedStringOrNull(obj.destination);
 
+  const cleanedLines = Array.isArray(obj.cleaned_lines)
+    ? obj.cleaned_lines.filter((s): s is string => typeof s === "string")
+    : null;
+  const cleanedOcrText = asTrimmedStringOrNull(obj.cleaned_ocr_text) ??
+    (cleanedLines && cleanedLines.length > 0 ? cleanedLines.join("\n") : null);
+  const corrections = asCorrections(obj.corrections);
+
   const understanding: ReceiptUnderstanding = {
     merchant_name: merchantName,
     merchant_search_queries: queries,
@@ -359,6 +410,9 @@ export function parseReceiptUnderstanding(
     ...(bookingReference !== null && { booking_reference: bookingReference }),
     ...(origin !== null && { origin }),
     ...(destination !== null && { destination }),
+    ...(cleanedLines !== null && { cleaned_lines: cleanedLines }),
+    ...(cleanedOcrText !== null && { cleaned_ocr_text: cleanedOcrText }),
+    ...(corrections.length > 0 && { corrections }),
   };
 
   const actionable = understanding.merchant_name !== null ||

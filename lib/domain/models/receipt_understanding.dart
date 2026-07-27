@@ -24,6 +24,9 @@ class ReceiptUnderstanding {
     this.bookingReference,
     this.origin,
     this.destination,
+    this.cleanedLines,
+    this.cleanedOcrText,
+    this.corrections = const [],
   });
 
   final String? merchantName;
@@ -51,6 +54,24 @@ class ReceiptUnderstanding {
   final String? origin;
   final String? destination;
 
+  /// LLM OCR-cleanup step's corrected transcript (opt-in server-side via
+  /// `LLM_CLEANUP_ENABLED`) — a per-line, mechanically-corrected rewrite of
+  /// the OCR-original lines, additive alongside (never replacing) raw OCR
+  /// text. `null` when cleanup wasn't attempted or produced nothing the
+  /// server's edit-distance guard accepted. Never itself parsed for amounts
+  /// — `amountMyr` continues to be derived exclusively via the existing
+  /// heuristic-parser/structured-field/cross-check pipeline.
+  final List<String>? cleanedLines;
+
+  /// [cleanedLines] joined with `\n` — convenience for callers that want a
+  /// single string preferred over raw OCR text (see
+  /// `receipt_parse_pipeline.dart`), mirroring the raw `ocrText` shape.
+  final String? cleanedOcrText;
+
+  /// Per-line corrections the server's edit-distance guard actually
+  /// accepted — empty when cleanup wasn't attempted or changed nothing.
+  final List<ReceiptUnderstandingCorrection> corrections;
+
   /// Defensive parse: any wrong-shaped field is dropped rather than
   /// throwing — this is a hint from an external call, never the source of
   /// truth for whether the surrounding /ocr response is usable. Returns
@@ -73,6 +94,22 @@ class ReceiptUnderstanding {
 
     final amountRaw = json['amount'];
 
+    final cleanedLinesJson = json['cleaned_lines'];
+    final cleanedLines = cleanedLinesJson is List
+        ? [
+            for (final e in cleanedLinesJson)
+              if (e is String) e,
+          ]
+        : null;
+
+    final correctionsJson = json['corrections'];
+    final corrections = correctionsJson is List
+        ? [
+            for (final entry in correctionsJson)
+              ReceiptUnderstandingCorrection.tryFromJson(entry),
+          ].whereType<ReceiptUnderstandingCorrection>().toList()
+        : <ReceiptUnderstandingCorrection>[];
+
     return ReceiptUnderstanding(
       merchantName: asStringOrNull(json['merchant_name']),
       merchantSearchQueries: asStringList(json['merchant_search_queries']),
@@ -90,6 +127,10 @@ class ReceiptUnderstanding {
       bookingReference: asStringOrNull(json['booking_reference']),
       origin: asStringOrNull(json['origin']),
       destination: asStringOrNull(json['destination']),
+      cleanedLines: cleanedLines,
+      cleanedOcrText:
+          asStringOrNull(json['cleaned_ocr_text']) ?? cleanedLines?.join('\n'),
+      corrections: corrections,
     );
   }
 
@@ -110,6 +151,46 @@ class ReceiptUnderstanding {
         if (bookingReference != null) 'booking_reference': bookingReference,
         if (origin != null) 'origin': origin,
         if (destination != null) 'destination': destination,
+        if (cleanedLines != null) 'cleaned_lines': cleanedLines,
+        if (cleanedOcrText != null) 'cleaned_ocr_text': cleanedOcrText,
+        if (corrections.isNotEmpty)
+          'corrections': corrections.map((c) => c.toJson()).toList(),
+      };
+}
+
+/// One accepted OCR-cleanup edit — mirrors ocr-api's `ReceiptLineCorrection`.
+/// Only present for lines the model changed *and* the server's per-line
+/// edit-distance guard kept.
+class ReceiptUnderstandingCorrection {
+  const ReceiptUnderstandingCorrection({
+    required this.lineIndex,
+    required this.original,
+    required this.corrected,
+  });
+
+  final int lineIndex;
+  final String original;
+  final String corrected;
+
+  static ReceiptUnderstandingCorrection? tryFromJson(Object? json) {
+    if (json is! Map) return null;
+    final lineIndex = json['line_index'];
+    final original = json['original'];
+    final corrected = json['corrected'];
+    if (lineIndex is! num || original is! String || corrected is! String) {
+      return null;
+    }
+    return ReceiptUnderstandingCorrection(
+      lineIndex: lineIndex.toInt(),
+      original: original,
+      corrected: corrected,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'line_index': lineIndex,
+        'original': original,
+        'corrected': corrected,
       };
 }
 

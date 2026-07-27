@@ -40,7 +40,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 9);
+    expect(await userVersion(db), 11);
     await db.customSelect(
       'SELECT llm_understanding_json FROM outbox_transactions',
     ).get();
@@ -54,7 +54,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 9);
+    expect(await userVersion(db), 11);
     await db.close();
   });
 
@@ -67,8 +67,38 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 9);
+    expect(await userVersion(db), 11);
     await db.customSelect('SELECT id FROM pending_imports').get();
+    await db.close();
+  });
+
+  test('reopening after a partial v10 migration does not crash', () async {
+    // Simulate the crash state: the schema is fully at v10 (cleaned_ocr_text
+    // already added) but user_version is still 9 because a previous run died
+    // before drift bumped it. Reopening must re-run the v10 step without
+    // hitting "duplicate column name".
+    var db = await openDb();
+    await db.customStatement('PRAGMA user_version = 9');
+    await db.close();
+
+    db = await openDb();
+    expect(await userVersion(db), 11);
+    await db.customSelect(
+      'SELECT cleaned_ocr_text, ocr_corrections_json FROM outbox_transactions',
+    ).get();
+    await db.close();
+  });
+
+  test('reopening after a partial v11 migration does not crash', () async {
+    // Simulate the crash state: outbox_field_corrections already exists (via
+    // Drift's IF NOT EXISTS createTable) but user_version is still 10.
+    var db = await openDb();
+    await db.customStatement('PRAGMA user_version = 10');
+    await db.close();
+
+    db = await openDb();
+    expect(await userVersion(db), 11);
+    await db.customSelect('SELECT id FROM outbox_field_corrections').get();
     await db.close();
   });
 }

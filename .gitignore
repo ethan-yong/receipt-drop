@@ -239,3 +239,6 @@ __marimo__/
 /deploy/k8s/.rendered/
 # Pinned SSH known_hosts for deploy.ps1 (DEPLOY_KNOWN_HOSTS) — machine-local.
 /deploy/known_hosts
+
+# OCR preprocessing debug dumps (PREPROCESS_DEBUG=1)
+services/ocr-api/.debug/

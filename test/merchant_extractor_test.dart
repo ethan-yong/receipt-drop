@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/domain/logic/category_matcher.dart';
 import 'package:receipt_drop/domain/logic/merchant_extractor.dart';
+import 'package:receipt_drop/domain/logic/receipt_layout_analyzer.dart';
 import 'package:receipt_drop/domain/models/ocr_line.dart';
+import 'package:receipt_drop/domain/models/receipt_line_zone.dart';
 
 void main() {
   final categories = CategoryConfig.fromJson({
@@ -233,6 +235,45 @@ void main() {
       final withEmpty =
           extractMerchantCandidates(ocr, categories, ocrLines: const []);
       expect(withNull.first.text, withEmpty.first.text);
+    });
+
+    test('layout zones suppress business-word merchant hit inside body', () {
+      const ocr =
+          'MY RESTORAN\n'
+          'Kopitiam Fried Rice  RM 12.00\n'
+          'Teh Tarik           RM 3.00\n'
+          'Subtotal            RM 15.00\n'
+          'TOTAL               RM 15.00';
+      final texts = ocr.split('\n');
+      final ocrLines = [
+        for (final t in texts) OcrLine(text: t, heightRatio: 0.02),
+      ];
+      final withoutLayout =
+          extractMerchantCandidates(ocr, categories, ocrLines: ocrLines);
+      final layout = analyzeReceiptLayout(ocr, ocrLines);
+      final withLayout = extractMerchantCandidates(
+        ocr,
+        categories,
+        ocrLines: ocrLines,
+        layout: layout,
+      );
+      expect(withoutLayout.any((c) => c.text.contains('Kopitiam')), isTrue);
+      expect(withLayout.any((c) => c.text.contains('Kopitiam')), isFalse);
+    });
+
+    test('unreliable layout matches omitting layout entirely', () {
+      const ocr = "MCDONALD'S SUNWAY\nTOTAL RM 10.00";
+      final baseline = extractMerchantCandidates(ocr, categories);
+      final withUnreliable = extractMerchantCandidates(
+        ocr,
+        categories,
+        layout: const ReceiptLayoutAnalysis(
+          zones: [ReceiptLineZone.body],
+          isReliable: false,
+        ),
+      );
+      expect(withUnreliable.map((c) => c.text).toList(),
+          baseline.map((c) => c.text).toList());
     });
   });
 }

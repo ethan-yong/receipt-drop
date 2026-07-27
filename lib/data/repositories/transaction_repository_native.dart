@@ -101,6 +101,19 @@ class TransactionRepository {
                   ? null
                   : jsonEncode(request.understanding!.toJson()),
             ),
+            // Own columns (not just nested inside llmUnderstandingJson above)
+            // so cleanup output stays independently queryable — mirrors
+            // rawOcrText's own-column precedent alongside the LLM blob.
+            cleanedOcrText: Value(request.understanding?.cleanedOcrText),
+            ocrCorrectionsJson: Value(
+              (request.understanding?.corrections.isEmpty ?? true)
+                  ? null
+                  : jsonEncode(
+                      request.understanding!.corrections
+                          .map((c) => c.toJson())
+                          .toList(),
+                    ),
+            ),
             placeName: Value(
               request.pickedPlaceLocked ? request.pickedPlaceName : null,
             ),
@@ -146,6 +159,26 @@ class TransactionRepository {
               quantity: Value(request.lineItems[i].quantity),
               confidence: Value(request.lineItems[i].confidence),
               sortOrder: i,
+            ),
+        ]);
+      });
+    }
+
+    if (request.fieldCorrections.isNotEmpty) {
+      await _db.batch((batch) {
+        batch.insertAll(_db.outboxFieldCorrections, [
+          for (final correction in request.fieldCorrections)
+            OutboxFieldCorrectionsCompanion.insert(
+              id: _uuid.v4(),
+              userId: request.userId,
+              transactionId: id,
+              field: correction.field,
+              predictedValue: correction.predictedValue,
+              confirmedValue: correction.confirmedValue,
+              merchantRaw: Value(correction.merchantRaw),
+              confidence: Value(correction.confidence),
+              correctionType: Value(correction.correctionType),
+              lineItemIndex: Value(correction.lineItemIndex),
             ),
         ]);
       });
