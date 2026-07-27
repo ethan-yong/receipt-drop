@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../core/platform/adaptive_sheet.dart';
 import '../../core/platform/platform_feedback.dart';
@@ -11,7 +13,6 @@ import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/models/field_correction.dart';
 import '../../domain/models/receipt_line_item.dart';
-import '../../widgets/amount_field.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
 import '../places/place_picker_screen.dart';
 import '../places/places_search_screen.dart';
@@ -41,6 +42,7 @@ class ReceiptConfirmSheet extends StatefulWidget {
     required this.onSave,
     required this.onCancel,
     this.onSaveForLater,
+    @visibleForTesting this.mapOverride,
   });
 
   final ReceiptIngestDraft draft;
@@ -59,6 +61,12 @@ class ReceiptConfirmSheet extends StatefulWidget {
   /// Offered only for needs-amount / low-confidence drafts.
   final Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater;
 
+  /// Overrides the real `GoogleMap` thumbnail in the location-preview tile
+  /// in widget tests, which can't construct a live platform view outside a
+  /// real device/emulator. Mirrors `PlacePickerScreen.mapOverride`.
+  @visibleForTesting
+  final Widget? mapOverride;
+
   static Future<bool> show(
     BuildContext context, {
     required ReceiptIngestDraft draft,
@@ -70,6 +78,7 @@ class ReceiptConfirmSheet extends StatefulWidget {
     ) onSave,
     required Future<void> Function(ReceiptIngestDraft draft) onCancel,
     Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater,
+    @visibleForTesting Widget? mapOverride,
   }) async {
     final result = await AdaptiveSheet.showForm<bool>(
       context: context,
@@ -83,6 +92,7 @@ class ReceiptConfirmSheet extends StatefulWidget {
         onSave: onSave,
         onCancel: onCancel,
         onSaveForLater: onSaveForLater,
+        mapOverride: mapOverride,
       ),
     );
     return result ?? false;
@@ -119,7 +129,8 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   late final TextEditingController _priceController;
   final FocusNode _priceFocus = FocusNode();
   PlaceResult? _pickedPlace;
-  late final bool _needsManualAmount;
+  PlaceResult? _previewPlace;
+  bool _previewLoading = true;
   late final bool _lowConfidence;
   late final bool _amountFieldLow;
   late final bool _merchantFieldLow;
@@ -131,7 +142,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   ImpactLevel? _impactOverride;
   bool _saving = false;
   bool _showAmountAlternative = true;
-  bool _showMerchantAlternative = true;
+  bool _amountManuallyEdited = false;
   double? _amountOverride;
 
   @override
@@ -143,7 +154,6 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _prices = [for (final item in _items) item.priceMyr];
     _vendorName = vm.merchantDisplay;
     _vendorKnown = widget.draft.merchantRaw?.trim().isNotEmpty ?? false;
-    _needsManualAmount = widget.draft.needsAmount;
     _lowConfidence = vm.isLowConfidence;
     _amountSuspicious = widget.draft.amountSuspicious;
     _amountFieldLow =
@@ -164,7 +174,18 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       }
     });
     _amountController = TextEditingController();
+    _amountController.text = _total != null ? _total!.toStringAsFixed(2) : '';
     _amountController.addListener(() => setState(() {}));
+    unawaited(_resolvePreviewLocation());
+  }
+
+  /// Keeps the (editable) total field following the item checkboxes/price
+  /// edits, unless the user has typed into it directly — once they have, an
+  /// item toggle must not silently overwrite what they typed.
+  void _syncAmountFromItems() {
+    if (_amountManuallyEdited) return;
+    final total = _total;
+    _amountController.text = total != null ? total.toStringAsFixed(2) : '';
   }
 
   @override
@@ -208,17 +229,16 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     setState(() {
       _amountOverride = alt;
       _showAmountAlternative = false;
+      _syncAmountFromItems();
     });
   }
 
-  /// The amount actually used to save: the manual field for drafts OCR
-  /// couldn't find a total on, otherwise the item-adjusted OCR total above.
+  /// The amount actually used to save — always whatever the (now always
+  /// editable) total field currently shows, whether that came from OCR, an
+  /// item-sum fallback, or the user typing over it directly.
   double? get _effectiveAmount {
-    if (_needsManualAmount) {
-      final raw = _amountController.text.trim().replaceAll(',', '');
-      return raw.isEmpty ? null : double.tryParse(raw);
-    }
-    return _total;
+    final raw = _amountController.text.trim().replaceAll(',', '');
+    return raw.isEmpty ? null : double.tryParse(raw);
   }
 
   ImpactLevel get _effectiveImpact =>
@@ -239,12 +259,6 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     return false;
   }
 
-  String get _vendorInitial {
-    if (!_vendorKnown && !_vendorEdited) return '?';
-    final trimmed = _vendorName.trim();
-    return trimmed.isEmpty ? '?' : trimmed[0].toUpperCase();
-  }
-
   void _toggleItem(int index) {
     _undoTimer?.cancel();
     final nowChecked = !_checked[index];
@@ -255,6 +269,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       } else if (_undoIndex == index) {
         _undoIndex = null;
       }
+      _syncAmountFromItems();
     });
     if (!nowChecked) {
       _undoTimer = Timer(const Duration(seconds: 4), () {
@@ -270,6 +285,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     setState(() {
       _checked[index] = true;
       _undoIndex = null;
+      _syncAmountFromItems();
     });
   }
 
@@ -317,6 +333,90 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     setState(() {
       if (parsed != null && parsed >= 0) _prices[index] = parsed;
       _editingPriceIndex = null;
+      _syncAmountFromItems();
+    });
+  }
+
+  /// Best-effort receipt-derived location query, checked in the order the
+  /// LLM understanding step's fields most reliably encode an actual place: a
+  /// ready-made Places search query is best, then a raw address, then a
+  /// looser location clue — each combined with the current vendor name for
+  /// precision. Returns null when there's no textual signal at all, so
+  /// [_resolvePreviewLocation] falls back to the device's GPS fix instead.
+  String? _receiptLocationQuery() {
+    final u = widget.draft.understanding;
+    if (u == null) return null;
+
+    final query = u.merchantSearchQueries.firstWhere(
+      (q) => q.trim().isNotEmpty,
+      orElse: () => '',
+    );
+    if (query.isNotEmpty) return query.trim();
+
+    final vendor = _vendorName.trim();
+    final address = u.addressText?.trim();
+    if (address != null && address.isNotEmpty) {
+      return vendor.isEmpty ? address : '$vendor, $address';
+    }
+
+    final clue = u.locationClues.firstWhere(
+      (c) => c.trim().isNotEmpty,
+      orElse: () => '',
+    );
+    if (clue.isNotEmpty) return vendor.isEmpty ? clue : '$vendor $clue';
+
+    return null;
+  }
+
+  /// Auto-resolves a best-guess center for the tappable map preview — never
+  /// sets [_pickedPlace] (that's reserved for an explicit user pick via
+  /// [_openPlacePicker] and drives `pickedPlaceLocked` on save). Priority:
+  /// receipt-derived text (unbiased, so it isn't pulled toward the device's
+  /// GPS fix) > GPS-nearby candidates (today's existing ranked search,
+  /// still merchant/candidate-aware) > a last-resort unbiased name-only
+  /// search > nothing (empty state).
+  Future<void> _resolvePreviewLocation() async {
+    PlaceResult? result;
+    try {
+      final query = _receiptLocationQuery();
+      if (query != null) {
+        final results = await PlacesRepository.search(query);
+        if (results.isNotEmpty) result = results.first;
+      }
+
+      if (result == null) {
+        final lat = widget.draft.shareLocationLat;
+        final lng = widget.draft.shareLocationLng;
+        if (lat != null && lng != null) {
+          final candidates = await PlacesRepository.fetchNearbyCandidates(
+            lat: lat,
+            lng: lng,
+            candidates: widget.draft.merchantCandidates,
+            merchantName: _vendorName,
+            category: _categoryOverride ?? widget.draft.categoryGuess,
+          );
+          if (candidates.isNotEmpty) result = candidates.first.toPlaceResult();
+        }
+      }
+
+      if (result == null) {
+        final fallbackQuery = _vendorName.trim().isNotEmpty
+            ? _vendorName.trim()
+            : widget.draft.merchantCandidates.isNotEmpty
+                ? widget.draft.merchantCandidates.first.text
+                : null;
+        if (fallbackQuery != null) {
+          final results = await PlacesRepository.search(fallbackQuery);
+          if (results.isNotEmpty) result = results.first;
+        }
+      }
+    } on Object {
+      result = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _previewPlace = result;
+      _previewLoading = false;
     });
   }
 
@@ -513,69 +613,16 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           ],
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: ReceiptSheetColors.avatarGold,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                _vendorInitial,
-                style: balooText(18, FontWeight.w800, color: Colors.white),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _FieldConfidenceWrap(
-                    lowConfidence: _merchantFieldLow,
-                    child: _editingVendor ? _vendorField() : _vendorLabel(),
-                  ),
-                  if (_merchantAmbiguous &&
-                      _showMerchantAlternative &&
-                      widget.draft.merchantCandidates.length >= 2) ...[
-                    const SizedBox(height: 6),
-                    _AlternativeChip(
-                      label:
-                          'Not this? ${widget.draft.merchantCandidates[1].text}',
-                      onTap: () {
-                        setState(() {
-                          _vendorName =
-                              widget.draft.merchantCandidates[1].text;
-                          _vendorEdited = true;
-                          _showMerchantAlternative = false;
-                        });
-                      },
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Material(
-              color: ReceiptSheetColors.tile,
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: _openPlacePicker,
-                child: const SizedBox(
-                  width: 32,
-                  height: 32,
-                  child: Icon(
-                    Icons.edit_location_outlined,
-                    size: 15,
-                    color: ReceiptSheetColors.sub,
-                  ),
-                ),
-              ),
-            ),
-          ],
+        _FieldConfidenceWrap(
+          lowConfidence: _merchantFieldLow,
+          child: _editingVendor ? _vendorField() : _vendorLabel(),
+        ),
+        const SizedBox(height: 10),
+        _MapPreview(
+          loading: _previewLoading && _pickedPlace == null,
+          place: _pickedPlace ?? _previewPlace,
+          onTap: _openPlacePicker,
+          mapOverride: widget.mapOverride,
         ),
         const SizedBox(height: 14),
         Text('Category', style: balooText(13, FontWeight.w700, color: ReceiptSheetColors.subLight)),
@@ -586,43 +633,65 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           onChanged: (v) => setState(() => _categoryOverride = v),
         ),
         const SizedBox(height: 14),
-        _needsManualAmount
-            ? AmountField(controller: _amountController)
-            : _FieldConfidenceWrap(
-                lowConfidence: _amountFieldLow,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      total != null ? 'RM ${total.toStringAsFixed(2)}' : '–',
-                      style: balooText(
-                        38,
-                        FontWeight.w800,
-                        color: total != null
-                            ? ReceiptSheetColors.ink
-                            : ReceiptSheetColors.subLight,
-                        letterSpacing: -0.6,
-                      ),
-                    ),
-                    if (_amountAlternative != null &&
-                        _showAmountAlternative &&
-                        total != null &&
-                        (_amountAlternative - total).abs() >= 0.01) ...[
-                      const SizedBox(height: 6),
-                      _AlternativeChip(
-                        label:
-                            'Did you mean RM ${_amountAlternative.toStringAsFixed(2)}?',
-                        onTap: () {
-                          setState(() {
-                            _showAmountAlternative = false;
-                          });
-                          _acceptAmountAlternative();
-                        },
-                      ),
-                    ],
-                  ],
+        _FieldConfidenceWrap(
+          lowConfidence: _amountFieldLow,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                key: const Key('receipt-amount-field'),
+                controller: _amountController,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
+                ],
+                onChanged: (_) => _amountManuallyEdited = true,
+                style: balooText(
+                  38,
+                  FontWeight.w800,
+                  color: ReceiptSheetColors.ink,
+                  letterSpacing: -0.6,
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                  prefixText: 'RM ',
+                  prefixStyle: balooText(
+                    38,
+                    FontWeight.w800,
+                    color: ReceiptSheetColors.ink,
+                    letterSpacing: -0.6,
+                  ),
+                  hintText: '0.00',
+                  hintStyle: balooText(
+                    38,
+                    FontWeight.w800,
+                    color: ReceiptSheetColors.subLight,
+                    letterSpacing: -0.6,
+                  ),
                 ),
               ),
+              if (_amountAlternative != null &&
+                  _showAmountAlternative &&
+                  total != null &&
+                  (_amountAlternative - total).abs() >= 0.01) ...[
+                const SizedBox(height: 6),
+                _AlternativeChip(
+                  label:
+                      'Did you mean RM ${_amountAlternative.toStringAsFixed(2)}?',
+                  onTap: () {
+                    setState(() {
+                      _showAmountAlternative = false;
+                    });
+                    _acceptAmountAlternative();
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
         const SizedBox(height: 14),
         Text('Impact', style: balooText(13, FontWeight.w700, color: ReceiptSheetColors.subLight)),
         const SizedBox(height: 8),
@@ -771,6 +840,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       borderSide: BorderSide(color: ReceiptSheetColors.gold, width: 2),
     );
     return TextField(
+      key: const Key('receipt-vendor-field'),
       controller: _vendorController,
       focusNode: _vendorFocus,
       autofocus: true,
@@ -796,8 +866,8 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
 }
 
 /// Category dropdown, ported from the now-removed `ShareSaveSheet`. Deliberately
-/// Material-styled (not `balooText`/`ReceiptSheetColors`), same as [AmountField]
-/// below — both are reused as-is rather than re-skinned for this sheet.
+/// Material-styled (not `balooText`/`ReceiptSheetColors`) — reused as-is rather
+/// than re-skinned for this sheet.
 class _CategoryDropdown extends StatelessWidget {
   const _CategoryDropdown({
     required this.value,
@@ -1056,6 +1126,7 @@ class _ItemRow extends StatelessWidget {
     return SizedBox(
       width: 78,
       child: TextField(
+        key: const Key('receipt-price-field'),
         controller: priceController,
         focusNode: priceFocus,
         autofocus: true,
@@ -1211,6 +1282,144 @@ class _AlternativeChip extends StatelessWidget {
           FontWeight.w700,
           color: ReceiptSheetColors.linkStrong,
         ),
+      ),
+    );
+  }
+}
+
+const _mapPreviewHeight = 80.0;
+
+/// Small tappable map preview shown below the merchant row — replaces the
+/// old pencil-icon button. Purely a visual thumbnail (the `GoogleMap` is
+/// gesture-disabled and `IgnorePointer`-wrapped); the surrounding
+/// [GestureDetector] is the single source of the tap that opens the location
+/// picker, in every state (loading / resolved / no-location), matching what
+/// the old pencil button used to do.
+class _MapPreview extends StatelessWidget {
+  const _MapPreview({
+    required this.loading,
+    required this.place,
+    required this.onTap,
+    this.mapOverride,
+  });
+
+  final bool loading;
+  final PlaceResult? place;
+  final VoidCallback onTap;
+  final Widget? mapOverride;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: _mapPreviewHeight,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: ReceiptSheetColors.tile,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _content(),
+            Positioned(right: 8, bottom: 8, child: _editBadge()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _content() {
+    if (loading) return _loadingState();
+    final p = place;
+    if (p == null) return _emptyState();
+    // Keyed by the resolved coordinates so a later change of `place` (e.g.
+    // the auto-resolved guess being superseded by an explicit user pick)
+    // forces GoogleMap to be re-created rather than silently keeping its
+    // stale initial camera position — GoogleMap ignores post-creation
+    // changes to `initialCameraPosition`.
+    return IgnorePointer(
+      child: mapOverride ??
+          GoogleMap(
+            key: ValueKey('map-preview-${p.lat}-${p.lng}'),
+            initialCameraPosition:
+                CameraPosition(target: LatLng(p.lat, p.lng), zoom: 15),
+            markers: {
+              Marker(
+                markerId: MarkerId(p.id.isEmpty ? p.name : p.id),
+                position: LatLng(p.lat, p.lng),
+              ),
+            },
+            zoomControlsEnabled: false,
+            zoomGesturesEnabled: false,
+            scrollGesturesEnabled: false,
+            rotateGesturesEnabled: false,
+            tiltGesturesEnabled: false,
+            myLocationButtonEnabled: false,
+            mapToolbarEnabled: false,
+            compassEnabled: false,
+          ),
+    );
+  }
+
+  Widget _loadingState() {
+    return const Center(
+      child: SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: ReceiptSheetColors.gold,
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.location_off_outlined,
+            size: 20,
+            color: ReceiptSheetColors.subLight,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tap to set location',
+            style: balooText(
+              12,
+              FontWeight.w600,
+              color: ReceiptSheetColors.subLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _editBadge() {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: ReceiptSheetColors.sheetShadow,
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.edit_location_outlined,
+        size: 14,
+        color: ReceiptSheetColors.sub,
       ),
     );
   }

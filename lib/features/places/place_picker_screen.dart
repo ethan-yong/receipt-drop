@@ -278,6 +278,11 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: ReceiptSheetColors.surface,
+      // The sheet computes its own keyboard-inset padding below (see
+      // `_buildSheet`'s `bottomInset`) so the full-bleed map/Stack doesn't
+      // also need to shrink — doing both double-subtracts the keyboard
+      // height and squeezes the search-suggestions list.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           Positioned.fill(child: _buildMap()),
@@ -442,7 +447,7 @@ class _PlacePickerScreenState extends State<PlacePickerScreen>
           const ReceiptSheetHandle(),
           const SizedBox(height: 16),
           Flexible(child: SingleChildScrollView(child: _sheetBody())),
-          if (!_loading && _results.isNotEmpty) ...[
+          if (!_loading && !_searchOpen && _results.isNotEmpty) ...[
             const SizedBox(height: 18),
             ReceiptSheetCta(
               label: 'Confirm location',

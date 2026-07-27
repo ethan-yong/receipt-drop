@@ -139,6 +139,14 @@ class SyncWorker {
         'mime_type': artifact.mimeType,
       });
 
+      // Single-version semantics: after a retake, any older remote artifact
+      // rows for this transaction are superseded. Clean them up here (async
+      // relative to the local replace) so Storage stays bounded.
+      await _cleanupSupersededRemoteArtifacts(
+        transactionId: row.id,
+        keepArtifactId: artifact.id,
+      );
+
       final lineItems = await (db.select(db.outboxLineItems)
             ..where((li) => li.transactionId.equals(transactionId)))
           .get();
@@ -306,6 +314,47 @@ class SyncWorker {
     if (authId != null) return authId;
     if (Env.skipAuth) return 'demo-user';
     return null;
+  }
+
+  /// Deletes remote `receipt_artifacts` (and their Storage objects) that are
+  /// no longer the current artifact for [transactionId] — typically left
+  /// behind by a confirmed retake's local replace.
+  static Future<void> _cleanupSupersededRemoteArtifacts({
+    required String transactionId,
+    required String keepArtifactId,
+  }) async {
+    try {
+      final stale = await Supabase.instance.client
+          .from('receipt_artifacts')
+          .select('id, storage_path')
+          .eq('transaction_id', transactionId)
+          .neq('id', keepArtifactId);
+      for (final row in stale) {
+        final id = row['id'] as String?;
+        final path = row['storage_path'] as String?;
+        if (path != null && path.isNotEmpty) {
+          try {
+            await Supabase.instance.client.storage
+                .from('receipts')
+                .remove([path]);
+          } catch (_) {
+            // Best-effort — orphan Storage objects stay owner-scoped via RLS.
+          }
+        }
+        if (id != null) {
+          try {
+            await Supabase.instance.client
+                .from('receipt_artifacts')
+                .delete()
+                .eq('id', id);
+          } catch (_) {
+            // Retry on a later sync if this fails.
+          }
+        }
+      }
+    } catch (_) {
+      // Non-fatal: next successful sync for this transaction retries cleanup.
+    }
   }
 
   static String _extensionForMime(String mime) {

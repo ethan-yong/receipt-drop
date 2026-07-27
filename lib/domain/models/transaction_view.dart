@@ -20,6 +20,7 @@ class TransactionView {
     required this.syncStatus,
     required this.pipelineStatus,
     required this.localThumbnailPath,
+    this.remoteStoragePath,
     this.thumbnailBytes,
     this.impactUser,
     this.lineItems,
@@ -42,7 +43,14 @@ class TransactionView {
   final double? placeLng;
   final String syncStatus;
   final String pipelineStatus;
+
+  /// On-device path from [OutboxArtifacts.localFilePath], when present.
   final String? localThumbnailPath;
+
+  /// Remote path in the private `receipts` Storage bucket
+  /// ([OutboxArtifacts.storagePath]), used to mint a signed URL when the
+  /// local file is gone (reinstall / new device).
+  final String? remoteStoragePath;
   final Uint8List? thumbnailBytes;
   final String? impactUser;
   final List<ReceiptLineItem>? lineItems;
@@ -137,6 +145,7 @@ class TransactionView {
       syncStatus: syncStatus,
       pipelineStatus: pipelineStatus,
       localThumbnailPath: null,
+      remoteStoragePath: null,
       impactUser: impactUser,
       lineItems: lineItems,
       shareLocationLat: shareLocationLat,
@@ -155,6 +164,8 @@ class TransactionView {
     DateTime? occurredAt,
     String? impactUser,
     List<ReceiptLineItem>? lineItems,
+    String? localThumbnailPath,
+    String? remoteStoragePath,
   }) {
     return TransactionView(
       id: id,
@@ -171,7 +182,8 @@ class TransactionView {
       placeLng: placeLng ?? this.placeLng,
       syncStatus: syncStatus,
       pipelineStatus: pipelineStatus,
-      localThumbnailPath: localThumbnailPath,
+      localThumbnailPath: localThumbnailPath ?? this.localThumbnailPath,
+      remoteStoragePath: remoteStoragePath ?? this.remoteStoragePath,
       thumbnailBytes: thumbnailBytes,
       impactUser: impactUser ?? this.impactUser,
       lineItems: lineItems ?? this.lineItems,

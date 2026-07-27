@@ -28,9 +28,9 @@ class ReceiptCardCarousel extends StatefulWidget {
 
 class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     with TickerProviderStateMixin {
-  // Card height plus the newest-card gold border wrapper (3px border + 3px
-  // padding on each side).
-  static const _viewportHeight = kReceiptCardHeight + 12;
+  // Card height plus the newest-card gold border wrapper (4px border, no
+  // padding, hugging the card directly, on each side).
+  static const _viewportHeight = kReceiptCardHeight + 8;
   static const _rotateInterval = Duration(seconds: 5);
   static const _resumeDelay = Duration(milliseconds: 400);
   static const _dotChainDelay = Duration(milliseconds: 700);
@@ -555,10 +555,9 @@ class _CardVisual extends StatelessWidget {
       children: [
         Container(
           decoration: BoxDecoration(
-            border: Border.all(color: _gold, width: 3),
-            borderRadius: BorderRadius.circular(27),
+            border: Border.all(color: _gold, width: 4),
+            borderRadius: BorderRadius.circular(30),
           ),
-          padding: const EdgeInsets.all(3),
           child: card,
         ),
         Positioned(

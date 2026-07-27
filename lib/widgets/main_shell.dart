@@ -9,7 +9,8 @@ import '../core/platform/platform_utils.dart';
 import '../core/theme/app_theme.dart';
 import '../features/share/receipt_capture_flow.dart';
 
-/// Bottom navigation: Home, Feed, FAB, Map, Ranks.
+/// Bottom navigation: Home, Feed, Map, Ranks — with a center capture FAB on
+/// Home and Map only.
 class MainShell extends StatelessWidget {
   const MainShell({super.key, required this.navigationShell});
 
@@ -31,22 +32,26 @@ class MainShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final index = navigationShell.currentIndex;
+    // Capture FAB only on Home (0) and Map (2) — not Feed or Ranks.
+    final showFab = index == 0 || index == 2;
 
     return Scaffold(
       backgroundColor: AppColors.scaffold,
       body: navigationShell,
       extendBody: true,
-      floatingActionButton: Transform.translate(
-        offset: const Offset(0, -12),
-        child: FloatingActionButton(
-          onPressed: () => _onFabTap(context),
-          elevation: 6,
-          child: Icon(
-            PlatformUtils.isCupertino ? CupertinoIcons.add : Icons.add,
-            size: 28,
-          ),
-        ),
-      ),
+      floatingActionButton: showFab
+          ? Transform.translate(
+              offset: const Offset(0, -12),
+              child: FloatingActionButton(
+                onPressed: () => _onFabTap(context),
+                elevation: 6,
+                child: Icon(
+                  PlatformUtils.isCupertino ? CupertinoIcons.add : Icons.add,
+                  size: 28,
+                ),
+              ),
+            )
+          : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: PlatformUtils.isCupertino
           ? _IosTabBar(index: index, onTap: _goBranch)

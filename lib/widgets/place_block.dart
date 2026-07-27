@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../core/theme/app_theme.dart';
 
@@ -7,9 +8,13 @@ class PlaceBlock extends StatelessWidget {
     super.key,
     required this.placeName,
     required this.onChangePlace,
+    this.lat,
+    this.lng,
   });
 
   final String placeName;
+  final double? lat;
+  final double? lng;
   final VoidCallback onChangePlace;
 
   @override
@@ -22,16 +27,15 @@ class PlaceBlock extends StatelessWidget {
           children: [
             Text('Place', style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: AppSpacing.sm),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
-              child: Container(
-                height: 100,
-                width: double.infinity,
-                color: AppColors.divider,
-                child: const Icon(
-                  Icons.map_outlined,
-                  size: 40,
-                  color: AppColors.textMuted,
+            GestureDetector(
+              onTap: onChangePlace,
+              behavior: HitTestBehavior.opaque,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
+                child: SizedBox(
+                  height: 100,
+                  width: double.infinity,
+                  child: _buildPreview(),
                 ),
               ),
             ),
@@ -52,6 +56,40 @@ class PlaceBlock extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPreview() {
+    final lat = this.lat;
+    final lng = this.lng;
+    if (lat == null || lng == null) {
+      return Container(
+        color: AppColors.divider,
+        child: const Icon(
+          Icons.map_outlined,
+          size: 40,
+          color: AppColors.textMuted,
+        ),
+      );
+    }
+    // GoogleMap ignores post-creation changes to initialCameraPosition, so
+    // key it by coordinates to force a rebuild when the place changes.
+    return IgnorePointer(
+      child: GoogleMap(
+        key: ValueKey('place-block-map-$lat-$lng'),
+        initialCameraPosition: CameraPosition(target: LatLng(lat, lng), zoom: 15),
+        markers: {
+          Marker(markerId: const MarkerId('place'), position: LatLng(lat, lng)),
+        },
+        zoomControlsEnabled: false,
+        zoomGesturesEnabled: false,
+        scrollGesturesEnabled: false,
+        rotateGesturesEnabled: false,
+        tiltGesturesEnabled: false,
+        myLocationButtonEnabled: false,
+        mapToolbarEnabled: false,
+        compassEnabled: false,
       ),
     );
   }

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/data/local/app_database.dart';
 import 'package:receipt_drop/data/repositories/ingest_receipt_request.dart';
 import 'package:receipt_drop/data/repositories/places_repository.dart';
 import 'package:receipt_drop/data/repositories/transaction_repository_native.dart';
+import 'package:receipt_drop/domain/models/receipt_display_image.dart';
 import 'package:receipt_drop/domain/models/receipt_line_item.dart';
 import 'package:receipt_drop/domain/models/receipt_understanding.dart';
 
@@ -382,6 +385,146 @@ void main() {
     expect(row.placeStatus, 'user_locked');
     expect(row.syncStatus, 'pending');
     expect(row.retryCount, 0);
+
+    await db.close();
+  });
+
+  test('resolveDisplayImage returns local when file exists', () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final temp = await File(
+      '${Directory.systemTemp.path}/rd_display_${DateTime.now().microsecondsSinceEpoch}.jpg',
+    ).create();
+    await temp.writeAsBytes([0xFF, 0xD8, 0xFF]);
+
+    final saved = await repo.ingestReceipt(
+      IngestReceiptRequest(
+        localFilePath: temp.path,
+        mimeType: 'image/jpeg',
+        amountMyr: 10,
+        needsAmount: false,
+        merchantRaw: 'Cafe',
+        categoryGuess: 'Food & Drink',
+      ),
+    );
+
+    final image = await repo.resolveDisplayImage(saved.id);
+    expect(image.source, ReceiptDisplayImageSource.local);
+    expect(image.localPath, temp.path);
+
+    await temp.delete();
+    await db.close();
+  });
+
+  test('resolveDisplayImage is unavailable when local gone and no storage',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/does_not_exist_rd.jpg',
+        mimeType: 'image/jpeg',
+        amountMyr: 10,
+        needsAmount: false,
+        merchantRaw: 'Cafe',
+        categoryGuess: 'Food & Drink',
+      ),
+    );
+
+    final image = await repo.resolveDisplayImage(saved.id);
+    expect(image.source, ReceiptDisplayImageSource.unavailable);
+    expect(image.isAvailable, isFalse);
+
+    await db.close();
+  });
+
+  test('replaceArtifactAndReprocess keeps one artifact and OCR fields',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/old_receipt.png',
+        mimeType: 'image/png',
+        amountMyr: 12.0,
+        needsAmount: false,
+        merchantRaw: 'Old Merchant',
+        categoryGuess: 'Others',
+        categoryUser: 'Groceries',
+        impactUser: 'low',
+        lineItems: [
+          ReceiptLineItem(name: 'Old Item', priceMyr: 12.0),
+        ],
+      ),
+    );
+
+    // Simulate a user-locked place that must survive retake.
+    await repo.updateTransactionPlace(
+      saved.id,
+      const PlaceResult(
+        id: 'place_locked',
+        name: 'Locked Cafe',
+        address: '1 Jalan Locked',
+        lat: 3.1,
+        lng: 101.6,
+      ),
+    );
+
+    final oldArtifacts = await (db.select(db.outboxArtifacts)
+          ..where((a) => a.transactionId.equals(saved.id)))
+        .get();
+    expect(oldArtifacts, hasLength(1));
+    final oldArtifactId = oldArtifacts.single.id;
+
+    final updated = await repo.replaceArtifactAndReprocess(
+      saved.id,
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/new_receipt.png',
+        mimeType: 'image/png',
+        amountMyr: 25.5,
+        needsAmount: false,
+        merchantRaw: 'New Merchant',
+        categoryGuess: 'Food & Drink',
+        ocrConfidence: 0.9,
+        lineItems: [
+          ReceiptLineItem(name: 'New Item', priceMyr: 25.5),
+        ],
+      ),
+    );
+
+    final artifacts = await (db.select(db.outboxArtifacts)
+          ..where((a) => a.transactionId.equals(saved.id)))
+        .get();
+    expect(artifacts, hasLength(1));
+    expect(artifacts.single.id, isNot(oldArtifactId));
+    expect(artifacts.single.localFilePath, '/tmp/new_receipt.png');
+    expect(artifacts.single.storagePath, isNull);
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+    expect(row.merchantRaw, 'New Merchant');
+    expect(row.amountMyr, 25.5);
+    expect(row.categoryGuess, 'Food & Drink');
+    expect(row.categoryUser, 'Groceries'); // user-owned preserved
+    expect(row.impactUser, 'low'); // user-owned preserved
+    expect(row.placeStatus, 'user_locked');
+    expect(row.placeName, 'Locked Cafe');
+    expect(row.syncStatus, 'pending');
+    expect(row.retryCount, 0);
+    expect(row.pipelineStatus, 'provisional');
+
+    expect(updated.localThumbnailPath, '/tmp/new_receipt.png');
+    expect(updated.lineItems!.map((i) => i.name), ['New Item']);
+
+    final lineItems = await (db.select(db.outboxLineItems)
+          ..where((li) => li.transactionId.equals(saved.id)))
+        .get();
+    expect(lineItems, hasLength(1));
+    expect(lineItems.single.name, 'New Item');
 
     await db.close();
   });
