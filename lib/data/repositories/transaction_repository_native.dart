@@ -764,6 +764,7 @@ class TransactionRepository {
       lineItems: lineItems,
       rawOcrText: row.rawOcrText,
       ocrConfidence: row.ocrConfidence,
+      categoryConfidence: row.categoryConfidence,
       shareLocationLat: row.shareLocationLat,
       shareLocationLng: row.shareLocationLng,
     );

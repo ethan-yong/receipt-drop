@@ -12,6 +12,7 @@ import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/feed/feed_screen.dart';
 import '../../features/friends/friends_screen.dart';
 import '../../features/home/home_screen.dart';
+import '../../features/insights/insights_detail_screen.dart';
 import '../../features/leaderboard/leaderboard_screen.dart';
 import '../../features/map/spend_map_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
@@ -119,6 +120,12 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/dashboard',
         name: 'dashboard',
         builder: (context, state) => const DashboardScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/insights',
+        name: 'insights',
+        builder: (context, state) => const InsightsDetailScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

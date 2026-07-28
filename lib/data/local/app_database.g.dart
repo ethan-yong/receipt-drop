@@ -4696,6 +4696,671 @@ class OutboxFieldCorrectionsCompanion
   }
 }
 
+class $LocalSpendingInsightsTable extends LocalSpendingInsights
+    with TableInfo<$LocalSpendingInsightsTable, LocalSpendingInsight> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalSpendingInsightsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _insightTypeMeta = const VerificationMeta(
+    'insightType',
+  );
+  @override
+  late final GeneratedColumn<String> insightType = GeneratedColumn<String>(
+    'insight_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _factKeyMeta = const VerificationMeta(
+    'factKey',
+  );
+  @override
+  late final GeneratedColumn<String> factKey = GeneratedColumn<String>(
+    'fact_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bodyMeta = const VerificationMeta('body');
+  @override
+  late final GeneratedColumn<String> body = GeneratedColumn<String>(
+    'body',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _rankMeta = const VerificationMeta('rank');
+  @override
+  late final GeneratedColumn<int> rank = GeneratedColumn<int>(
+    'rank',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _dismissedMeta = const VerificationMeta(
+    'dismissed',
+  );
+  @override
+  late final GeneratedColumn<bool> dismissed = GeneratedColumn<bool>(
+    'dismissed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("dismissed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _factsJsonMeta = const VerificationMeta(
+    'factsJson',
+  );
+  @override
+  late final GeneratedColumn<String> factsJson = GeneratedColumn<String>(
+    'facts_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _dismissedAtMeta = const VerificationMeta(
+    'dismissedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> dismissedAt = GeneratedColumn<DateTime>(
+    'dismissed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _syncStatusMeta = const VerificationMeta(
+    'syncStatus',
+  );
+  @override
+  late final GeneratedColumn<String> syncStatus = GeneratedColumn<String>(
+    'sync_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('synced'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    insightType,
+    factKey,
+    body,
+    rank,
+    dismissed,
+    factsJson,
+    createdAt,
+    dismissedAt,
+    syncStatus,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_spending_insights';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalSpendingInsight> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('insight_type')) {
+      context.handle(
+        _insightTypeMeta,
+        insightType.isAcceptableOrUnknown(
+          data['insight_type']!,
+          _insightTypeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_insightTypeMeta);
+    }
+    if (data.containsKey('fact_key')) {
+      context.handle(
+        _factKeyMeta,
+        factKey.isAcceptableOrUnknown(data['fact_key']!, _factKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_factKeyMeta);
+    }
+    if (data.containsKey('body')) {
+      context.handle(
+        _bodyMeta,
+        body.isAcceptableOrUnknown(data['body']!, _bodyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bodyMeta);
+    }
+    if (data.containsKey('rank')) {
+      context.handle(
+        _rankMeta,
+        rank.isAcceptableOrUnknown(data['rank']!, _rankMeta),
+      );
+    }
+    if (data.containsKey('dismissed')) {
+      context.handle(
+        _dismissedMeta,
+        dismissed.isAcceptableOrUnknown(data['dismissed']!, _dismissedMeta),
+      );
+    }
+    if (data.containsKey('facts_json')) {
+      context.handle(
+        _factsJsonMeta,
+        factsJson.isAcceptableOrUnknown(data['facts_json']!, _factsJsonMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('dismissed_at')) {
+      context.handle(
+        _dismissedAtMeta,
+        dismissedAt.isAcceptableOrUnknown(
+          data['dismissed_at']!,
+          _dismissedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_status')) {
+      context.handle(
+        _syncStatusMeta,
+        syncStatus.isAcceptableOrUnknown(data['sync_status']!, _syncStatusMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LocalSpendingInsight map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalSpendingInsight(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      insightType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}insight_type'],
+      )!,
+      factKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}fact_key'],
+      )!,
+      body: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}body'],
+      )!,
+      rank: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rank'],
+      )!,
+      dismissed: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}dismissed'],
+      )!,
+      factsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}facts_json'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      dismissedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}dismissed_at'],
+      ),
+      syncStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_status'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalSpendingInsightsTable createAlias(String alias) {
+    return $LocalSpendingInsightsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalSpendingInsight extends DataClass
+    implements Insertable<LocalSpendingInsight> {
+  final String id;
+  final String userId;
+
+  /// 'spending_spike' | 'category_shift' | 'habit' | 'streak' | 'forecast'
+  final String insightType;
+  final String factKey;
+  final String body;
+  final int rank;
+  final bool dismissed;
+  final String? factsJson;
+  final DateTime createdAt;
+  final DateTime? dismissedAt;
+
+  /// 'pending' | 'synced' — gates dismiss upload to Postgres.
+  final String syncStatus;
+  const LocalSpendingInsight({
+    required this.id,
+    required this.userId,
+    required this.insightType,
+    required this.factKey,
+    required this.body,
+    required this.rank,
+    required this.dismissed,
+    this.factsJson,
+    required this.createdAt,
+    this.dismissedAt,
+    required this.syncStatus,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['insight_type'] = Variable<String>(insightType);
+    map['fact_key'] = Variable<String>(factKey);
+    map['body'] = Variable<String>(body);
+    map['rank'] = Variable<int>(rank);
+    map['dismissed'] = Variable<bool>(dismissed);
+    if (!nullToAbsent || factsJson != null) {
+      map['facts_json'] = Variable<String>(factsJson);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || dismissedAt != null) {
+      map['dismissed_at'] = Variable<DateTime>(dismissedAt);
+    }
+    map['sync_status'] = Variable<String>(syncStatus);
+    return map;
+  }
+
+  LocalSpendingInsightsCompanion toCompanion(bool nullToAbsent) {
+    return LocalSpendingInsightsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      insightType: Value(insightType),
+      factKey: Value(factKey),
+      body: Value(body),
+      rank: Value(rank),
+      dismissed: Value(dismissed),
+      factsJson: factsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(factsJson),
+      createdAt: Value(createdAt),
+      dismissedAt: dismissedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dismissedAt),
+      syncStatus: Value(syncStatus),
+    );
+  }
+
+  factory LocalSpendingInsight.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalSpendingInsight(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      insightType: serializer.fromJson<String>(json['insightType']),
+      factKey: serializer.fromJson<String>(json['factKey']),
+      body: serializer.fromJson<String>(json['body']),
+      rank: serializer.fromJson<int>(json['rank']),
+      dismissed: serializer.fromJson<bool>(json['dismissed']),
+      factsJson: serializer.fromJson<String?>(json['factsJson']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      dismissedAt: serializer.fromJson<DateTime?>(json['dismissedAt']),
+      syncStatus: serializer.fromJson<String>(json['syncStatus']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'insightType': serializer.toJson<String>(insightType),
+      'factKey': serializer.toJson<String>(factKey),
+      'body': serializer.toJson<String>(body),
+      'rank': serializer.toJson<int>(rank),
+      'dismissed': serializer.toJson<bool>(dismissed),
+      'factsJson': serializer.toJson<String?>(factsJson),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'dismissedAt': serializer.toJson<DateTime?>(dismissedAt),
+      'syncStatus': serializer.toJson<String>(syncStatus),
+    };
+  }
+
+  LocalSpendingInsight copyWith({
+    String? id,
+    String? userId,
+    String? insightType,
+    String? factKey,
+    String? body,
+    int? rank,
+    bool? dismissed,
+    Value<String?> factsJson = const Value.absent(),
+    DateTime? createdAt,
+    Value<DateTime?> dismissedAt = const Value.absent(),
+    String? syncStatus,
+  }) => LocalSpendingInsight(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    insightType: insightType ?? this.insightType,
+    factKey: factKey ?? this.factKey,
+    body: body ?? this.body,
+    rank: rank ?? this.rank,
+    dismissed: dismissed ?? this.dismissed,
+    factsJson: factsJson.present ? factsJson.value : this.factsJson,
+    createdAt: createdAt ?? this.createdAt,
+    dismissedAt: dismissedAt.present ? dismissedAt.value : this.dismissedAt,
+    syncStatus: syncStatus ?? this.syncStatus,
+  );
+  LocalSpendingInsight copyWithCompanion(LocalSpendingInsightsCompanion data) {
+    return LocalSpendingInsight(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      insightType: data.insightType.present
+          ? data.insightType.value
+          : this.insightType,
+      factKey: data.factKey.present ? data.factKey.value : this.factKey,
+      body: data.body.present ? data.body.value : this.body,
+      rank: data.rank.present ? data.rank.value : this.rank,
+      dismissed: data.dismissed.present ? data.dismissed.value : this.dismissed,
+      factsJson: data.factsJson.present ? data.factsJson.value : this.factsJson,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      dismissedAt: data.dismissedAt.present
+          ? data.dismissedAt.value
+          : this.dismissedAt,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalSpendingInsight(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('insightType: $insightType, ')
+          ..write('factKey: $factKey, ')
+          ..write('body: $body, ')
+          ..write('rank: $rank, ')
+          ..write('dismissed: $dismissed, ')
+          ..write('factsJson: $factsJson, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('dismissedAt: $dismissedAt, ')
+          ..write('syncStatus: $syncStatus')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    insightType,
+    factKey,
+    body,
+    rank,
+    dismissed,
+    factsJson,
+    createdAt,
+    dismissedAt,
+    syncStatus,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalSpendingInsight &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.insightType == this.insightType &&
+          other.factKey == this.factKey &&
+          other.body == this.body &&
+          other.rank == this.rank &&
+          other.dismissed == this.dismissed &&
+          other.factsJson == this.factsJson &&
+          other.createdAt == this.createdAt &&
+          other.dismissedAt == this.dismissedAt &&
+          other.syncStatus == this.syncStatus);
+}
+
+class LocalSpendingInsightsCompanion
+    extends UpdateCompanion<LocalSpendingInsight> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<String> insightType;
+  final Value<String> factKey;
+  final Value<String> body;
+  final Value<int> rank;
+  final Value<bool> dismissed;
+  final Value<String?> factsJson;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> dismissedAt;
+  final Value<String> syncStatus;
+  final Value<int> rowid;
+  const LocalSpendingInsightsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.insightType = const Value.absent(),
+    this.factKey = const Value.absent(),
+    this.body = const Value.absent(),
+    this.rank = const Value.absent(),
+    this.dismissed = const Value.absent(),
+    this.factsJson = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.dismissedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalSpendingInsightsCompanion.insert({
+    required String id,
+    required String userId,
+    required String insightType,
+    required String factKey,
+    required String body,
+    this.rank = const Value.absent(),
+    this.dismissed = const Value.absent(),
+    this.factsJson = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.dismissedAt = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       insightType = Value(insightType),
+       factKey = Value(factKey),
+       body = Value(body);
+  static Insertable<LocalSpendingInsight> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<String>? insightType,
+    Expression<String>? factKey,
+    Expression<String>? body,
+    Expression<int>? rank,
+    Expression<bool>? dismissed,
+    Expression<String>? factsJson,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? dismissedAt,
+    Expression<String>? syncStatus,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (insightType != null) 'insight_type': insightType,
+      if (factKey != null) 'fact_key': factKey,
+      if (body != null) 'body': body,
+      if (rank != null) 'rank': rank,
+      if (dismissed != null) 'dismissed': dismissed,
+      if (factsJson != null) 'facts_json': factsJson,
+      if (createdAt != null) 'created_at': createdAt,
+      if (dismissedAt != null) 'dismissed_at': dismissedAt,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalSpendingInsightsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<String>? insightType,
+    Value<String>? factKey,
+    Value<String>? body,
+    Value<int>? rank,
+    Value<bool>? dismissed,
+    Value<String?>? factsJson,
+    Value<DateTime>? createdAt,
+    Value<DateTime?>? dismissedAt,
+    Value<String>? syncStatus,
+    Value<int>? rowid,
+  }) {
+    return LocalSpendingInsightsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      insightType: insightType ?? this.insightType,
+      factKey: factKey ?? this.factKey,
+      body: body ?? this.body,
+      rank: rank ?? this.rank,
+      dismissed: dismissed ?? this.dismissed,
+      factsJson: factsJson ?? this.factsJson,
+      createdAt: createdAt ?? this.createdAt,
+      dismissedAt: dismissedAt ?? this.dismissedAt,
+      syncStatus: syncStatus ?? this.syncStatus,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (insightType.present) {
+      map['insight_type'] = Variable<String>(insightType.value);
+    }
+    if (factKey.present) {
+      map['fact_key'] = Variable<String>(factKey.value);
+    }
+    if (body.present) {
+      map['body'] = Variable<String>(body.value);
+    }
+    if (rank.present) {
+      map['rank'] = Variable<int>(rank.value);
+    }
+    if (dismissed.present) {
+      map['dismissed'] = Variable<bool>(dismissed.value);
+    }
+    if (factsJson.present) {
+      map['facts_json'] = Variable<String>(factsJson.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (dismissedAt.present) {
+      map['dismissed_at'] = Variable<DateTime>(dismissedAt.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<String>(syncStatus.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalSpendingInsightsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('insightType: $insightType, ')
+          ..write('factKey: $factKey, ')
+          ..write('body: $body, ')
+          ..write('rank: $rank, ')
+          ..write('dismissed: $dismissed, ')
+          ..write('factsJson: $factsJson, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('dismissedAt: $dismissedAt, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4712,6 +5377,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PendingImportsTable pendingImports = $PendingImportsTable(this);
   late final $OutboxFieldCorrectionsTable outboxFieldCorrections =
       $OutboxFieldCorrectionsTable(this);
+  late final $LocalSpendingInsightsTable localSpendingInsights =
+      $LocalSpendingInsightsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4723,6 +5390,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     categoryConfigCache,
     pendingImports,
     outboxFieldCorrections,
+    localSpendingInsights,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -7640,6 +8308,345 @@ typedef $$OutboxFieldCorrectionsTableProcessedTableManager =
       OutboxFieldCorrection,
       PrefetchHooks Function({bool transactionId})
     >;
+typedef $$LocalSpendingInsightsTableCreateCompanionBuilder =
+    LocalSpendingInsightsCompanion Function({
+      required String id,
+      required String userId,
+      required String insightType,
+      required String factKey,
+      required String body,
+      Value<int> rank,
+      Value<bool> dismissed,
+      Value<String?> factsJson,
+      Value<DateTime> createdAt,
+      Value<DateTime?> dismissedAt,
+      Value<String> syncStatus,
+      Value<int> rowid,
+    });
+typedef $$LocalSpendingInsightsTableUpdateCompanionBuilder =
+    LocalSpendingInsightsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<String> insightType,
+      Value<String> factKey,
+      Value<String> body,
+      Value<int> rank,
+      Value<bool> dismissed,
+      Value<String?> factsJson,
+      Value<DateTime> createdAt,
+      Value<DateTime?> dismissedAt,
+      Value<String> syncStatus,
+      Value<int> rowid,
+    });
+
+class $$LocalSpendingInsightsTableFilterComposer
+    extends Composer<_$AppDatabase, $LocalSpendingInsightsTable> {
+  $$LocalSpendingInsightsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get insightType => $composableBuilder(
+    column: $table.insightType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get factKey => $composableBuilder(
+    column: $table.factKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rank => $composableBuilder(
+    column: $table.rank,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get dismissed => $composableBuilder(
+    column: $table.dismissed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get factsJson => $composableBuilder(
+    column: $table.factsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get dismissedAt => $composableBuilder(
+    column: $table.dismissedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalSpendingInsightsTableOrderingComposer
+    extends Composer<_$AppDatabase, $LocalSpendingInsightsTable> {
+  $$LocalSpendingInsightsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get insightType => $composableBuilder(
+    column: $table.insightType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get factKey => $composableBuilder(
+    column: $table.factKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rank => $composableBuilder(
+    column: $table.rank,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get dismissed => $composableBuilder(
+    column: $table.dismissed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get factsJson => $composableBuilder(
+    column: $table.factsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get dismissedAt => $composableBuilder(
+    column: $table.dismissedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalSpendingInsightsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LocalSpendingInsightsTable> {
+  $$LocalSpendingInsightsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get insightType => $composableBuilder(
+    column: $table.insightType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get factKey =>
+      $composableBuilder(column: $table.factKey, builder: (column) => column);
+
+  GeneratedColumn<String> get body =>
+      $composableBuilder(column: $table.body, builder: (column) => column);
+
+  GeneratedColumn<int> get rank =>
+      $composableBuilder(column: $table.rank, builder: (column) => column);
+
+  GeneratedColumn<bool> get dismissed =>
+      $composableBuilder(column: $table.dismissed, builder: (column) => column);
+
+  GeneratedColumn<String> get factsJson =>
+      $composableBuilder(column: $table.factsJson, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get dismissedAt => $composableBuilder(
+    column: $table.dismissedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => column,
+  );
+}
+
+class $$LocalSpendingInsightsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $LocalSpendingInsightsTable,
+          LocalSpendingInsight,
+          $$LocalSpendingInsightsTableFilterComposer,
+          $$LocalSpendingInsightsTableOrderingComposer,
+          $$LocalSpendingInsightsTableAnnotationComposer,
+          $$LocalSpendingInsightsTableCreateCompanionBuilder,
+          $$LocalSpendingInsightsTableUpdateCompanionBuilder,
+          (
+            LocalSpendingInsight,
+            BaseReferences<
+              _$AppDatabase,
+              $LocalSpendingInsightsTable,
+              LocalSpendingInsight
+            >,
+          ),
+          LocalSpendingInsight,
+          PrefetchHooks Function()
+        > {
+  $$LocalSpendingInsightsTableTableManager(
+    _$AppDatabase db,
+    $LocalSpendingInsightsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalSpendingInsightsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalSpendingInsightsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalSpendingInsightsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> insightType = const Value.absent(),
+                Value<String> factKey = const Value.absent(),
+                Value<String> body = const Value.absent(),
+                Value<int> rank = const Value.absent(),
+                Value<bool> dismissed = const Value.absent(),
+                Value<String?> factsJson = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> dismissedAt = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalSpendingInsightsCompanion(
+                id: id,
+                userId: userId,
+                insightType: insightType,
+                factKey: factKey,
+                body: body,
+                rank: rank,
+                dismissed: dismissed,
+                factsJson: factsJson,
+                createdAt: createdAt,
+                dismissedAt: dismissedAt,
+                syncStatus: syncStatus,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required String insightType,
+                required String factKey,
+                required String body,
+                Value<int> rank = const Value.absent(),
+                Value<bool> dismissed = const Value.absent(),
+                Value<String?> factsJson = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> dismissedAt = const Value.absent(),
+                Value<String> syncStatus = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalSpendingInsightsCompanion.insert(
+                id: id,
+                userId: userId,
+                insightType: insightType,
+                factKey: factKey,
+                body: body,
+                rank: rank,
+                dismissed: dismissed,
+                factsJson: factsJson,
+                createdAt: createdAt,
+                dismissedAt: dismissedAt,
+                syncStatus: syncStatus,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalSpendingInsightsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $LocalSpendingInsightsTable,
+      LocalSpendingInsight,
+      $$LocalSpendingInsightsTableFilterComposer,
+      $$LocalSpendingInsightsTableOrderingComposer,
+      $$LocalSpendingInsightsTableAnnotationComposer,
+      $$LocalSpendingInsightsTableCreateCompanionBuilder,
+      $$LocalSpendingInsightsTableUpdateCompanionBuilder,
+      (
+        LocalSpendingInsight,
+        BaseReferences<
+          _$AppDatabase,
+          $LocalSpendingInsightsTable,
+          LocalSpendingInsight
+        >,
+      ),
+      LocalSpendingInsight,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -7659,4 +8666,6 @@ class $AppDatabaseManager {
         _db,
         _db.outboxFieldCorrections,
       );
+  $$LocalSpendingInsightsTableTableManager get localSpendingInsights =>
+      $$LocalSpendingInsightsTableTableManager(_db, _db.localSpendingInsights);
 }

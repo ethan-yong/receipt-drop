@@ -15,6 +15,7 @@ part 'app_database.g.dart';
     CategoryConfigCache,
     PendingImports,
     OutboxFieldCorrections,
+    LocalSpendingInsights,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -28,7 +29,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   /// True when [column] already exists on [table] (SQLite `PRAGMA table_info`).
   ///
@@ -112,6 +113,9 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 11) {
             await m.createTable(outboxFieldCorrections);
+          }
+          if (from < 12) {
+            await m.createTable(localSpendingInsights);
           }
         },
         // sqlite disables FK enforcement by default; needed for cascade
