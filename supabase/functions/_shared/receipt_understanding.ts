@@ -426,6 +426,16 @@ export function parseReceiptUnderstanding(
   return actionable ? understanding : null;
 }
 
+/** True when the receipt itself carries a location signal (address or area
+ * clue) — distinct from share-time device GPS. When set, Places resolution
+ * should geocode from receipt text without biasing toward upload location. */
+export function hasReceiptLocationSignal(u: ReceiptUnderstanding): boolean {
+  return (
+    (u.address_text?.trim().length ?? 0) > 0 ||
+    u.location_clues.some((c) => c.trim().length > 0)
+  );
+}
+
 /**
  * Builds the Places text-search query list from the LLM's understanding:
  * the merchant search queries in order (falling back to merchant_name when

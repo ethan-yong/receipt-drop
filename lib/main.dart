@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'core/bootstrap/app_prefs.dart';
@@ -24,6 +27,20 @@ Future<void> main() async {
     url: Env.supabaseUrl,
     anonKey: Env.supabaseAnonKey,
   );
+
+  // Local-first means every screen reads from the on-device DB only — a
+  // fresh install (or a cleared local cache) has nothing to show even
+  // though the account's data is intact in Supabase. Covers both a session
+  // restored at launch and an interactive sign-in on the /auth screen.
+  Supabase.instance.client.auth.onAuthStateChange.listen((state) {
+    final user = state.session?.user;
+    debugPrint(
+      'onAuthStateChange: event=${state.event} userId=${user?.id}',
+    );
+    if (user != null) {
+      unawaited(AppServices.transactions.hydrateFromCloudIfEmpty(user.id));
+    }
+  });
 
   final authRefresh = AuthRefreshNotifier();
   final router = createAppRouter(authRefresh);

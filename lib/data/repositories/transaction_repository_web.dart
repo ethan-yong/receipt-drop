@@ -44,6 +44,8 @@ class TransactionRepository {
   Future<TransactionView> ingestReceipt(IngestReceiptRequest request) async {
     final id = _uuid.v4();
     final now = DateTime.now();
+    final hasPlace =
+        request.pickedPlaceLat != null && request.pickedPlaceLng != null;
     final view = TransactionView(
       id: id,
       occurredAt: now,
@@ -52,10 +54,10 @@ class TransactionRepository {
       merchantRaw: request.merchantRaw,
       categoryGuess: request.categoryGuess,
       categoryUser: null,
-      placeName: null,
-      placeGooglePlaceId: null,
-      placeLat: request.shareLocationLat,
-      placeLng: request.shareLocationLng,
+      placeName: hasPlace ? request.pickedPlaceName : null,
+      placeGooglePlaceId: hasPlace ? request.pickedPlaceGooglePlaceId : null,
+      placeLat: hasPlace ? request.pickedPlaceLat : null,
+      placeLng: hasPlace ? request.pickedPlaceLng : null,
       syncStatus: 'pending',
       pipelineStatus: request.needsReview ? 'needs_review' : 'provisional',
       localThumbnailPath: request.localFilePath,
@@ -65,6 +67,8 @@ class TransactionRepository {
       lineItems: request.lineItems,
       rawOcrText: request.rawOcrText,
       ocrConfidence: request.ocrConfidence,
+      shareLocationLat: request.shareLocationLat,
+      shareLocationLng: request.shareLocationLng,
     );
     _rows.add(view);
     _emit();
@@ -82,6 +86,8 @@ class TransactionRepository {
       throw StateError('Transaction $transactionId not found');
     }
     final row = _rows[i];
+    final hasPlace =
+        request.pickedPlaceLat != null && request.pickedPlaceLng != null;
     final updated = TransactionView(
       id: row.id,
       occurredAt: row.occurredAt,
@@ -90,18 +96,11 @@ class TransactionRepository {
       merchantRaw: request.merchantRaw,
       categoryGuess: request.categoryGuess,
       categoryUser: request.categoryUser ?? row.categoryUser,
-      placeName: request.pickedPlaceLocked
-          ? request.pickedPlaceName
-          : row.placeName,
-      placeGooglePlaceId: request.pickedPlaceLocked
-          ? request.pickedPlaceGooglePlaceId
-          : row.placeGooglePlaceId,
-      placeLat: request.pickedPlaceLocked
-          ? request.pickedPlaceLat
-          : row.placeLat,
-      placeLng: request.pickedPlaceLocked
-          ? request.pickedPlaceLng
-          : row.placeLng,
+      placeName: hasPlace ? request.pickedPlaceName : row.placeName,
+      placeGooglePlaceId:
+          hasPlace ? request.pickedPlaceGooglePlaceId : row.placeGooglePlaceId,
+      placeLat: hasPlace ? request.pickedPlaceLat : row.placeLat,
+      placeLng: hasPlace ? request.pickedPlaceLng : row.placeLng,
       syncStatus: 'pending',
       pipelineStatus: request.needsReview ? 'needs_review' : 'provisional',
       localThumbnailPath: request.localFilePath,
@@ -216,6 +215,10 @@ class TransactionRepository {
     }
     _emit();
   }
+
+  /// No-op on web: this repository is in-memory only (Drift/SQLite uses
+  /// dart:ffi, native only) and has nothing durable to hydrate into.
+  Future<void> hydrateFromCloudIfEmpty(String userId) async {}
 
   Future<void> deleteTransaction(String id) async {
     _rows.removeWhere((r) => r.id == id);

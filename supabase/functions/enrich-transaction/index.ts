@@ -18,6 +18,7 @@ import {
   adjustScoreForTypeMatch,
   buildLlmTextQueries,
   callReceiptUnderstanding,
+  hasReceiptLocationSignal,
   parseReceiptUnderstanding,
   resolveIncludedTypes,
   type ReceiptUnderstanding,
@@ -654,12 +655,15 @@ export async function handleEnrichTransactionRequest(
   const hasUsableText = understanding.merchant_name != null &&
     isUsableMerchantText(understanding.merchant_name) &&
     understanding.confidence.merchant >= 0.6;
+  const receiptLocationSignal = hasReceiptLocationSignal(understanding);
 
   // ALIAS FAST-PATH: skip Google Places entirely if this exact LLM-canonical
   // merchant name near this exact location has already been resolved
   // before. Keyed on the LLM's corrected name (not the raw OCR guess) so
   // OCR variants of the same merchant collapse onto one cache key.
-  if (hasLocation && hasUsableText) {
+  // Skip when the receipt carries its own address/clue — share geohash would
+  // point at upload location, not the store on the receipt.
+  if (hasLocation && hasUsableText && !receiptLocationSignal) {
     const aliasKey = normalizeForCompare(understanding.merchant_name!);
     const geohash = geohashEncode(shareLat, shareLng, ALIAS_GEOHASH_PRECISION);
     try {
@@ -778,7 +782,7 @@ export async function handleEnrichTransactionRequest(
       regionCode: "MY",
       maxResultCount: 8,
     };
-    if (hasLocation) {
+    if (hasLocation && !receiptLocationSignal) {
       body.locationBias = {
         circle: {
           center: { latitude: shareLat, longitude: shareLng },
@@ -808,7 +812,7 @@ export async function handleEnrichTransactionRequest(
   }
 
   async function fetchNearbySearch(): Promise<GooglePlace[] | null> {
-    if (!hasLocation) return null;
+    if (!hasLocation || receiptLocationSignal) return null;
     try {
       const resp = await fetchFn(
         "https://places.googleapis.com/v1/places:searchNearby",
@@ -934,12 +938,18 @@ export async function handleEnrichTransactionRequest(
   // merchant text pulls toward a text+location-confirmed match (cap 0.97);
   // low-confidence/garbled text leans almost entirely on Nearby Search's
   // distance ranking instead, capped lower (0.65) so it reads as a guess.
-  const weights = {
-    textWeight: hasUsableText ? 0.6 : 0.15,
-    distWeight: hasUsableText ? 0.4 : 0.85,
-    cap: !hasLocation ? 0.9 : hasUsableText ? 0.97 : 0.65,
-  };
-  const location = hasLocation ? { lat: shareLat, lng: shareLng } : null;
+  // Receipt address/clue present: text-only scoring — no distance from
+  // upload GPS (the user may have scanned the receipt elsewhere).
+  const weights = receiptLocationSignal
+    ? { textWeight: 1, distWeight: 0, cap: 0.97 }
+    : {
+      textWeight: hasUsableText ? 0.6 : 0.15,
+      distWeight: hasUsableText ? 0.4 : 0.85,
+      cap: !hasLocation ? 0.9 : hasUsableText ? 0.97 : 0.65,
+    };
+  const location = hasLocation && !receiptLocationSignal
+    ? { lat: shareLat, lng: shareLng }
+    : null;
 
   let winner: PlaceCandidate | null = null;
   let winnerConfidence = -1;
@@ -1118,14 +1128,18 @@ export async function handleEnrichTransactionRequest(
   // fast-path above). Best-effort — a failed write here doesn't affect this
   // transaction's own (already-saved) enrichment result.
   if (
-    hasLocation &&
     hasUsableText &&
-    winnerConfidence >= ALIAS_SAVE_CONFIDENCE_THRESHOLD
+    winnerConfidence >= ALIAS_SAVE_CONFIDENCE_THRESHOLD &&
+    winner.lat != null &&
+    winner.lng != null &&
+    (hasLocation || receiptLocationSignal)
   ) {
+    const aliasLat = receiptLocationSignal ? winner.lat! : shareLat;
+    const aliasLng = receiptLocationSignal ? winner.lng! : shareLng;
     try {
       await supabase.rpc("upsert_merchant_alias", {
         p_alias_text: normalizeForCompare(understanding.merchant_name!),
-        p_geohash: geohashEncode(shareLat, shareLng, ALIAS_GEOHASH_PRECISION),
+        p_geohash: geohashEncode(aliasLat, aliasLng, ALIAS_GEOHASH_PRECISION),
         p_place_id: winner.id,
         p_name: winner.name,
         p_lat: winner.lat,

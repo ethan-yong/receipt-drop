@@ -461,6 +461,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   /// [widget.onSave], not folded into this draft's `amountMyr`.
   ReceiptIngestDraft _editedDraft() {
     final anyItemChange = _anyExcluded || _anyPriceEdited;
+    final place = _pickedPlace ?? _previewPlace;
     return widget.draft.copyWith(
       merchantRaw: _vendorEdited ? _vendorName : null,
       categoryUser: _categoryOverride,
@@ -470,13 +471,21 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
                 if (_checked[i]) _items[i].copyWith(priceMyr: _prices[i]),
             ]
           : null,
-      pickedPlaceName: _pickedPlace?.name,
-      pickedPlaceGooglePlaceId: _pickedPlace?.id,
-      pickedPlaceLat: _pickedPlace?.lat,
-      pickedPlaceLng: _pickedPlace?.lng,
+      pickedPlaceName: place?.name,
+      pickedPlaceGooglePlaceId: place?.id,
+      pickedPlaceLat: place?.lat,
+      pickedPlaceLng: place?.lng,
       pickedPlaceLocked: _pickedPlace != null,
       fieldCorrections: _buildFieldCorrections(),
     );
+  }
+
+  /// Waits for the receipt-derived preview place if the user saves before
+  /// [_resolvePreviewLocation] finishes.
+  Future<void> _ensurePreviewResolved() async {
+    if (_previewLoading) {
+      await _resolvePreviewLocation();
+    }
   }
 
   /// Captures a predicted-vs-confirmed diff for every field the user
@@ -557,6 +566,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     }
     setState(() => _saving = true);
     try {
+      await _ensurePreviewResolved();
       await widget.onSave(amount, _editedDraft(), _effectiveImpact);
       if (mounted) {
         PlatformFeedback.mediumTap();
@@ -570,6 +580,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   Future<void> _saveForLater() async {
     setState(() => _saving = true);
     try {
+      await _ensurePreviewResolved();
       await widget.onSaveForLater!(_editedDraft());
       if (mounted) {
         PlatformFeedback.mediumTap();

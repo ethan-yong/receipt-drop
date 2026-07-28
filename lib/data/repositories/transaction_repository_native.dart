@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -141,22 +142,20 @@ class TransactionRepository {
             cleanedOcrText: Value(encoded.cleanedOcrText),
             ocrCorrectionsJson: Value(encoded.ocrCorrectionsJson),
             placeName: Value(
-              request.pickedPlaceLocked ? request.pickedPlaceName : null,
+              _hasResolvedPlace(request) ? request.pickedPlaceName : null,
             ),
             placeGooglePlaceId: Value(
-              request.pickedPlaceLocked
+              _hasResolvedPlace(request)
                   ? request.pickedPlaceGooglePlaceId
                   : null,
             ),
             placeLat: Value(
-              request.pickedPlaceLocked ? request.pickedPlaceLat : null,
+              _hasResolvedPlace(request) ? request.pickedPlaceLat : null,
             ),
             placeLng: Value(
-              request.pickedPlaceLocked ? request.pickedPlaceLng : null,
+              _hasResolvedPlace(request) ? request.pickedPlaceLng : null,
             ),
-            placeStatus: Value(
-              request.pickedPlaceLocked ? 'user_locked' : 'none',
-            ),
+            placeStatus: Value(_placeStatusFor(request)),
           ),
         );
 
@@ -198,36 +197,12 @@ class TransactionRepository {
 
     unawaited(SyncWorker.run(_db, id));
 
-    return TransactionView(
-      id: id,
-      occurredAt: now,
-      amountMyr: request.amountMyr,
-      needsAmount: request.needsAmount,
-      merchantRaw: request.merchantRaw,
-      categoryGuess: request.categoryGuess,
-      categoryUser: null,
-      placeName: request.pickedPlaceLocked ? request.pickedPlaceName : null,
-      placeGooglePlaceId: request.pickedPlaceLocked
-          ? request.pickedPlaceGooglePlaceId
-          : null,
-      placeLat: request.pickedPlaceLocked
-          ? request.pickedPlaceLat
-          : request.shareLocationLat,
-      placeLng: request.pickedPlaceLocked
-          ? request.pickedPlaceLng
-          : request.shareLocationLng,
-      syncStatus: 'pending',
-      pipelineStatus: pipelineStatus,
-      localThumbnailPath: request.localFilePath,
-      remoteStoragePath: null,
-      thumbnailBytes: request.thumbnailBytes,
-      impactUser: request.impactUser,
-      lineItems: request.lineItems,
-      rawOcrText: request.rawOcrText,
-      ocrConfidence: request.ocrConfidence,
-      shareLocationLat: request.shareLocationLat,
-      shareLocationLng: request.shareLocationLng,
-    );
+    final row = await (_db.select(_db.outboxTransactions)
+          ..where((t) => t.id.equals(id)))
+        .getSingle();
+    final artifact = await _artifactFor(id);
+    final lineItems = await _lineItemsFor(id);
+    return _mapRow(row, artifact, lineItems);
   }
 
   /// Replace the single artifact for [transactionId] and overwrite OCR-derived
@@ -358,8 +333,11 @@ class TransactionRepository {
         placeLng: Value(view.placeLng),
         occurredAt: Value(view.occurredAt),
         impactUser: Value(view.impactUser),
+        syncStatus: const Value('pending'),
+        retryCount: const Value(0),
       ),
     );
+    unawaited(SyncWorker.run(_db, view.id));
   }
 
   Future<void> updateTransactionPlace(String id, PlaceResult place) async {
@@ -399,6 +377,153 @@ class TransactionRepository {
     )..where((t) => t.syncStatus.equals('pending'))).get();
     for (final row in pending) {
       unawaited(SyncWorker.run(_db, row.id));
+    }
+  }
+
+  /// Restores this user's cloud data into a local database that has nothing
+  /// for them yet — a fresh install (or a cleared local cache) otherwise
+  /// leaves the account signed in with no visible history, even though the
+  /// data is intact in Supabase, because every screen here reads only from
+  /// the local outbox and [SyncWorker] only ever pushes local -> cloud.
+  ///
+  /// Safe to call on every sign-in event with no separate "already
+  /// hydrated" flag: it no-ops the instant this user has any local rows at
+  /// all (including right after its own first successful run), and it
+  /// naturally re-runs correctly if local data is later cleared again.
+  /// Best-effort — any failure (offline, transient error) is swallowed so a
+  /// bad network moment can never crash startup; the next sign-in event or
+  /// launch gets another chance.
+  Future<void> hydrateFromCloudIfEmpty(String userId) async {
+    debugPrint('hydrateFromCloudIfEmpty: called for userId=$userId');
+    if (!Env.hasSupabaseConfig) {
+      debugPrint('hydrateFromCloudIfEmpty: no Supabase config, skipping');
+      return;
+    }
+
+    final existing = await (_db.select(
+      _db.outboxTransactions,
+    )..where((t) => t.userId.equals(userId))).get();
+    if (existing.isNotEmpty) {
+      debugPrint(
+        'hydrateFromCloudIfEmpty: ${existing.length} local rows already exist for this userId, skipping',
+      );
+      return;
+    }
+
+    try {
+      final client = Supabase.instance.client;
+      // Bounded, most-recent-first — restoring a user's entire history
+      // unbounded isn't needed for the app to become usable again; mirrors
+      // the map viewport RPC's own precedent of an explicit cap rather than
+      // an unbounded query.
+      final remoteTx = await client
+          .from('transactions')
+          .select()
+          .eq('user_id', userId)
+          .order('occurred_at', ascending: false)
+          .limit(500) as List;
+      debugPrint('hydrateFromCloudIfEmpty: fetched ${remoteTx.length} remote rows');
+      if (remoteTx.isEmpty) return;
+
+      final txIds = [
+        for (final row in remoteTx) (row as Map<String, dynamic>)['id'] as String,
+      ];
+
+      final remoteArtifacts = await client
+          .from('receipt_artifacts')
+          .select()
+          .inFilter('transaction_id', txIds) as List;
+      final remoteLineItems = await client
+          .from('receipt_line_items')
+          .select()
+          .inFilter('transaction_id', txIds) as List;
+
+      String? encodeJson(Object? value) => value == null ? null : jsonEncode(value);
+      double? asDouble(Object? v) => v == null ? null : (v as num).toDouble();
+
+      await _db.batch((batch) {
+        batch.insertAll(_db.outboxTransactions, [
+          for (final r in remoteTx.cast<Map<String, dynamic>>())
+            OutboxTransactionsCompanion.insert(
+              id: r['id'] as String,
+              userId: userId,
+              createdAt: Value(DateTime.parse(r['created_at'] as String)),
+              occurredAt: Value(DateTime.parse(r['occurred_at'] as String)),
+              amountMyr: Value(asDouble(r['amount_myr'])),
+              amountSource: Value(r['amount_source'] as String?),
+              needsAmount: Value(r['needs_amount'] as bool? ?? false),
+              merchantRaw: Value(r['merchant_raw'] as String?),
+              merchantNormalized: Value(r['merchant_normalized'] as String?),
+              categoryGuess: Value(r['category_guess'] as String?),
+              categoryUser: Value(r['category_user'] as String?),
+              categoryConfidence: Value(asDouble(r['category_confidence'])),
+              impactUser: Value(r['impact_user'] as String?),
+              placeStatus: Value(r['place_status'] as String? ?? 'none'),
+              placeGooglePlaceId: Value(r['place_google_place_id'] as String?),
+              placeName: Value(r['place_name'] as String?),
+              placeLat: Value(asDouble(r['place_lat'])),
+              placeLng: Value(asDouble(r['place_lng'])),
+              placeConfidence: Value(asDouble(r['place_confidence'])),
+              shareLocationLat: Value(asDouble(r['share_location_lat'])),
+              shareLocationLng: Value(asDouble(r['share_location_lng'])),
+              shareLocationCapturedAt: Value(
+                r['share_location_captured_at'] == null
+                    ? null
+                    : DateTime.parse(r['share_location_captured_at'] as String),
+              ),
+              ocrConfidence: Value(asDouble(r['ocr_confidence'])),
+              rawOcrText: Value(r['raw_ocr_text'] as String?),
+              ocrServiceConfidence: Value(asDouble(r['ocr_service_confidence'])),
+              lineItemsConfidence: Value(asDouble(r['line_items_confidence'])),
+              parseFailureReason: Value(r['parse_failure_reason'] as String?),
+              pipelineStatus: Value(r['pipeline_status'] as String? ?? 'provisional'),
+              merchantCandidatesJson: Value(encodeJson(r['merchant_candidates'])),
+              ocrHeaderText: Value(r['ocr_header_text'] as String?),
+              llmUnderstandingJson: Value(encodeJson(r['llm_understanding'])),
+              cleanedOcrText: Value(r['cleaned_ocr_text'] as String?),
+              ocrCorrectionsJson: Value(encodeJson(r['ocr_corrections'])),
+              // Local-only bookkeeping, no remote counterpart: this row is
+              // already on the server, so it's synced by definition.
+              syncStatus: const Value('synced'),
+              retryCount: const Value(0),
+            ),
+        ]);
+
+        batch.insertAll(_db.outboxArtifacts, [
+          for (final r in remoteArtifacts.cast<Map<String, dynamic>>())
+            OutboxArtifactsCompanion.insert(
+              id: r['id'] as String,
+              userId: userId,
+              transactionId: r['transaction_id'] as String,
+              storagePath: Value(r['storage_path'] as String?),
+              mimeType: r['mime_type'] as String,
+              // No on-device file exists for a hydrated row — this
+              // deliberately never resolves via File(...).existsSync(), so
+              // display code already falls back to the signed-URL path
+              // built for exactly this "local file missing" case.
+              localFilePath: '',
+            ),
+        ]);
+
+        batch.insertAll(_db.outboxLineItems, [
+          for (final r in remoteLineItems.cast<Map<String, dynamic>>())
+            OutboxLineItemsCompanion.insert(
+              id: r['id'] as String,
+              userId: userId,
+              transactionId: r['transaction_id'] as String,
+              name: r['name'] as String,
+              priceMyr: (r['price_myr'] as num).toDouble(),
+              quantity: Value(r['quantity'] as int?),
+              confidence: Value(asDouble(r['confidence'])),
+              sortOrder: r['sort_order'] as int,
+            ),
+        ]);
+      });
+      debugPrint('hydrateFromCloudIfEmpty: batch insert succeeded');
+    } on Object catch (e, st) {
+      // Offline / transient failure — the empty-check above means the next
+      // sign-in event or app launch gets another chance.
+      debugPrint('TransactionRepository.hydrateFromCloudIfEmpty: $e\n$st');
     }
   }
 
@@ -584,25 +709,34 @@ class TransactionRepository {
       impactUser: request.impactUser != null
           ? Value(request.impactUser)
           : const Value.absent(),
-      placeName: request.pickedPlaceLocked
+      placeName: _hasResolvedPlace(request)
           ? Value(request.pickedPlaceName)
           : const Value.absent(),
-      placeGooglePlaceId: request.pickedPlaceLocked
+      placeGooglePlaceId: _hasResolvedPlace(request)
           ? Value(request.pickedPlaceGooglePlaceId)
           : const Value.absent(),
-      placeLat: request.pickedPlaceLocked
+      placeLat: _hasResolvedPlace(request)
           ? Value(request.pickedPlaceLat)
           : const Value.absent(),
-      placeLng: request.pickedPlaceLocked
+      placeLng: _hasResolvedPlace(request)
           ? Value(request.pickedPlaceLng)
           : const Value.absent(),
-      placeStatus: request.pickedPlaceLocked
-          ? const Value('user_locked')
+      placeStatus: _hasResolvedPlace(request)
+          ? Value(_placeStatusFor(request))
           : const Value.absent(),
       pipelineStatus: Value(pipelineStatus),
       syncStatus: const Value('pending'),
       retryCount: const Value(0),
     );
+  }
+
+  static bool _hasResolvedPlace(IngestReceiptRequest request) =>
+      request.pickedPlaceLat != null && request.pickedPlaceLng != null;
+
+  static String _placeStatusFor(IngestReceiptRequest request) {
+    if (request.pickedPlaceLocked) return 'user_locked';
+    if (_hasResolvedPlace(request)) return 'guess';
+    return 'none';
   }
 
   TransactionView _mapRow(

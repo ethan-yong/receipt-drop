@@ -83,6 +83,7 @@ let testAccessToken = "";
 function buildUnderstanding(opts: {
   merchantName: string;
   searchQueries?: string[];
+  addressText?: string | null;
   locationClues?: string[];
   vendorCategory?: string;
   placeTypes?: string[];
@@ -92,7 +93,7 @@ function buildUnderstanding(opts: {
   return {
     merchant_name: opts.merchantName,
     merchant_search_queries: opts.searchQueries ?? [opts.merchantName],
-    address_text: null,
+    address_text: opts.addressText ?? null,
     location_clues: opts.locationClues ?? [],
     vendor_category: opts.vendorCategory ?? "food_and_drink",
     google_place_types: opts.placeTypes ?? ["cafe"],
@@ -200,9 +201,13 @@ interface MockPlace {
  * actually invoked, independent of the response contents. */
 function makeMockFetch(
   places: MockPlace[],
-  opts?: { fail?: boolean; onPlacesCall?: () => void },
+  opts?: {
+    fail?: boolean;
+    onPlacesCall?: () => void;
+    onRequest?: (url: string, body: Record<string, unknown>) => void;
+  },
 ): typeof fetch {
-  return (async (input: RequestInfo | URL, _init?: RequestInit) => {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string"
       ? input
       : input instanceof URL
@@ -213,6 +218,9 @@ function makeMockFetch(
         `mockFetch: unexpected non-Places call to ${url} — this test's ` +
           `fetchFn only supports places.googleapis.com`,
       );
+    }
+    if (init?.body && typeof init.body === "string") {
+      opts?.onRequest?.(url, JSON.parse(init.body) as Record<string, unknown>);
     }
     opts?.onPlacesCall?.();
     if (opts?.fail) {
@@ -791,6 +799,110 @@ Deno.test("alias gate: an at/above-floor alias hit is still trusted via the fast
   } finally {
     await deleteTransaction(txId);
     await deleteMerchantAliasByPlaceId(trustedAliasPlaceId);
+    setMode(undefined);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Receipt-first location: address on receipt → unbiased text search; merchant
+// only + share GPS → nearby + location bias preserved.
+// ---------------------------------------------------------------------------
+Deno.test("receipt address: text search has no locationBias and nearby is skipped", NET_TEST_OPTS, async () => {
+  const runId = crypto.randomUUID().slice(0, 8);
+  const txId = crypto.randomUUID();
+  const merchantName = `Receipt Addr Cafe ${runId}`;
+  const placeId = `place-receipt-addr-${runId}`;
+  const storeLat = 3.0738;
+  const storeLng = 101.5183;
+
+  setMode("off");
+  try {
+    await insertTransaction({
+      id: txId,
+      share_location_lat: 3.0,
+      share_location_lng: 101.5,
+      llm_understanding: buildUnderstanding({
+        merchantName,
+        addressText: "1 Utama Shopping Centre, Petaling Jaya",
+        locationClues: ["1 Utama"],
+      }),
+    });
+
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    let nearbyCalls = 0;
+    const mockFetch = makeMockFetch(
+      [{ id: placeId, name: merchantName, lat: storeLat, lng: storeLng, types: ["cafe"] }],
+      {
+        onRequest: (url, body) => {
+          requests.push({ url, body });
+          if (url.includes("searchNearby")) nearbyCalls++;
+        },
+      },
+    );
+    const resp = await handleEnrichTransactionRequest(buildRequest(txId), {
+      fetchFn: mockFetch,
+    });
+    assertEquals(resp.status, 200);
+
+    assertEquals(nearbyCalls, 0, "nearby search must be skipped when receipt has address");
+    const textCalls = requests.filter((r) => r.url.includes("searchText"));
+    assert(textCalls.length > 0, "expected at least one text search");
+    for (const call of textCalls) {
+      assertEquals(
+        call.body.locationBias,
+        undefined,
+        "text search must not bias toward upload GPS when receipt has address",
+      );
+    }
+
+    const row = await fetchTransaction(txId);
+    assertEquals(row.place_google_place_id, placeId);
+    assertEquals(row.place_lat, storeLat);
+  } finally {
+    await deleteTransaction(txId);
+    await deleteMerchantAliasByPlaceId(placeId);
+    setMode(undefined);
+  }
+});
+
+Deno.test("merchant only + share GPS: nearby search and locationBias still used", NET_TEST_OPTS, async () => {
+  const runId = crypto.randomUUID().slice(0, 8);
+  const txId = crypto.randomUUID();
+  const merchantName = `Nearby Only Cafe ${runId}`;
+  const placeId = `place-nearby-${runId}`;
+
+  setMode("off");
+  try {
+    await insertTransaction({
+      id: txId,
+      share_location_lat: 3.15,
+      share_location_lng: 101.7,
+      llm_understanding: buildUnderstanding({ merchantName }),
+    });
+
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const mockFetch = makeMockFetch(
+      [{ id: placeId, name: merchantName, lat: 3.15, lng: 101.7, types: ["cafe"] }],
+      { onRequest: (url, body) => requests.push({ url, body }) },
+    );
+    const resp = await handleEnrichTransactionRequest(buildRequest(txId), {
+      fetchFn: mockFetch,
+    });
+    assertEquals(resp.status, 200);
+
+    assert(
+      requests.some((r) => r.url.includes("searchNearby")),
+      "expected nearby search when receipt has no address/clue",
+    );
+    const textCall = requests.find((r) => r.url.includes("searchText"));
+    assertExists(textCall);
+    assertExists(
+      (textCall.body.locationBias as { circle?: unknown })?.circle,
+      "text search should bias toward share GPS when no receipt location signal",
+    );
+  } finally {
+    await deleteTransaction(txId);
+    await deleteMerchantAliasByPlaceId(placeId);
     setMode(undefined);
   }
 });

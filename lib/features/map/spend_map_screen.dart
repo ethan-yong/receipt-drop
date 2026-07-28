@@ -51,6 +51,20 @@ LatLng _mercatorUnproject(Offset point, double zoom) {
   return LatLng(lat, lng);
 }
 
+/// Lightweight signature of "everything about the local dataset that could
+/// change what pins the map should show" — id + sync status of every
+/// location-bearing transaction. Used to detect a locally-relevant change
+/// (new receipt, place edit landing, a background sync completing) without
+/// comparing full [TransactionView] payloads. Deliberately excludes rows
+/// with no location: an edit to an unrelated field on a placeless receipt
+/// must not trigger a map refetch.
+String mapRelevantFingerprint(List<TransactionView> rows) {
+  return rows
+      .where((t) => t.placeLat != null && t.placeLng != null)
+      .map((t) => '${t.id}:${t.syncStatus}')
+      .join(',');
+}
+
 /// Screen-pixel positions for the custom-widget pins, isolated in their own
 /// `ChangeNotifier` so a reprojection pass (every camera-move frame) only
 /// rebuilds the small overlay subtree listening to it, rather than the whole
@@ -124,6 +138,15 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   bool _reprojecting = false;
   bool _reprojectPending = false;
 
+  /// Detects locally-relevant changes (new receipt, place edit, a background
+  /// sync completing) via [mapRelevantFingerprint] and debounces a forced
+  /// viewport refetch — otherwise the map only ever refreshes on camera
+  /// movement, so returning to an already-mounted Map tab (kept alive by
+  /// `StatefulShellRoute`) after saving elsewhere would show stale pins.
+  StreamSubscription<List<TransactionView>>? _localSub;
+  String? _lastFingerprint;
+  Timer? _refetchDebounce;
+
   /// Whether the current zoom level is coarse enough that we render
   /// [GeoBucket] cluster bubbles instead of individual [MapPlaceCluster]
   /// pins. Mirrors whichever precision [_maybeFetchViewport] last fetched at.
@@ -159,10 +182,25 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       _bootstrapPlacePoints = [for (final c in clusters) LatLng(c.lat, c.lng)];
       _tryAutoFit();
     });
+    _localSub = AppServices.transactions.watchAll().listen(_onLocalTransactionsChanged);
+  }
+
+  /// See [_localSub] — debounces a forced viewport refetch whenever the
+  /// local dataset's map-relevant fingerprint changes.
+  void _onLocalTransactionsChanged(List<TransactionView> rows) {
+    final fingerprint = mapRelevantFingerprint(rows);
+    if (fingerprint == _lastFingerprint) return;
+    _lastFingerprint = fingerprint;
+    _refetchDebounce?.cancel();
+    _refetchDebounce = Timer(const Duration(milliseconds: 600), () {
+      if (mounted) unawaited(_maybeFetchViewport(force: true));
+    });
   }
 
   @override
   void dispose() {
+    _localSub?.cancel();
+    _refetchDebounce?.cancel();
     _panelController.dispose();
     _overlayPositions.dispose();
     super.dispose();
@@ -227,18 +265,30 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     _controller?.animateCamera(CameraUpdate.newLatLngZoom(shifted, zoom));
   }
 
-  /// Cluster-bubble tap: zoom into the bucket's geohash cell rather than
-  /// opening the per-place detail panel (there's no single place to show).
+  /// Cluster-bubble tap: single-place buckets open the detail panel
+  /// immediately; multi-place buckets jump straight to individual-pin zoom
+  /// instead of only fitting the coarse geohash cell (which previously
+  /// required several taps to reach place-level pins).
   void _selectBucket(GeoBucket bucket) {
-    final box = geohashBounds(bucket.bucketKey);
+    final precision = _lastZoomBucket ?? zoomBucketPrecision(11);
+    final txsInBucket = _viewportRows.where((t) {
+      if (!t.includeInCharts) return false;
+      final lat = t.placeLat;
+      final lng = t.placeLng;
+      if (lat == null || lng == null) return false;
+      return geohashAt(lat, lng, precision) == bucket.bucketKey;
+    }).toList();
+
+    final clusters = mapClusters(txsInBucket);
+    if (clusters.length == 1) {
+      _selectPlace(clusters.single);
+      return;
+    }
+
+    // Multiple distinct places: land at individual-pin zoom in one gesture.
+    const drillDownZoom = 16.0;
     _controller?.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(box.latMin, box.lngMin),
-          northeast: LatLng(box.latMax, box.lngMax),
-        ),
-        48,
-      ),
+      CameraUpdate.newLatLngZoom(LatLng(bucket.lat, bucket.lng), drillDownZoom),
     );
   }
 
