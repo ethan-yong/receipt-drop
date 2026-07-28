@@ -34,6 +34,9 @@ Future<void> main() async {
   // restored at launch and an interactive sign-in on the /auth screen.
   Supabase.instance.client.auth.onAuthStateChange.listen((state) {
     final user = state.session?.user;
+    debugPrint(
+      'onAuthStateChange: event=${state.event} userId=${user?.id}',
+    );
     if (user != null) {
       unawaited(AppServices.transactions.hydrateFromCloudIfEmpty(user.id));
     }

@@ -313,6 +313,42 @@ void main() {
     await db.close();
   });
 
+  test('ingestReceipt with guess place writes guess status without requiring lock',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/guess.png',
+        mimeType: 'image/png',
+        amountMyr: 18.0,
+        needsAmount: false,
+        merchantRaw: 'Starbucks 1 Utama',
+        categoryGuess: 'Food & Drink',
+        pickedPlaceName: 'Starbucks 1 Utama',
+        pickedPlaceGooglePlaceId: 'ChIJ_guess',
+        pickedPlaceLat: 3.15,
+        pickedPlaceLng: 101.62,
+        pickedPlaceLocked: false,
+        shareLocationLat: 3.0,
+        shareLocationLng: 101.5,
+      ),
+    );
+
+    expect(saved.placeGooglePlaceId, 'ChIJ_guess');
+    expect(saved.placeLat, closeTo(3.15, 0.0001));
+    expect(saved.placeLng, closeTo(101.62, 0.0001));
+    expect(saved.placeLat, isNot(closeTo(3.0, 0.0001)));
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+    expect(row.placeStatus, 'guess');
+
+    await db.close();
+  });
+
   test('ingestReceipt with pickedPlaceLocked writes user_locked status and place fields',
       () async {
     final db = AppDatabase.memory();

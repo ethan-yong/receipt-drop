@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Receipt-first map pin resolution (2026-07-28)
+
+**Decision**: Map pins use the merchant/address read from the receipt (LLM `address_text` / `location_clues` geocoded via Google Places), not device GPS at upload time. The confirm sheet auto-saves its receipt-derived preview place as `place_status = 'guess'`; `enrich-transaction` runs unbiased text search (no 300 m share-GPS bias, no nearby search) when the receipt carries a location signal; `get_map_transactions_in_bounds` and `place_geom` use `place_lat/lng` only. `share_location_*` is retained for enrichment fallback when the receipt has no address/clue.
+
+**Reason**: Users often scan receipts later or away from the store; anchoring pins to upload GPS placed spend bubbles at home/office instead of the merchant on the receipt.
+
+**Alternatives considered**: Dropping share GPS entirely (rejected — still useful as last-resort nearby search when OCR has merchant name only); requiring explicit user place pick (rejected — too much friction for the default capture flow).
+
+**Tradeoffs**: Receipts with garbled addresses may geocode to the wrong city-wide match; merchant-only receipts still depend on upload GPS for nearby disambiguation. Alias cache fast-path is skipped when a receipt location signal is present (share geohash would be wrong).
+
+---
+
 ## Feedback-learning system for receipt parsing (2026-07-23)
 
 **Decision**: capture every predicted-vs-confirmed diff (merchant/amount/category/line-item price) on `ReceiptConfirmSheet`, immediately before the confirm-save overwrite, into one local-first event log (`OutboxFieldCorrections` → `user_field_corrections`, owner-only RLS). Three independent surfaces derive from it, each consumed at a different layer: (1) **merchant identity** — `enrich-transaction` calls a new `upsert_merchant_alias_from_correction()` using whatever place it already resolved for the transaction, with `user_locked` picker overrides trusted immediately and free-text renames corroboration-gated (a disagreeing correction is written as a low-confidence competing row in `merchant_aliases`, promoted only after 3 recurrences — never overwrites an established entry outright); (2) **category preference** — a new owner-scoped `user_category_preferences` table (`security invoker`, not the `merchant_aliases` locked-down pattern, since this data isn't shared cross-user), updated via `upsert_category_preference()` at sync time and consulted client-side via `lookup_category_preference()` ahead of parsing, only overriding `categoryGuess` when the request's own signal is itself below 0.7 confidence and the preference has ≥2 consistent corrections; (3) **OCR misread patterns** — a client-side abstraction step (`misread_pattern_extractor.dart`) discards the actual amount and keeps only aligned single-character substitution pairs (predicted → confirmed), aggregated into a global, anonymized `ocr_misread_patterns` table via the same locked-down-table + definer-function pattern as `merchant_aliases`.

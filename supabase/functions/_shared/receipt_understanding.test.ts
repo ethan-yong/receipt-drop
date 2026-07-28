@@ -22,6 +22,8 @@ import {
   buildLlmTextQueries,
   callReceiptUnderstanding,
   extractJsonObject,
+  hasReceiptLocationSignal,
+  MAX_LINE_ITEMS,
   MAX_MERCHANT_SEARCH_QUERIES,
   parseReceiptUnderstanding,
   resolveIncludedTypes,
@@ -552,4 +554,42 @@ Deno.test("callReceiptUnderstanding reports fetch failures", async () => {
   );
   assert(!result.ok);
   assert(result.error.startsWith("llm_fetch_failed"));
+});
+
+Deno.test("hasReceiptLocationSignal is true for address or location clues", () => {
+  const withAddress = parseReceiptUnderstanding(JSON.stringify({
+    merchant_name: "Cafe",
+    merchant_search_queries: ["Cafe"],
+    address_text: "1 Utama, Petaling Jaya",
+    location_clues: [],
+    vendor_category: "food_and_drink",
+    google_place_types: ["cafe"],
+    line_items: [],
+    confidence: { merchant: 0.9, address: 0.8, category: 0.9, line_items: 0 },
+  }))!;
+  assert(hasReceiptLocationSignal(withAddress));
+
+  const withClue = parseReceiptUnderstanding(JSON.stringify({
+    merchant_name: "Cafe",
+    merchant_search_queries: ["Cafe"],
+    address_text: null,
+    location_clues: ["Pavilion KL"],
+    vendor_category: "food_and_drink",
+    google_place_types: ["cafe"],
+    line_items: [],
+    confidence: { merchant: 0.9, address: 0.4, category: 0.9, line_items: 0 },
+  }))!;
+  assert(hasReceiptLocationSignal(withClue));
+
+  const merchantOnly = parseReceiptUnderstanding(JSON.stringify({
+    merchant_name: "Cafe",
+    merchant_search_queries: ["Cafe"],
+    address_text: null,
+    location_clues: [],
+    vendor_category: "food_and_drink",
+    google_place_types: ["cafe"],
+    line_items: [],
+    confidence: { merchant: 0.9, address: 0, category: 0.9, line_items: 0 },
+  }))!;
+  assertEquals(hasReceiptLocationSignal(merchantOnly), false);
 });

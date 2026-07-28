@@ -281,15 +281,20 @@ String _receiptNumber(String id) {
 }
 
 /// Every receipt card is exactly this tall, no matter how many line items it
-/// has — the items scroll inside the card instead of growing it. Keep it at
-/// [ReceiptCardCarousel]'s viewport height minus the newest-card gold border
-/// wrapper (2 × (3px border + 3px padding)).
+/// has — the items scroll inside the card instead of growing it. The carousel
+/// viewport adds 10px for the newest-card gold frame (5px per side).
 const kReceiptCardHeight = 500.0;
+const kReceiptCardBorderRadius = 26.0;
 
 const _illustrationHeight = 190.0;
 
 class ReceiptCard extends StatelessWidget {
-  const ReceiptCard({super.key, required this.tx, this.onTap});
+  const ReceiptCard({
+    super.key,
+    required this.tx,
+    this.onTap,
+    this.margin = const EdgeInsets.symmetric(horizontal: 6),
+  });
 
   final TransactionView tx;
 
@@ -299,6 +304,10 @@ class ReceiptCard extends StatelessWidget {
   /// item row wires this callback instead. Taps on the rest of the card are
   /// left to ancestors.
   final VoidCallback? onTap;
+
+  /// Outer spacing around the card. Set to zero when a parent wrapper (e.g.
+  /// the newest-receipt gold border) should hug the card edge.
+  final EdgeInsetsGeometry margin;
 
   @override
   Widget build(BuildContext context) {
@@ -312,18 +321,20 @@ class ReceiptCard extends StatelessWidget {
     final items = tx.lineItems ?? const <ReceiptLineItem>[];
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 6),
+      margin: margin,
       height: kReceiptCardHeight,
       decoration: BoxDecoration(
         color: palette.top,
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x2E3C2814),
-            blurRadius: 44,
-            offset: Offset(0, 20),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(kReceiptCardBorderRadius),
+        boxShadow: margin == EdgeInsets.zero
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x2E3C2814),
+                  blurRadius: 44,
+                  offset: Offset(0, 20),
+                ),
+              ],
       ),
       clipBehavior: Clip.hardEdge,
       child: Column(

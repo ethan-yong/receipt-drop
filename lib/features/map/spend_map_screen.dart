@@ -265,18 +265,30 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     _controller?.animateCamera(CameraUpdate.newLatLngZoom(shifted, zoom));
   }
 
-  /// Cluster-bubble tap: zoom into the bucket's geohash cell rather than
-  /// opening the per-place detail panel (there's no single place to show).
+  /// Cluster-bubble tap: single-place buckets open the detail panel
+  /// immediately; multi-place buckets jump straight to individual-pin zoom
+  /// instead of only fitting the coarse geohash cell (which previously
+  /// required several taps to reach place-level pins).
   void _selectBucket(GeoBucket bucket) {
-    final box = geohashBounds(bucket.bucketKey);
+    final precision = _lastZoomBucket ?? zoomBucketPrecision(11);
+    final txsInBucket = _viewportRows.where((t) {
+      if (!t.includeInCharts) return false;
+      final lat = t.placeLat;
+      final lng = t.placeLng;
+      if (lat == null || lng == null) return false;
+      return geohashAt(lat, lng, precision) == bucket.bucketKey;
+    }).toList();
+
+    final clusters = mapClusters(txsInBucket);
+    if (clusters.length == 1) {
+      _selectPlace(clusters.single);
+      return;
+    }
+
+    // Multiple distinct places: land at individual-pin zoom in one gesture.
+    const drillDownZoom = 16.0;
     _controller?.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(box.latMin, box.lngMin),
-          northeast: LatLng(box.latMax, box.lngMax),
-        ),
-        48,
-      ),
+      CameraUpdate.newLatLngZoom(LatLng(bucket.lat, bucket.lng), drillDownZoom),
     );
   }
 

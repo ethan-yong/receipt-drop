@@ -67,18 +67,23 @@ class _TopBadgesGridState extends State<TopBadgesGrid> {
     AvatarRepository.saveTopBadgeOrder(ids);
   }
 
-  Widget _badgeTile(BadgeEntry e) {
-    return BadgeHex(
-      badge: e.badge,
-      earned: e.earned,
-      tier: e.tier,
-      showLabel: true,
-      onTap: () => BadgeDetailDialog.show(
-        context,
+  Widget _badgeTile(BadgeEntry e, double cellWidth) {
+    final hexSize = cellWidth;
+    return SizedBox(
+      width: cellWidth,
+      child: BadgeHex(
         badge: e.badge,
         earned: e.earned,
-        progress: e.progress,
         tier: e.tier,
+        size: hexSize,
+        showLabel: true,
+        onTap: () => BadgeDetailDialog.show(
+          context,
+          badge: e.badge,
+          earned: e.earned,
+          progress: e.progress,
+          tier: e.tier,
+        ),
       ),
     );
   }
@@ -121,34 +126,48 @@ class _TopBadgesGridState extends State<TopBadgesGrid> {
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
-                mainAxisSpacing: AppSpacing.md,
+                mainAxisSpacing: AppSpacing.sm,
                 crossAxisSpacing: AppSpacing.sm,
-                childAspectRatio: 0.72,
+                // Sized for full cell-width hex + label (see LayoutBuilder).
+                childAspectRatio: 0.84,
               ),
               itemCount: current.length,
               itemBuilder: (context, index) {
                 final e = current[index];
-                return DragTarget<int>(
-                  onWillAcceptWithDetails: (details) => details.data != index,
-                  onAcceptWithDetails: (details) =>
-                      _reorder(current, details.data, index),
-                  builder: (context, candidateData, rejectedData) {
-                    final tile = _tileWithHandle(_badgeTile(e));
-                    return AnimatedScale(
-                      scale: candidateData.isNotEmpty ? 1.1 : 1.0,
-                      duration: const Duration(milliseconds: 150),
-                      child: LongPressDraggable<int>(
-                        data: index,
-                        feedback: Opacity(
-                          opacity: 0.85,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: _tileWithHandle(_badgeTile(e)),
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tile = _tileWithHandle(
+                      _badgeTile(e, constraints.maxWidth),
+                    );
+                    return DragTarget<int>(
+                      onWillAcceptWithDetails: (details) =>
+                          details.data != index,
+                      onAcceptWithDetails: (details) =>
+                          _reorder(current, details.data, index),
+                      builder: (context, candidateData, rejectedData) {
+                        return Align(
+                          alignment: Alignment.topCenter,
+                          child: AnimatedScale(
+                            scale: candidateData.isNotEmpty ? 1.1 : 1.0,
+                            duration: const Duration(milliseconds: 150),
+                            child: LongPressDraggable<int>(
+                              data: index,
+                              feedback: Opacity(
+                                opacity: 0.85,
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: _tileWithHandle(
+                                    _badgeTile(e, constraints.maxWidth),
+                                  ),
+                                ),
+                              ),
+                              childWhenDragging:
+                                  Opacity(opacity: 0.3, child: tile),
+                              child: tile,
+                            ),
                           ),
-                        ),
-                        childWhenDragging: Opacity(opacity: 0.3, child: tile),
-                        child: tile,
-                      ),
+                        );
+                      },
                     );
                   },
                 );

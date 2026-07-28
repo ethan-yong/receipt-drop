@@ -28,9 +28,8 @@ class ReceiptCardCarousel extends StatefulWidget {
 
 class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     with TickerProviderStateMixin {
-  // Card height plus the newest-card gold border wrapper (4px border, no
-  // padding, hugging the card directly, on each side).
-  static const _viewportHeight = kReceiptCardHeight + 8;
+  // Card height plus the newest-card gold frame (5px per side).
+  static const _viewportHeight = kReceiptCardHeight + 10;
   static const _rotateInterval = Duration(seconds: 5);
   static const _resumeDelay = Duration(milliseconds: 400);
   static const _dotChainDelay = Duration(milliseconds: 700);
@@ -544,21 +543,41 @@ class _CardVisual extends StatelessWidget {
   final VoidCallback onTap;
 
   static const _gold = Color(0xFFF6C64B);
+  static const _borderWidth = 5.0;
 
   @override
   Widget build(BuildContext context) {
-    final card = ReceiptCard(tx: tx, onTap: onTap);
+    final card = ReceiptCard(
+      tx: tx,
+      onTap: onTap,
+      margin: EdgeInsets.zero,
+    );
     if (!isNewest) return card;
 
+    // Solid gold padding reads as a crisp frame; Border.all on DecoratedBox
+    // was easy to lose against the page background (only the shadow showed).
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
           decoration: BoxDecoration(
-            border: Border.all(color: _gold, width: 4),
-            borderRadius: BorderRadius.circular(30),
+            color: _gold,
+            borderRadius: BorderRadius.circular(
+              kReceiptCardBorderRadius + _borderWidth,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x40DCAA28),
+                blurRadius: 12,
+                offset: Offset(0, 6),
+              ),
+            ],
           ),
-          child: card,
+          padding: const EdgeInsets.all(_borderWidth),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(kReceiptCardBorderRadius),
+            child: card,
+          ),
         ),
         Positioned(
           left: 0,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -141,22 +142,20 @@ class TransactionRepository {
             cleanedOcrText: Value(encoded.cleanedOcrText),
             ocrCorrectionsJson: Value(encoded.ocrCorrectionsJson),
             placeName: Value(
-              request.pickedPlaceLocked ? request.pickedPlaceName : null,
+              _hasResolvedPlace(request) ? request.pickedPlaceName : null,
             ),
             placeGooglePlaceId: Value(
-              request.pickedPlaceLocked
+              _hasResolvedPlace(request)
                   ? request.pickedPlaceGooglePlaceId
                   : null,
             ),
             placeLat: Value(
-              request.pickedPlaceLocked ? request.pickedPlaceLat : null,
+              _hasResolvedPlace(request) ? request.pickedPlaceLat : null,
             ),
             placeLng: Value(
-              request.pickedPlaceLocked ? request.pickedPlaceLng : null,
+              _hasResolvedPlace(request) ? request.pickedPlaceLng : null,
             ),
-            placeStatus: Value(
-              request.pickedPlaceLocked ? 'user_locked' : 'none',
-            ),
+            placeStatus: Value(_placeStatusFor(request)),
           ),
         );
 
@@ -198,36 +197,12 @@ class TransactionRepository {
 
     unawaited(SyncWorker.run(_db, id));
 
-    return TransactionView(
-      id: id,
-      occurredAt: now,
-      amountMyr: request.amountMyr,
-      needsAmount: request.needsAmount,
-      merchantRaw: request.merchantRaw,
-      categoryGuess: request.categoryGuess,
-      categoryUser: null,
-      placeName: request.pickedPlaceLocked ? request.pickedPlaceName : null,
-      placeGooglePlaceId: request.pickedPlaceLocked
-          ? request.pickedPlaceGooglePlaceId
-          : null,
-      placeLat: request.pickedPlaceLocked
-          ? request.pickedPlaceLat
-          : request.shareLocationLat,
-      placeLng: request.pickedPlaceLocked
-          ? request.pickedPlaceLng
-          : request.shareLocationLng,
-      syncStatus: 'pending',
-      pipelineStatus: pipelineStatus,
-      localThumbnailPath: request.localFilePath,
-      remoteStoragePath: null,
-      thumbnailBytes: request.thumbnailBytes,
-      impactUser: request.impactUser,
-      lineItems: request.lineItems,
-      rawOcrText: request.rawOcrText,
-      ocrConfidence: request.ocrConfidence,
-      shareLocationLat: request.shareLocationLat,
-      shareLocationLng: request.shareLocationLng,
-    );
+    final row = await (_db.select(_db.outboxTransactions)
+          ..where((t) => t.id.equals(id)))
+        .getSingle();
+    final artifact = await _artifactFor(id);
+    final lineItems = await _lineItemsFor(id);
+    return _mapRow(row, artifact, lineItems);
   }
 
   /// Replace the single artifact for [transactionId] and overwrite OCR-derived
@@ -419,12 +394,21 @@ class TransactionRepository {
   /// bad network moment can never crash startup; the next sign-in event or
   /// launch gets another chance.
   Future<void> hydrateFromCloudIfEmpty(String userId) async {
-    if (!Env.hasSupabaseConfig) return;
+    debugPrint('hydrateFromCloudIfEmpty: called for userId=$userId');
+    if (!Env.hasSupabaseConfig) {
+      debugPrint('hydrateFromCloudIfEmpty: no Supabase config, skipping');
+      return;
+    }
 
     final existing = await (_db.select(
       _db.outboxTransactions,
     )..where((t) => t.userId.equals(userId))).get();
-    if (existing.isNotEmpty) return;
+    if (existing.isNotEmpty) {
+      debugPrint(
+        'hydrateFromCloudIfEmpty: ${existing.length} local rows already exist for this userId, skipping',
+      );
+      return;
+    }
 
     try {
       final client = Supabase.instance.client;
@@ -438,6 +422,7 @@ class TransactionRepository {
           .eq('user_id', userId)
           .order('occurred_at', ascending: false)
           .limit(500) as List;
+      debugPrint('hydrateFromCloudIfEmpty: fetched ${remoteTx.length} remote rows');
       if (remoteTx.isEmpty) return;
 
       final txIds = [
@@ -534,9 +519,11 @@ class TransactionRepository {
             ),
         ]);
       });
-    } on Object {
+      debugPrint('hydrateFromCloudIfEmpty: batch insert succeeded');
+    } on Object catch (e, st) {
       // Offline / transient failure — the empty-check above means the next
       // sign-in event or app launch gets another chance.
+      debugPrint('TransactionRepository.hydrateFromCloudIfEmpty: $e\n$st');
     }
   }
 
@@ -722,25 +709,34 @@ class TransactionRepository {
       impactUser: request.impactUser != null
           ? Value(request.impactUser)
           : const Value.absent(),
-      placeName: request.pickedPlaceLocked
+      placeName: _hasResolvedPlace(request)
           ? Value(request.pickedPlaceName)
           : const Value.absent(),
-      placeGooglePlaceId: request.pickedPlaceLocked
+      placeGooglePlaceId: _hasResolvedPlace(request)
           ? Value(request.pickedPlaceGooglePlaceId)
           : const Value.absent(),
-      placeLat: request.pickedPlaceLocked
+      placeLat: _hasResolvedPlace(request)
           ? Value(request.pickedPlaceLat)
           : const Value.absent(),
-      placeLng: request.pickedPlaceLocked
+      placeLng: _hasResolvedPlace(request)
           ? Value(request.pickedPlaceLng)
           : const Value.absent(),
-      placeStatus: request.pickedPlaceLocked
-          ? const Value('user_locked')
+      placeStatus: _hasResolvedPlace(request)
+          ? Value(_placeStatusFor(request))
           : const Value.absent(),
       pipelineStatus: Value(pipelineStatus),
       syncStatus: const Value('pending'),
       retryCount: const Value(0),
     );
+  }
+
+  static bool _hasResolvedPlace(IngestReceiptRequest request) =>
+      request.pickedPlaceLat != null && request.pickedPlaceLng != null;
+
+  static String _placeStatusFor(IngestReceiptRequest request) {
+    if (request.pickedPlaceLocked) return 'user_locked';
+    if (_hasResolvedPlace(request)) return 'guess';
+    return 'none';
   }
 
   TransactionView _mapRow(
