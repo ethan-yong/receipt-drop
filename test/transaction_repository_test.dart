@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/data/local/app_database.dart';
 import 'package:receipt_drop/data/repositories/ingest_receipt_request.dart';
@@ -389,6 +390,47 @@ void main() {
     await db.close();
   });
 
+  test(
+      'updateTransaction re-queues sync instead of silently leaving edits '
+      'unsynced', () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/edit_me.png',
+        mimeType: 'image/png',
+        amountMyr: 15.0,
+        needsAmount: false,
+        merchantRaw: 'Edit Cafe',
+        categoryGuess: 'Food & Drink',
+      ),
+    );
+
+    // Simulate a receipt that already finished its initial sync, so this
+    // test actually exercises "an edit re-queues sync" rather than
+    // coincidentally passing because ingestReceipt already leaves new rows
+    // pending.
+    await (db.update(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .write(const OutboxTransactionsCompanion(syncStatus: Value('synced')));
+
+    final beforeEdit = await repo.getById(saved.id);
+    final updated = beforeEdit!.copyWith(amountMyr: 30.0, categoryUser: 'Groceries');
+    await repo.updateTransaction(updated);
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+
+    expect(row.amountMyr, 30.0);
+    expect(row.categoryUser, 'Groceries');
+    expect(row.syncStatus, 'pending');
+    expect(row.retryCount, 0);
+
+    await db.close();
+  });
+
   test('resolveDisplayImage returns local when file exists', () async {
     final db = AppDatabase.memory();
     final repo = TransactionRepository(db);
@@ -525,6 +567,36 @@ void main() {
         .get();
     expect(lineItems, hasLength(1));
     expect(lineItems.single.name, 'New Item');
+
+    await db.close();
+  });
+
+  test(
+      'hydrateFromCloudIfEmpty is a no-op when this user already has local rows',
+      () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/receipt.png',
+        mimeType: 'image/png',
+        amountMyr: 10,
+        needsAmount: false,
+        merchantRaw: 'Existing Cafe',
+        categoryGuess: 'Food & Drink',
+        userId: 'user-1',
+      ),
+    );
+
+    // No Supabase config in the test environment either way, but the
+    // existing-local-rows guard must short-circuit before any network call
+    // is attempted, and must never duplicate or wipe what's already there.
+    await repo.hydrateFromCloudIfEmpty('user-1');
+
+    final rows = await repo.watchAll().first;
+    expect(rows, hasLength(1));
+    expect(rows.single.merchantRaw, 'Existing Cafe');
 
     await db.close();
   });

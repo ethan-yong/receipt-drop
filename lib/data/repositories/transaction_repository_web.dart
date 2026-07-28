@@ -217,6 +217,10 @@ class TransactionRepository {
     _emit();
   }
 
+  /// No-op on web: this repository is in-memory only (Drift/SQLite uses
+  /// dart:ffi, native only) and has nothing durable to hydrate into.
+  Future<void> hydrateFromCloudIfEmpty(String userId) async {}
+
   Future<void> deleteTransaction(String id) async {
     _rows.removeWhere((r) => r.id == id);
     _emit();
