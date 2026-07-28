@@ -1,0 +1,222 @@
+"""LangGraph insight-curation workflow.
+
+Phase 2: SignalLoader → insight_router → Critic (one LLM call).
+Phase 3: when use_specialists=True, router fans out via Send to specialist
+nodes; Critic fans in over reducer-merged drafts.
+
+http_client is passed through RunnableConfig.configurable so it never
+lands in LLM prompt state. userId is intentionally absent from graph state.
+"""
+
+from __future__ import annotations
+
+import logging
+import operator
+from typing import Annotated, Any, TypedDict
+
+import httpx
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import Send
+
+from ocr_api.insight_curator import (
+    ALLOWED_TYPES,
+    CuratedInsightOut,
+    CurateInsightsResponse,
+    InsightCandidateIn,
+    run_critic,
+    template_fallback,
+)
+from ocr_api.insights.insight_router import route_candidates
+from ocr_api.insights.specialist_agents import run_specialist
+from ocr_api.receipt_understanding import ReceiptUnderstandingError
+
+logger = logging.getLogger("ocr_api.insights.graph")
+
+_CRITIC_OVER_DRAFTS_PROMPT = """\
+You are a friendly spending-insights critic for a Malaysian receipt tracker.
+You receive a JSON list of insight DRAFTS already reasoned over by specialist
+agents. Each has type, fact_key, facts, severity, and an optional template_hint
+(the specialist's draft sentence).
+
+Your job:
+1. Deduplicate drafts that say essentially the same thing.
+2. Rank by usefulness/novelty (prefer higher severity when tied).
+3. Select at most 3.
+4. Rewrite each into ONE short, encouraging, non-judgmental sentence in English.
+   Never invent numbers, categories, places, or facts not present in that
+   draft's facts/template_hint. Never compare the user to other people.
+   Never frame observations as warnings or budgets. Keep one consistent voice.
+
+Respond with ONLY a JSON object:
+{"insights":[{"type":"...","fact_key":"...","body":"..."}, ...]}
+
+type must be one of: spending_spike, category_shift, habit, streak, forecast.
+fact_key must exactly match a draft's fact_key.
+"""
+
+
+class InsightGraphState(TypedDict, total=False):
+    raw_candidates: list[InsightCandidateIn]
+    signals: list[InsightCandidateIn]
+    selected_agents: list[str]
+    agent_signals: dict[str, list[InsightCandidateIn]]
+    # Reducer-merged list so parallel specialist branches accumulate drafts
+    # instead of clobbering each other (the highest-risk Phase 3 bug).
+    candidate_insights: Annotated[list[InsightCandidateIn], operator.add]
+    final_insights: list[CuratedInsightOut]
+    use_llm: bool
+    use_specialists: bool
+    engagement_weights: dict[str, float]
+
+
+class SpecialistState(TypedDict, total=False):
+    agent: str
+    signals: list[InsightCandidateIn]
+    use_llm: bool
+
+
+def signal_loader(state: InsightGraphState) -> dict[str, Any]:
+    raw = state.get("raw_candidates") or []
+    sanitized = [c for c in raw if c.type in ALLOWED_TYPES and c.fact_key][:20]
+    return {
+        "signals": sanitized,
+        "candidate_insights": [],
+        "final_insights": [],
+        "selected_agents": [],
+        "agent_signals": {},
+    }
+
+
+def router_node(state: InsightGraphState) -> dict[str, Any]:
+    decision = route_candidates(
+        state.get("signals") or [],
+        engagement_weights=state.get("engagement_weights"),
+    )
+    agent_signals = {
+        agent: decision.signals_for(agent) for agent in decision.selected_agents
+    }
+    return {
+        "selected_agents": decision.selected_agents,
+        "agent_signals": agent_signals,
+        # When specialists are off, seed drafts with the eligible pool so
+        # Critic still has something to rewrite (Phase 2 path).
+        "candidate_insights": (
+            []
+            if state.get("use_specialists")
+            else [r.candidate for r in decision.eligible]
+        ),
+    }
+
+
+def _after_router(state: InsightGraphState) -> list[Send] | str:
+    agents = state.get("selected_agents") or []
+    if not agents:
+        return END
+    if not state.get("use_specialists"):
+        return "critic"
+    return [
+        Send(
+            "specialist",
+            {
+                "agent": agent,
+                "signals": (state.get("agent_signals") or {}).get(agent, []),
+                "use_llm": bool(state.get("use_llm", True)),
+            },
+        )
+        for agent in agents
+    ]
+
+
+async def specialist_node(
+    state: SpecialistState, config: RunnableConfig
+) -> dict[str, Any]:
+    """One specialist branch. Errors degrade to empty contribution."""
+    http_client: httpx.AsyncClient = config["configurable"]["http_client"]
+    agent = state.get("agent") or ""
+    signals = state.get("signals") or []
+    use_llm = bool(state.get("use_llm", True))
+    try:
+        drafts = await run_specialist(
+            agent, signals, http_client=http_client, use_llm=use_llm
+        )
+    except Exception:
+        logger.exception("specialist node %s crashed — empty contribution", agent)
+        drafts = []
+    return {"candidate_insights": drafts}
+
+
+async def critic_node(
+    state: InsightGraphState, config: RunnableConfig
+) -> dict[str, Any]:
+    http_client: httpx.AsyncClient = config["configurable"]["http_client"]
+    drafts = state.get("candidate_insights") or []
+    use_llm = bool(state.get("use_llm", True))
+    if not drafts:
+        return {"final_insights": []}
+
+    prompt = _CRITIC_OVER_DRAFTS_PROMPT if state.get("use_specialists") else None
+    try:
+        result = await run_critic(
+            drafts,
+            http_client=http_client,
+            use_llm=use_llm,
+            system_prompt=prompt,
+        )
+    except ReceiptUnderstandingError:
+        logger.exception("critic LLM failed — template fallback")
+        result = template_fallback(drafts)
+    return {"final_insights": result.insights}
+
+
+def build_insight_graph():
+    """Compile the curation graph. Safe to call once and reuse."""
+    g = StateGraph(InsightGraphState)
+    g.add_node("signal_loader", signal_loader)
+    g.add_node("router", router_node)
+    g.add_node("specialist", specialist_node)
+    g.add_node("critic", critic_node)
+
+    g.add_edge(START, "signal_loader")
+    g.add_edge("signal_loader", "router")
+    g.add_conditional_edges("router", _after_router, ["critic", "specialist", END])
+    g.add_edge("specialist", "critic")
+    g.add_edge("critic", END)
+    return g.compile()
+
+
+_compiled = None
+
+
+def get_insight_graph():
+    global _compiled
+    if _compiled is None:
+        _compiled = build_insight_graph()
+    return _compiled
+
+
+async def run_insight_graph(
+    candidates: list[InsightCandidateIn],
+    *,
+    http_client: httpx.AsyncClient,
+    use_llm: bool = True,
+    use_specialists: bool = False,
+    engagement_weights: dict[str, float] | None = None,
+) -> CurateInsightsResponse:
+    """Public entry point used by POST /curate-insights."""
+    graph = get_insight_graph()
+    result = await graph.ainvoke(
+        {
+            "raw_candidates": candidates,
+            "use_llm": use_llm,
+            "use_specialists": use_specialists,
+            "engagement_weights": engagement_weights or {},
+            "candidate_insights": [],
+            "final_insights": [],
+            "signals": [],
+            "selected_agents": [],
+            "agent_signals": {},
+        },
+        config={"configurable": {"http_client": http_client}},
+    )
+    return CurateInsightsResponse(insights=result.get("final_insights") or [])

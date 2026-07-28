@@ -69,6 +69,9 @@ class InsightCandidateIn(BaseModel):
 
 class CurateInsightsRequest(BaseModel):
     candidates: list[InsightCandidateIn]
+    # Optional Phase 4 payload: per-insight_type dismiss counts from
+    # spending_insights. Ignored when absent (backward compatible).
+    dismiss_counts: dict[str, int] | None = None
 
 
 class CuratedInsightOut(BaseModel):
@@ -153,17 +156,23 @@ def template_fallback(
     return CurateInsightsResponse(insights=out)
 
 
-async def call_insight_curator(
-    candidates: list[InsightCandidateIn],
+async def run_critic(
+    eligible: list[InsightCandidateIn],
     *,
     http_client: httpx.AsyncClient,
     use_llm: bool = True,
+    system_prompt: str | None = None,
 ) -> CurateInsightsResponse:
-    sanitized = [c for c in candidates if c.type in ALLOWED_TYPES and c.fact_key][:20]
-    if not sanitized:
+    """Dedupe/rank/rewrite pass over an already-routed candidate (or draft) pool.
+
+    This is the Critic node body. Does not re-run the insight_router — callers
+    (call_insight_curator, the LangGraph critic node) must supply the eligible
+    slice. On malformed LLM output, degrades to template_fallback.
+    """
+    if not eligible:
         return CurateInsightsResponse(insights=[])
     if not use_llm:
-        return template_fallback(sanitized)
+        return template_fallback(eligible)
 
     cfg = resolve_llm_config()
     url = _chat_completions_url(cfg.base_url)
@@ -171,6 +180,7 @@ async def call_insight_curator(
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
 
+    prompt = system_prompt or _SYSTEM_PROMPT
     payload_candidates = [
         {
             "type": c.type,
@@ -179,10 +189,10 @@ async def call_insight_curator(
             "severity": c.severity,
             **({"template_hint": c.template_hint} if c.template_hint else {}),
         }
-        for c in sanitized
+        for c in eligible
     ]
     messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": prompt},
         {
             "role": "user",
             "content": json.dumps({"candidates": payload_candidates}),
@@ -230,8 +240,29 @@ async def call_insight_curator(
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise ReceiptUnderstandingError("llm_invalid_response_json", str(exc)) from exc
 
-    parsed = parse_curated_insights(content, sanitized)
+    parsed = parse_curated_insights(content, eligible)
     if parsed is None:
         logger.warning("curator LLM response unusable — falling back to templates")
-        return template_fallback(sanitized)
+        return template_fallback(eligible)
     return parsed
+
+
+async def call_insight_curator(
+    candidates: list[InsightCandidateIn],
+    *,
+    http_client: httpx.AsyncClient,
+    use_llm: bool = True,
+    engagement_weights: dict[str, float] | None = None,
+) -> CurateInsightsResponse:
+    """Legacy/direct path: sanitize → route → critic. Prefer run_insight_graph."""
+    sanitized = [c for c in candidates if c.type in ALLOWED_TYPES and c.fact_key][:20]
+    if not sanitized:
+        return CurateInsightsResponse(insights=[])
+
+    from ocr_api.insights.insight_router import route_candidates
+
+    decision = route_candidates(sanitized, engagement_weights=engagement_weights)
+    if decision.is_empty:
+        return CurateInsightsResponse(insights=[])
+    eligible = [r.candidate for r in decision.eligible]
+    return await run_critic(eligible, http_client=http_client, use_llm=use_llm)

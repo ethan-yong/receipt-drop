@@ -16,6 +16,13 @@ dependencies = [
   # Outbound async call to the LLM gateway in ocr_api/receipt_understanding.py —
   # also used by FastAPI's TestClient in dev, hence still listed there too.
   "httpx>=0.28.0",
+  # Insight curation graph (Phases 2+). Pin major version — the StateGraph /
+  # reducer / Send API this migration depends on has broken across minors
+  # historically, and this service has no lock file. langchain-core is an
+  # explicit dep too: graph.py imports RunnableConfig directly, and a bare
+  # langgraph install can leave it unresolved in some editable/.venv setups.
+  "langgraph>=1.2.0,<2.0",
+  "langchain-core>=0.3.0,<2.0",
 ]
 
 [project.scripts]

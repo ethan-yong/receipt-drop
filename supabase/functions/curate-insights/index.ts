@@ -27,7 +27,7 @@ const ALLOWED_TYPES = new Set([
   "forecast",
 ]);
 
-const UPSTREAM_TIMEOUT_MS = 30_000;
+const UPSTREAM_TIMEOUT_MS = 55_000;
 const MAX_INSIGHTS = 3;
 
 Deno.serve(async (req) => {

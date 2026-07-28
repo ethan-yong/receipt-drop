@@ -26,6 +26,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Orchestrator-driven insight curation via LangGraph (2026-07-28)
+
+**Decision**: Replace the single-call curator in `services/ocr-api/ocr_api/insight_curator.py` with a LangGraph state graph under `ocr_api/insights/` (`insight_router` → optional specialist agents → Critic). Routing stays rule-based (never an LLM). Module is named `insight_router` (not `orchestrator`) to avoid colliding with `ocr_api/skills/orchestrator.py`. Specialist LLM agents are gated by `INSIGHTS_SPECIALIST_AGENTS_ENABLED` (default off). `langgraph` is pinned `>=1.2.0,<2.0` in `pyproject.toml`. Edge Function `UPSTREAM_TIMEOUT_MS` raised to 55s for the two-hop critical path. Optional `dismiss_counts` on the request enables Phase-4 engagement-weighted routing without a schema change.
+
+**Reason**: Per-domain prompt iteration and explicit cheap pre-LLM routing ("should we reason about category behavior this cycle?") without rewriting the on-device detectors, persistence, or client UI. Wire contract of `POST /curate-insights` unchanged.
+
+**Alternatives considered**: LLM-based orchestrator (rejected — 5-type vocabulary is a lookup table); hand-rolled async fan-out without LangGraph (rejected — explicit ask for LangGraph's reducer/`Send` semantics); splitting insights into a separate deployable from `/ocr` (rejected — disproportionate vs. smoke test + version pin + memory measurement on the existing single-replica pod).
+
+**Tradeoffs**: New dependency on the capture-critical-path service (mitigated by startup smoke test and soft-degrade on graph failure); Phase 3 roughly doubles worst-case latency and needs vLLM concurrency headroom; complexity increases for a small team iterating rarely on this surface.
+
+---
+
 ## Receipt-first map pin resolution (2026-07-28)
 
 **Decision**: Map pins use the merchant/address read from the receipt (LLM `address_text` / `location_clues` geocoded via Google Places), not device GPS at upload time. The confirm sheet auto-saves its receipt-derived preview place as `place_status = 'guess'`; `enrich-transaction` runs unbiased text search (no 300 m share-GPS bias, no nearby search) when the receipt carries a location signal; `get_map_transactions_in_bounds` and `place_geom` use `place_lat/lng` only. `share_location_*` is retained for enrichment fallback when the receipt has no address/clue.

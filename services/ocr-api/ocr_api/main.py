@@ -16,8 +16,9 @@ from ocr_api.auth import verify_ocr_secret
 from ocr_api.insight_curator import (
     CurateInsightsRequest,
     CurateInsightsResponse,
-    call_insight_curator,
+    template_fallback,
 )
+from ocr_api.insights.graph import run_insight_graph
 from ocr_api.models import OcrLine, OcrResponse, OcrWord
 from ocr_api.ocr_engine import (
     _token_level_confidence_enabled,
@@ -313,20 +314,36 @@ async def curate_insights(
     request: Request, body: CurateInsightsRequest
 ) -> CurateInsightsResponse:
     """Rewrite a small structured insight-candidate pool into 1-3 friendly
-    sentences. Soft-degrades to template strings when the LLM is unavailable
-    (unlike /understand's no-fallback testing-phase stance — insights must
-    never fail loudly for the user)."""
+    sentences via the LangGraph curation workflow (insight_router → optional
+    specialists → Critic). Soft-degrades to template strings when the LLM is
+    unavailable (unlike /understand's no-fallback testing-phase stance —
+    insights must never fail loudly for the user)."""
     use_llm = os.environ.get("INSIGHTS_CURATOR_LLM", "1") == "1"
+    use_specialists = os.environ.get("INSIGHTS_SPECIALIST_AGENTS_ENABLED", "0") == "1"
+    engagement_weights = None
+    if body.dismiss_counts:
+        from ocr_api.insights.adaptive_routing import (
+            engagement_weights_from_dismiss_counts,
+        )
+
+        engagement_weights = engagement_weights_from_dismiss_counts(body.dismiss_counts)
     try:
-        return await call_insight_curator(
+        return await run_insight_graph(
             body.candidates,
             http_client=request.app.state.http_client,
             use_llm=use_llm,
+            use_specialists=use_specialists,
+            engagement_weights=engagement_weights,
         )
     except ReceiptUnderstandingError:
         logger.exception("insight curator LLM failed — template fallback")
-        from ocr_api.insight_curator import template_fallback
-
+        return template_fallback(
+            [c for c in body.candidates if c.type and c.fact_key][:20]
+        )
+    except Exception:
+        # Graph/langgraph plumbing failure must never take down the request
+        # as a 500 for the user — soft-degrade like a curator timeout.
+        logger.exception("insight graph failed — template fallback")
         return template_fallback(
             [c for c in body.candidates if c.type and c.fact_key][:20]
         )
