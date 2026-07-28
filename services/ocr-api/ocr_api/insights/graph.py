@@ -21,6 +21,7 @@ from langgraph.types import Send
 
 from ocr_api.insight_curator import (
     ALLOWED_TYPES,
+    CRITIC_SYSTEM_PROMPT,
     CuratedInsightOut,
     CurateInsightsResponse,
     InsightCandidateIn,
@@ -28,32 +29,13 @@ from ocr_api.insight_curator import (
     template_fallback,
 )
 from ocr_api.insights.insight_router import route_candidates
+from ocr_api.insights.prefilter import prefilter_candidates
 from ocr_api.insights.specialist_agents import run_specialist
 from ocr_api.receipt_understanding import ReceiptUnderstandingError
 
 logger = logging.getLogger("ocr_api.insights.graph")
 
-_CRITIC_OVER_DRAFTS_PROMPT = """\
-You are a friendly spending-insights critic for a Malaysian receipt tracker.
-You receive a JSON list of insight DRAFTS already reasoned over by specialist
-agents. Each has type, fact_key, facts, severity, and an optional template_hint
-(the specialist's draft sentence).
-
-Your job:
-1. Deduplicate drafts that say essentially the same thing.
-2. Rank by usefulness/novelty (prefer higher severity when tied).
-3. Select at most 3.
-4. Rewrite each into ONE short, encouraging, non-judgmental sentence in English.
-   Never invent numbers, categories, places, or facts not present in that
-   draft's facts/template_hint. Never compare the user to other people.
-   Never frame observations as warnings or budgets. Keep one consistent voice.
-
-Respond with ONLY a JSON object:
-{"insights":[{"type":"...","fact_key":"...","body":"..."}, ...]}
-
-type must be one of: spending_spike, category_shift, habit, streak, forecast.
-fact_key must exactly match a draft's fact_key.
-"""
+_CRITIC_OVER_DRAFTS_PROMPT = CRITIC_SYSTEM_PROMPT
 
 
 class InsightGraphState(TypedDict, total=False):
@@ -61,6 +43,8 @@ class InsightGraphState(TypedDict, total=False):
     signals: list[InsightCandidateIn]
     selected_agents: list[str]
     agent_signals: dict[str, list[InsightCandidateIn]]
+    dismissed_fact_keys: list[str]
+    dismiss_counts: dict[str, int]
     # Reducer-merged list so parallel specialist branches accumulate drafts
     # instead of clobbering each other (the highest-risk Phase 3 bug).
     candidate_insights: Annotated[list[InsightCandidateIn], operator.add]
@@ -79,8 +63,13 @@ class SpecialistState(TypedDict, total=False):
 def signal_loader(state: InsightGraphState) -> dict[str, Any]:
     raw = state.get("raw_candidates") or []
     sanitized = [c for c in raw if c.type in ALLOWED_TYPES and c.fact_key][:20]
+    filtered = prefilter_candidates(
+        sanitized,
+        dismissed_fact_keys=state.get("dismissed_fact_keys"),
+        dismiss_counts=state.get("dismiss_counts"),
+    )
     return {
-        "signals": sanitized,
+        "signals": filtered,
         "candidate_insights": [],
         "final_insights": [],
         "selected_agents": [],
@@ -92,6 +81,7 @@ def router_node(state: InsightGraphState) -> dict[str, Any]:
     decision = route_candidates(
         state.get("signals") or [],
         engagement_weights=state.get("engagement_weights"),
+        dismiss_counts=state.get("dismiss_counts"),
     )
     agent_signals = {
         agent: decision.signals_for(agent) for agent in decision.selected_agents
@@ -162,6 +152,8 @@ async def critic_node(
             http_client=http_client,
             use_llm=use_llm,
             system_prompt=prompt,
+            dismissed_fact_keys=state.get("dismissed_fact_keys"),
+            dismiss_counts=state.get("dismiss_counts"),
         )
     except ReceiptUnderstandingError:
         logger.exception("critic LLM failed — template fallback")
@@ -202,6 +194,8 @@ async def run_insight_graph(
     use_llm: bool = True,
     use_specialists: bool = False,
     engagement_weights: dict[str, float] | None = None,
+    dismissed_fact_keys: list[str] | None = None,
+    dismiss_counts: dict[str, int] | None = None,
 ) -> CurateInsightsResponse:
     """Public entry point used by POST /curate-insights."""
     graph = get_insight_graph()
@@ -211,6 +205,8 @@ async def run_insight_graph(
             "use_llm": use_llm,
             "use_specialists": use_specialists,
             "engagement_weights": engagement_weights or {},
+            "dismissed_fact_keys": dismissed_fact_keys or [],
+            "dismiss_counts": dismiss_counts or {},
             "candidate_insights": [],
             "final_insights": [],
             "signals": [],

@@ -61,7 +61,11 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "unauthorized" }, 401);
   }
 
-  let body: { candidates?: unknown };
+  let body: {
+    candidates?: unknown;
+    dismissed_fact_keys?: unknown;
+    dismiss_counts?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -72,6 +76,9 @@ Deno.serve(async (req) => {
   if (candidates.length === 0) {
     return jsonResponse({ insights: [] });
   }
+
+  const dismissedFactKeys = sanitizeStringList(body.dismissed_fact_keys);
+  const dismissCounts = sanitizeDismissCounts(body.dismiss_counts);
 
   const ocrServiceUrl = Deno.env.get("OCR_SERVICE_URL");
   const ocrServiceSecret = Deno.env.get("OCR_SERVICE_SECRET");
@@ -96,7 +103,11 @@ Deno.serve(async (req) => {
           "X-OCR-Secret": ocrServiceSecret,
           ...cfAccessHeaders(cfAccessClientId, cfAccessClientSecret),
         },
-        body: JSON.stringify({ candidates }),
+        body: JSON.stringify({
+          candidates,
+          dismissed_fact_keys: dismissedFactKeys,
+          dismiss_counts: dismissCounts,
+        }),
         signal: controller.signal,
       },
     );
@@ -211,17 +222,19 @@ function validateCurated(
   fact_key: string;
   body: string;
   facts?: Record<string, unknown>;
+  priority?: number;
 }> {
   if (!raw || typeof raw !== "object") return [];
   const list = (raw as { insights?: unknown }).insights;
   if (!Array.isArray(list)) return [];
 
   const byFact = new Map(candidates.map((c) => [c.fact_key, c]));
-  const out: Array<{
+  const parsed: Array<{
     type: string;
     fact_key: string;
     body: string;
     facts?: Record<string, unknown>;
+    priority: number;
   }> = [];
   const seen = new Set<string>();
 
@@ -235,14 +248,50 @@ function validateCurated(
         : typeof rec.factKey === "string"
         ? rec.factKey
         : "";
-    const body = typeof rec.body === "string" ? rec.body.trim() : "";
+    const legacyBody = typeof rec.body === "string" ? rec.body.trim() : "";
+    const title = typeof rec.title === "string" ? rec.title.trim() : "";
+    const description =
+      typeof rec.description === "string" ? rec.description.trim() : "";
+    let body = legacyBody;
+    if (!body && description) {
+      body = title ? `${title}. ${description}` : description;
+    }
+    const priorityRaw = rec.priority;
+    const priority =
+      typeof priorityRaw === "number" && Number.isFinite(priorityRaw)
+        ? Math.max(0, Math.min(1, priorityRaw))
+        : 0;
     if (!ALLOWED_TYPES.has(type) || !factKey || !body) continue;
     if (seen.has(factKey)) continue;
     const source = byFact.get(factKey);
-    if (!source || source.type !== type) continue; // no fabricated facts
+    if (!source || source.type !== type) continue;
     seen.add(factKey);
-    out.push({ type, fact_key: factKey, body, facts: source.facts });
-    if (out.length >= MAX_INSIGHTS) break;
+    parsed.push({
+      type,
+      fact_key: factKey,
+      body,
+      facts: source.facts,
+      priority,
+    });
+  }
+
+  parsed.sort((a, b) => b.priority - a.priority);
+  return parsed.slice(0, MAX_INSIGHTS);
+}
+
+function sanitizeStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is string => typeof x === "string" && x.length > 0);
+}
+
+function sanitizeDismissCounts(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof k !== "string" || !k) continue;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+      out[k] = Math.floor(v);
+    }
   }
   return out;
 }

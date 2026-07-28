@@ -334,16 +334,28 @@ async def curate_insights(
             use_llm=use_llm,
             use_specialists=use_specialists,
             engagement_weights=engagement_weights,
+            dismissed_fact_keys=body.dismissed_fact_keys,
+            dismiss_counts=body.dismiss_counts,
         )
     except ReceiptUnderstandingError:
         logger.exception("insight curator LLM failed — template fallback")
-        return template_fallback(
-            [c for c in body.candidates if c.type and c.fact_key][:20]
+        from ocr_api.insights.prefilter import prefilter_candidates
+
+        filtered = prefilter_candidates(
+            [c for c in body.candidates if c.type and c.fact_key][:20],
+            dismissed_fact_keys=body.dismissed_fact_keys,
+            dismiss_counts=body.dismiss_counts,
         )
+        return template_fallback(filtered)
     except Exception:
         # Graph/langgraph plumbing failure must never take down the request
         # as a 500 for the user — soft-degrade like a curator timeout.
         logger.exception("insight graph failed — template fallback")
-        return template_fallback(
-            [c for c in body.candidates if c.type and c.fact_key][:20]
+        from ocr_api.insights.prefilter import prefilter_candidates
+
+        filtered = prefilter_candidates(
+            [c for c in body.candidates if c.type and c.fact_key][:20],
+            dismissed_fact_keys=body.dismissed_fact_keys,
+            dismiss_counts=body.dismiss_counts,
         )
+        return template_fallback(filtered)

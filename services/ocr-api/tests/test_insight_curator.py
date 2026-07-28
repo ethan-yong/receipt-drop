@@ -41,6 +41,32 @@ def test_parse_accepts_valid_payload():
     assert parsed.insights[0].type == "streak"
 
 
+def test_parse_accepts_title_description_format():
+    raw = """
+    {"insights":[
+      {"type":"streak","fact_key":"streak:3:2026-07-28",
+       "title":"Nice streak",
+       "description":"You logged receipts 3 days in a row.",
+       "priority":0.9}
+    ]}
+    """
+    parsed = parse_curated_insights(raw, _cands())
+    assert parsed is not None
+    assert len(parsed.insights) == 1
+    assert parsed.insights[0].body == "Nice streak. You logged receipts 3 days in a row."
+    assert parsed.insights[0].priority == 0.9
+
+
+def test_parse_rejects_invented_numbers():
+    raw = """
+    {"insights":[
+      {"type":"streak","fact_key":"streak:3:2026-07-28",
+       "description":"You had 99 days in a row"}
+    ]}
+    """
+    assert parse_curated_insights(raw, _cands()) is None
+
+
 def test_parse_rejects_unknown_type():
     raw = """
     {"insights":[

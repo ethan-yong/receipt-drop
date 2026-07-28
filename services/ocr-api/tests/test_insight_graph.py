@@ -47,6 +47,25 @@ async def test_phase2_graph_empty_pool_skips_llm(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
+async def test_prefilter_weak_pool_skips_llm(monkeypatch: pytest.MonkeyPatch):
+    """Below-floor candidates must not reach the Critic."""
+    called = {"n": 0}
+
+    async def _boom(*args, **kwargs):
+        called["n"] += 1
+        raise AssertionError("LLM must not be called for pre-filtered pool")
+
+    monkeypatch.setattr("ocr_api.insights.graph.run_critic", _boom)
+    cands = [_c("streak", "streak:1", severity=0.2)]
+    async with httpx.AsyncClient() as client:
+        result = await run_insight_graph(
+            cands, http_client=client, use_llm=True, use_specialists=False
+        )
+    assert result.insights == []
+    assert called["n"] == 0
+
+
+@pytest.mark.asyncio
 async def test_phase2_graph_template_path_no_llm(monkeypatch: pytest.MonkeyPatch):
     cands = [_c("streak", "streak:3"), _c("habit", "habit:tealive")]
     async with httpx.AsyncClient() as client:

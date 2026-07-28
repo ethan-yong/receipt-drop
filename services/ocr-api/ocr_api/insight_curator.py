@@ -37,26 +37,70 @@ ALLOWED_TYPES = frozenset(
 MAX_INSIGHTS = 3
 LLM_MAX_TOKENS = 600
 
-_SYSTEM_PROMPT = """\
-You are a friendly spending-insights curator for a Malaysian receipt tracker.
-You receive a JSON list of insight CANDIDATES. Each has type, fact_key, facts,
-severity, and an optional template_hint.
+CRITIC_SYSTEM_PROMPT = """\
+You are the Insight Critic for Receipt Drop, a Malaysian receipt-first spend tracker.
+You are a friendly spending companion — never a financial advisor, coach, or budget app.
 
-Your job:
-1. Deduplicate candidates that say essentially the same thing.
-2. Rank by usefulness/novelty (prefer higher severity when tied).
-3. Select at most 3.
-4. Rewrite each selected candidate into ONE short, encouraging, non-judgmental
-   sentence in English. Never invent numbers, categories, places, or facts
-   that are not present in that candidate's facts/template_hint. Never compare
-   the user to other people. Never frame observations as warnings or budgets.
+You receive ONE JSON object with:
+- "candidates": pre-filtered insight candidates. Each has:
+  type, fact_key, facts, severity, and optional template_hint
+  (detector or specialist draft text — NOT authoritative wording).
+- "user_feedback" (optional):
+  dismissed_fact_keys: string[]
+  dismiss_counts: { [fact_key]: number }
 
-Respond with ONLY a JSON object:
-{"insights":[{"type":"...","fact_key":"...","body":"..."}, ...]}
+ALLOWED types ONLY:
+spending_spike, category_shift, habit, streak, forecast.
 
-type must be one of: spending_spike, category_shift, habit, streak, forecast.
-fact_key must exactly match a candidate's fact_key.
+YOUR JOB (in order):
+1) DISCARD any candidate whose fact_key is in dismissed_fact_keys, or whose
+   facts you cannot support, or that invents content you would need to add.
+2) DEDUPLICATE: same type + same category/merchant/place = one idea.
+   Cross-type same entity = keep the higher-severity candidate only.
+3) RANK by: severity (and any specialist confidence implied in hints),
+   then novelty vs dismiss_counts (higher dismiss count = lower rank),
+   then type diversity.
+4) SELECT at most 3. Prefer fewer strong insights over many weak ones.
+   Returning zero insights is allowed and preferred over weak filler.
+5) WRITE user-facing copy:
+   - Always REWRITE; do not paste template_hint or specialist drafts.
+   - title: short label (≤6 words), no emoji required.
+   - description: ONE short encouraging non-judgmental English sentence.
+   - priority: number 0..1 reflecting your final rank strength.
+   - Use ONLY numbers/names/categories that appear in that candidate's facts
+     (or clearly in its template_hint). Never invent.
+   - Never compare the user to other people.
+   - Never warn, shame, or prescribe budgets/limits.
+   - Vary openings: no two descriptions may start with the same three words.
+
+MERGE RULE:
+Do not create a new fact_key. If two candidates are the same idea, keep the
+winner's fact_key and facts only.
+
+OUTPUT:
+Respond with ONLY a JSON object (no markdown, no commentary):
+{
+  "insights": [
+    {
+      "type": "habit",
+      "fact_key": "must-match-a-candidate-fact_key",
+      "title": "Coffee is becoming a habit",
+      "description": "You visited Starbucks 5 times this week.",
+      "priority": 0.82
+    }
+  ]
+}
+
+Constraints:
+- insights length ≤ 3
+- each type must match the source candidate with that fact_key
+- each fact_key must exactly match an input candidate
+- unique fact_keys in the array
+- if nothing strong remains, return {"insights":[]}
 """
+
+# Legacy alias for imports that reference _SYSTEM_PROMPT.
+_SYSTEM_PROMPT = CRITIC_SYSTEM_PROMPT
 
 
 class InsightCandidateIn(BaseModel):
@@ -69,8 +113,8 @@ class InsightCandidateIn(BaseModel):
 
 class CurateInsightsRequest(BaseModel):
     candidates: list[InsightCandidateIn]
-    # Optional Phase 4 payload: per-insight_type dismiss counts from
-    # spending_insights. Ignored when absent (backward compatible).
+    dismissed_fact_keys: list[str] | None = None
+    # Per fact_key dismiss counts from the client (aggregated to type weights server-side).
     dismiss_counts: dict[str, int] | None = None
 
 
@@ -78,6 +122,7 @@ class CuratedInsightOut(BaseModel):
     type: str
     fact_key: str
     body: str
+    priority: float = 0.0
 
 
 class CurateInsightsResponse(BaseModel):
@@ -94,6 +139,46 @@ def _extract_json_object(raw: str) -> str | None:
     if start == -1 or end == -1 or end <= start:
         return None
     return s[start : end + 1]
+
+
+def _allowed_numeric_tokens(source: InsightCandidateIn) -> set[str]:
+    """Tokens the Critic may use in title/description for this candidate."""
+    allowed: set[str] = set()
+    for v in (source.facts or {}).values():
+        if v is None:
+            continue
+        allowed.add(str(v))
+    if source.template_hint:
+        allowed.update(re.findall(r"\d+(?:\.\d+)?", source.template_hint))
+    return allowed
+
+
+def _body_invents_numbers(body: str, source: InsightCandidateIn) -> bool:
+    """True if body contains numeric tokens not traceable to facts/hint."""
+    nums_in_body = set(re.findall(r"\d+(?:\.\d+)?", body))
+    if not nums_in_body:
+        return False
+    allowed = _allowed_numeric_tokens(source)
+    return not nums_in_body.issubset(allowed)
+
+
+def _compose_body(
+    *,
+    body: str | None,
+    title: str | None,
+    description: str | None,
+) -> str | None:
+    if body and body.strip():
+        return body.strip()
+    desc = (description or "").strip()
+    tit = (title or "").strip()
+    if tit and desc:
+        return f"{tit}. {desc}"
+    if desc:
+        return desc
+    if tit:
+        return tit
+    return None
 
 
 def parse_curated_insights(
@@ -114,31 +199,57 @@ def parse_curated_insights(
         return None
 
     by_fact = {c.fact_key: c for c in candidates}
-    out: list[CuratedInsightOut] = []
+    parsed: list[tuple[float, CuratedInsightOut]] = []
     seen: set[str] = set()
     for entry in items:
         if not isinstance(entry, dict):
             continue
         typ = entry.get("type")
         fact_key = entry.get("fact_key") or entry.get("factKey")
-        body = entry.get("body")
+        title = entry.get("title")
+        description = entry.get("description")
+        legacy_body = entry.get("body")
+        priority_raw = entry.get("priority")
         if not isinstance(typ, str) or typ not in ALLOWED_TYPES:
             continue
         if not isinstance(fact_key, str) or not fact_key:
             continue
-        if not isinstance(body, str) or not body.strip():
+        body = _compose_body(
+            body=legacy_body if isinstance(legacy_body, str) else None,
+            title=title if isinstance(title, str) else None,
+            description=description if isinstance(description, str) else None,
+        )
+        if not body:
             continue
         if fact_key in seen:
             continue
         source = by_fact.get(fact_key)
         if source is None or source.type != typ:
             continue
+        if len(body) > 200:
+            continue
+        if isinstance(title, str) and len(title.strip()) > 60:
+            continue
+        if _body_invents_numbers(body, source):
+            continue
+        priority = 0.0
+        if isinstance(priority_raw, (int, float)):
+            priority = max(0.0, min(1.0, float(priority_raw)))
         seen.add(fact_key)
-        out.append(CuratedInsightOut(type=typ, fact_key=fact_key, body=body.strip()))
-        if len(out) >= MAX_INSIGHTS:
-            break
-    if not out:
+        parsed.append(
+            (
+                priority,
+                CuratedInsightOut(
+                    type=typ, fact_key=fact_key, body=body, priority=priority
+                ),
+            )
+        )
+
+    if not parsed:
         return None
+
+    parsed.sort(key=lambda x: x[0], reverse=True)
+    out = [item for _, item in parsed[:MAX_INSIGHTS]]
     return CurateInsightsResponse(insights=out)
 
 
@@ -152,7 +263,14 @@ def template_fallback(
         body = (c.template_hint or "").strip()
         if not body:
             body = f"Something notable about your {c.type.replace('_', ' ')}"
-        out.append(CuratedInsightOut(type=c.type, fact_key=c.fact_key, body=body))
+        out.append(
+            CuratedInsightOut(
+                type=c.type,
+                fact_key=c.fact_key,
+                body=body,
+                priority=c.severity,
+            )
+        )
     return CurateInsightsResponse(insights=out)
 
 
@@ -162,6 +280,8 @@ async def run_critic(
     http_client: httpx.AsyncClient,
     use_llm: bool = True,
     system_prompt: str | None = None,
+    dismissed_fact_keys: list[str] | None = None,
+    dismiss_counts: dict[str, int] | None = None,
 ) -> CurateInsightsResponse:
     """Dedupe/rank/rewrite pass over an already-routed candidate (or draft) pool.
 
@@ -180,7 +300,7 @@ async def run_critic(
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"
 
-    prompt = system_prompt or _SYSTEM_PROMPT
+    prompt = system_prompt or CRITIC_SYSTEM_PROMPT
     payload_candidates = [
         {
             "type": c.type,
@@ -191,11 +311,17 @@ async def run_critic(
         }
         for c in eligible
     ]
+    user_payload: dict[str, object] = {"candidates": payload_candidates}
+    if dismissed_fact_keys or dismiss_counts:
+        user_payload["user_feedback"] = {
+            "dismissed_fact_keys": dismissed_fact_keys or [],
+            "dismiss_counts": dismiss_counts or {},
+        }
     messages = [
         {"role": "system", "content": prompt},
         {
             "role": "user",
-            "content": json.dumps({"candidates": payload_candidates}),
+            "content": json.dumps(user_payload),
         },
     ]
 

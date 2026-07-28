@@ -30,10 +30,11 @@ SIGNAL_TO_AGENT: dict[str, str] = {
     "forecast": "forecast_agent",
 }
 
-# Permissive floor matching detector-side .clamp(0.3, …) — pass through almost
-# everything that qualified on-device; tighten only after real distributions
-# are observed.
-DEFAULT_SEVERITY_FLOOR = 0.3
+# Raised from 0.3 — prefilter uses 0.45; router stays aligned for specialist path.
+DEFAULT_SEVERITY_FLOOR = 0.45
+
+SOFT_BAN_THRESHOLD = 5
+SOFT_BAN_RESURFACE_SEVERITY = 0.85
 
 # Optional per-type overrides (all equal to the default for now).
 SEVERITY_FLOOR_BY_TYPE: dict[str, float] = {
@@ -71,6 +72,7 @@ def route_candidates(
     *,
     severity_floors: dict[str, float] | None = None,
     engagement_weights: dict[str, float] | None = None,
+    dismiss_counts: dict[str, int] | None = None,
 ) -> RoutingDecision:
     """Tag candidates with specialist agent names; filter by severity floor.
 
@@ -81,6 +83,7 @@ def route_candidates(
     """
     floors = severity_floors or SEVERITY_FLOOR_BY_TYPE
     weights = engagement_weights or {}
+    counts = dismiss_counts or {}
     eligible: list[RoutedSignal] = []
     dropped_below = 0
     dropped_unknown = 0
@@ -90,6 +93,13 @@ def route_candidates(
         agent = SIGNAL_TO_AGENT.get(c.type)
         if agent is None:
             dropped_unknown += 1
+            continue
+        dismiss_n = counts.get(c.fact_key, 0)
+        if (
+            dismiss_n >= SOFT_BAN_THRESHOLD
+            and c.severity < SOFT_BAN_RESURFACE_SEVERITY
+        ):
+            dropped_below += 1
             continue
         floor = floors.get(c.type, DEFAULT_SEVERITY_FLOOR)
         weight = weights.get(c.type, 1.0)

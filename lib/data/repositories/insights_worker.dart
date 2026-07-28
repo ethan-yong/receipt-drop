@@ -67,7 +67,15 @@ class InsightsWorker {
       if (kInsightsUseTemplateFallback) {
         curated = templateCurate(candidates);
       } else {
-        curated = await _callCurator(candidates) ?? const [];
+        final feedback = await repo.curatorFeedbackPayload();
+        curated = await _callCurator(
+          candidates,
+          dismissedFactKeys: (feedback['dismissed_fact_keys'] as List)
+              .cast<String>(),
+          dismissCounts:
+              Map<String, int>.from(feedback['dismiss_counts'] as Map),
+        ) ??
+            const [];
       }
 
       if (curated.isEmpty) return;
@@ -126,13 +134,17 @@ class InsightsWorker {
   }
 
   static Future<List<CuratedInsight>?> _callCurator(
-    List<InsightCandidate> candidates,
-  ) async {
+    List<InsightCandidate> candidates, {
+    required List<String> dismissedFactKeys,
+    required Map<String, int> dismissCounts,
+  }) async {
     try {
       final response = await Supabase.instance.client.functions.invoke(
         'curate-insights',
         body: {
           'candidates': [for (final c in candidates) c.toJson()],
+          'dismissed_fact_keys': dismissedFactKeys,
+          'dismiss_counts': dismissCounts,
         },
       );
       if (response.status != 200) return null;

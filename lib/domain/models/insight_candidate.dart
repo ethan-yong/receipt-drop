@@ -104,13 +104,26 @@ class CuratedInsight {
     final id = json['id'];
     final type = json['type'];
     final factKey = json['fact_key'] ?? json['factKey'];
-    final body = json['body'];
     final rank = json['rank'];
     final createdAt = json['created_at'] ?? json['createdAt'];
     if (id is! String || id.isEmpty) return null;
     if (type is! String || !kInsightTypes.contains(type)) return null;
     if (factKey is! String || factKey.isEmpty) return null;
-    if (body is! String || body.trim().isEmpty) return null;
+    final bodyRaw = json['body'];
+    final title = json['title'];
+    final description = json['description'];
+    String? body;
+    if (bodyRaw is String && bodyRaw.trim().isNotEmpty) {
+      body = bodyRaw.trim();
+    } else if (description is String && description.trim().isNotEmpty) {
+      final desc = description.trim();
+      if (title is String && title.trim().isNotEmpty) {
+        body = '${title.trim()}. $desc';
+      } else {
+        body = desc;
+      }
+    }
+    if (body == null || body.isEmpty) return null;
     DateTime? parsed;
     if (createdAt is String) {
       parsed = DateTime.tryParse(createdAt);
@@ -121,7 +134,7 @@ class CuratedInsight {
       id: id,
       type: type,
       factKey: factKey,
-      body: body.trim(),
+      body: body,
       rank: rank is num ? rank.toInt() : 0,
       createdAt: parsed ?? DateTime.now(),
       dismissed: json['dismissed'] == true,

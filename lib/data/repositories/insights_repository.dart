@@ -33,7 +33,28 @@ class InsightsRepository {
     return rows.map(_mapRow).toList();
   }
 
-  /// All fact keys ever dismissed — used to suppress resurfacing.
+  /// Per fact_key dismissal counts for curator personalization.
+  Future<Map<String, int>> dismissCountsByFactKey() async {
+    final rows = await (_db.select(_db.localSpendingInsights)
+          ..where((t) => t.dismissed.equals(true)))
+        .get();
+    final counts = <String, int>{};
+    for (final r in rows) {
+      counts[r.factKey] = (counts[r.factKey] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  /// User feedback payload for the curator Edge Function.
+  Future<Map<String, dynamic>> curatorFeedbackPayload() async {
+    final dismissed = await dismissedFactKeys();
+    final counts = await dismissCountsByFactKey();
+    return {
+      'dismissed_fact_keys': dismissed.toList(),
+      'dismiss_counts': counts,
+    };
+  }
+
   Future<Set<String>> dismissedFactKeys() async {
     final rows = await (_db.select(_db.localSpendingInsights)
           ..where((t) => t.dismissed.equals(true)))
