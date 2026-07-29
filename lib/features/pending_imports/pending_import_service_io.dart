@@ -88,8 +88,10 @@ abstract final class PendingImportService {
       return (stream: notifier.stream, dispose: notifier.dispose);
     }
 
-    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+    final draft = await Navigator.of(context, rootNavigator: true)
+        .push<ReceiptIngestDraft>(
       MaterialPageRoute<ReceiptIngestDraft>(
+        fullscreenDialog: true,
         builder: (_) => ReceiptScanProcessingScreen(
           attemptFactory: startAttempt,
           batchProgress: batchProgress,

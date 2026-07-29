@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -115,15 +116,20 @@ const _itemRowExtentEstimate = 38.0;
 class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   late final List<ReceiptLineItem> _items;
   final ScrollController _itemsScrollController = ScrollController();
+  final ScrollController _bodyScrollController = ScrollController();
+  final GlobalKey _nameFieldKey = GlobalKey();
+  final GlobalKey _priceFieldKey = GlobalKey();
   late final List<bool> _checked;
   late List<double> _prices;
   late List<String> _names;
+  late List<int> _quantities;
   late String _vendorName;
   late bool _vendorKnown;
   bool _vendorEdited = false;
   bool _editingVendor = false;
   int? _undoIndex;
   Timer? _undoTimer;
+  Timer? _ensureVisibleTimer;
   late final TextEditingController _vendorController;
   final FocusNode _vendorFocus = FocusNode();
   int? _editingPriceIndex;
@@ -157,6 +163,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _checked = List.filled(_items.length, true);
     _prices = [for (final item in _items) item.priceMyr];
     _names = [for (final item in _items) item.name];
+    _quantities = [for (final item in _items) item.quantity ?? 1];
     _vendorName = vm.merchantDisplay;
     _vendorKnown = widget.draft.merchantRaw?.trim().isNotEmpty ?? false;
     _lowConfidence = vm.isLowConfidence;
@@ -202,7 +209,9 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   @override
   void dispose() {
     _undoTimer?.cancel();
+    _ensureVisibleTimer?.cancel();
     _itemsScrollController.dispose();
+    _bodyScrollController.dispose();
     _vendorController.dispose();
     _vendorFocus.dispose();
     _priceController.dispose();
@@ -279,6 +288,13 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     return false;
   }
 
+  bool get _anyQuantityEdited {
+    for (var i = 0; i < _items.length; i++) {
+      if (_quantities[i] != (_items[i].quantity ?? 1)) return true;
+    }
+    return false;
+  }
+
   void _toggleItem(int index) {
     _commitAllPendingEdits();
     _undoTimer?.cancel();
@@ -349,6 +365,8 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
         extentOffset: _priceController.text.length,
       );
     });
+    _scrollItemIntoView(index);
+    _ensureFieldVisible(_priceFieldKey);
   }
 
   void _commitPriceEdit() {
@@ -373,6 +391,12 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
         extentOffset: _nameController.text.length,
       );
     });
+    _scrollItemIntoView(index);
+    _ensureFieldVisible(_nameFieldKey);
+  }
+
+  /// Scrolls the internal items list so [index] is near the top of that box.
+  void _scrollItemIntoView(int index) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_itemsScrollController.hasClients) return;
       final extent = _itemRowExtentEstimate;
@@ -388,6 +412,30 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     });
   }
 
+  /// Scrolls ancestor scrollables so [fieldKey] sits above the keyboard.
+  /// Runs once after the next frame and again after the keyboard animation
+  /// settles, because viewInsets usually arrive a beat after autofocus.
+  void _ensureFieldVisible(GlobalKey fieldKey) {
+    void reveal() {
+      final ctx = fieldKey.currentContext;
+      if (ctx == null || !mounted) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        // Keep the field in the upper third of the visible scroll area so
+        // the keyboard sits cleanly below it rather than covering it.
+        alignment: 0.15,
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      reveal();
+      _ensureVisibleTimer?.cancel();
+      _ensureVisibleTimer = Timer(const Duration(milliseconds: 350), reveal);
+    });
+  }
+
   void _commitNameEdit() {
     final index = _editingNameIndex;
     if (index == null) return;
@@ -398,11 +446,24 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     });
   }
 
+  Future<void> _startQuantityEdit(int index) async {
+    _commitAllPendingEdits();
+    final result = await AdaptiveSheet.showForm<int>(
+      context: context,
+      backgroundColor: ReceiptSheetColors.surface,
+      topRadius: kReceiptSheetRadius,
+      showDragHandle: false,
+      child: _QuantityPickerSheet(initialQuantity: _quantities[index]),
+    );
+    if (!mounted || result == null) return;
+    setState(() => _quantities[index] = result);
+  }
+
   /// Undo banner label using the (possibly edited) name + quantity.
   String _itemDisplayLabel(int index) {
     final name = _names[index];
-    final qty = _items[index].quantity;
-    return qty != null && qty > 1 ? '$qty× $name' : name;
+    final qty = _quantities[index];
+    return qty > 1 ? '$qty× $name' : name;
   }
 
   /// Best-effort receipt-derived location query, checked in the order the
@@ -528,7 +589,8 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   /// [widget.onSaveForLater] — the confirmed amount is passed separately to
   /// [widget.onSave], not folded into this draft's `amountMyr`.
   ReceiptIngestDraft _editedDraft() {
-    final anyItemChange = _anyExcluded || _anyPriceEdited || _anyNameEdited;
+    final anyItemChange =
+        _anyExcluded || _anyPriceEdited || _anyNameEdited || _anyQuantityEdited;
     final place = _pickedPlace ?? _previewPlace;
     return widget.draft.copyWith(
       merchantRaw: _vendorEdited ? _vendorName : null,
@@ -537,7 +599,16 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
           ? [
               for (var i = 0; i < _items.length; i++)
                 if (_checked[i])
-                  _items[i].copyWith(name: _names[i], priceMyr: _prices[i]),
+                  _items[i].copyWith(
+                    name: _names[i],
+                    priceMyr: _prices[i],
+                    // Only override when the user actually changed quantity —
+                    // otherwise preserve OCR-undetected null rather than
+                    // silently promoting it to 1 during an unrelated edit.
+                    quantity: _quantities[i] != (_items[i].quantity ?? 1)
+                        ? _quantities[i]
+                        : null,
+                  ),
             ]
           : null,
       pickedPlaceName: place?.name,
@@ -815,8 +886,8 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
                 separatorBuilder: (_, _) => const SizedBox(height: 14),
                 itemBuilder: (context, i) => _ItemRow(
                   index: i,
-                  item: _items[i],
                   displayName: _names[i],
+                  quantity: _quantities[i],
                   price: _prices[i],
                   checked: _checked[i],
                   editingPrice: _editingPriceIndex == i,
@@ -826,9 +897,12 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
                   priceFocus: _priceFocus,
                   nameController: _nameController,
                   nameFocus: _nameFocus,
+                  nameFieldKey: _editingNameIndex == i ? _nameFieldKey : null,
+                  priceFieldKey: _editingPriceIndex == i ? _priceFieldKey : null,
                   onToggle: () => _toggleItem(i),
                   onEditPrice: () => _startPriceEdit(i),
                   onEditName: () => _startNameEdit(i),
+                  onEditQuantity: () => unawaited(_startQuantityEdit(i)),
                 ),
               ),
             ),
@@ -883,20 +957,55 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       top: false,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          // When the keyboard is up, AdaptiveSheet already pads by viewInsets,
+          // so size the sheet against the remaining visible height — otherwise
+          // the pinned Save CTA eats the Flexible viewport and the focused
+          // item row stays scrolled out of sight under the keyboard.
+          maxHeight: MediaQuery.viewInsetsOf(context).bottom > 0
+              ? MediaQuery.sizeOf(context).height -
+                  MediaQuery.viewInsetsOf(context).bottom
+              : MediaQuery.sizeOf(context).height * 0.85,
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 12, 22, 26),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const ReceiptSheetHandle(),
-              const SizedBox(height: 18),
-              Flexible(child: SingleChildScrollView(child: body)),
-              const SizedBox(height: 20),
-              actions,
-            ],
+          child: Builder(
+            builder: (context) {
+              final keyboardOpen =
+                  MediaQuery.viewInsetsOf(context).bottom > 0;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const ReceiptSheetHandle(),
+                  const SizedBox(height: 18),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      controller: _bodyScrollController,
+                      // Extra bottom padding while editing so ensureVisible can
+                      // park the focused field above the keyboard comfortably.
+                      padding: EdgeInsets.only(
+                        bottom: keyboardOpen ? 24 : 0,
+                      ),
+                      child: keyboardOpen
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                body,
+                                const SizedBox(height: 20),
+                                actions,
+                              ],
+                            )
+                          : body,
+                    ),
+                  ),
+                  if (!keyboardOpen) ...[
+                    const SizedBox(height: 20),
+                    actions,
+                  ],
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -1097,8 +1206,8 @@ class _ImpactChip extends StatelessWidget {
 class _ItemRow extends StatelessWidget {
   const _ItemRow({
     required this.index,
-    required this.item,
     required this.displayName,
+    required this.quantity,
     required this.price,
     required this.checked,
     required this.editingPrice,
@@ -1110,12 +1219,15 @@ class _ItemRow extends StatelessWidget {
     required this.onToggle,
     required this.onEditPrice,
     required this.onEditName,
+    required this.onEditQuantity,
+    this.nameFieldKey,
+    this.priceFieldKey,
     this.lowConfidence = false,
   });
 
   final int index;
-  final ReceiptLineItem item;
   final String displayName;
+  final int quantity;
   final double price;
   final bool checked;
   final bool editingPrice;
@@ -1125,9 +1237,12 @@ class _ItemRow extends StatelessWidget {
   final FocusNode priceFocus;
   final TextEditingController nameController;
   final FocusNode nameFocus;
+  final Key? nameFieldKey;
+  final Key? priceFieldKey;
   final VoidCallback onToggle;
   final VoidCallback onEditPrice;
   final VoidCallback onEditName;
+  final VoidCallback onEditQuantity;
 
   @override
   Widget build(BuildContext context) {
@@ -1170,14 +1285,19 @@ class _ItemRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Opacity(
-            opacity: checked ? 1 : 0.4,
-            child: Text(
-              '×${item.quantity ?? 1}',
-              style: balooText(
-                13,
-                FontWeight.w600,
-                color: ReceiptSheetColors.subLight,
+          GestureDetector(
+            key: Key('receipt-item-quantity-$index'),
+            onTap: onEditQuantity,
+            behavior: HitTestBehavior.opaque,
+            child: Opacity(
+              opacity: checked ? 1 : 0.4,
+              child: Text(
+                '×$quantity',
+                style: balooText(
+                  13,
+                  FontWeight.w600,
+                  color: ReceiptSheetColors.subLight,
+                ),
               ),
             ),
           ),
@@ -1206,7 +1326,7 @@ class _ItemRow extends StatelessWidget {
   }
 
   Widget _nameField() {
-    return TextField(
+    final field = TextField(
       key: const Key('receipt-item-name-field'),
       controller: nameController,
       focusNode: nameFocus,
@@ -1215,6 +1335,9 @@ class _ItemRow extends StatelessWidget {
       textInputAction: TextInputAction.done,
       onSubmitted: (_) => nameFocus.unfocus(),
       cursorColor: ReceiptSheetColors.gold,
+      // Leave room below the caret so ensureVisible parks this above the
+      // keyboard rather than flush against it.
+      scrollPadding: const EdgeInsets.only(bottom: 120),
       style: balooText(
         15,
         FontWeight.w700,
@@ -1229,6 +1352,8 @@ class _ItemRow extends StatelessWidget {
         focusedBorder: InputBorder.none,
       ),
     );
+    if (nameFieldKey == null) return field;
+    return KeyedSubtree(key: nameFieldKey, child: field);
   }
 
   Widget _priceLabel() {
@@ -1249,7 +1374,7 @@ class _ItemRow extends StatelessWidget {
     const goldUnderline = UnderlineInputBorder(
       borderSide: BorderSide(color: ReceiptSheetColors.gold, width: 2),
     );
-    return SizedBox(
+    final field = SizedBox(
       width: 78,
       child: TextField(
         key: const Key('receipt-price-field'),
@@ -1261,6 +1386,7 @@ class _ItemRow extends StatelessWidget {
         textInputAction: TextInputAction.done,
         onSubmitted: (_) => priceFocus.unfocus(),
         cursorColor: ReceiptSheetColors.gold,
+        scrollPadding: const EdgeInsets.only(bottom: 120),
         style: balooText(15, FontWeight.w700),
         decoration: const InputDecoration(
           isDense: true,
@@ -1273,6 +1399,8 @@ class _ItemRow extends StatelessWidget {
         ),
       ),
     );
+    if (priceFieldKey == null) return field;
+    return KeyedSubtree(key: priceFieldKey, child: field);
   }
 }
 
@@ -1585,4 +1713,100 @@ class _DashedLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DashedLinePainter oldDelegate) => false;
+}
+
+/// Bottom-sheet wheel picker for correcting an OCR-extracted item quantity.
+/// Returns the selected int via [Navigator.pop] on Done; dismiss/scrim returns
+/// null so the caller leaves the original quantity unchanged.
+class _QuantityPickerSheet extends StatefulWidget {
+  const _QuantityPickerSheet({required this.initialQuantity});
+
+  final int initialQuantity;
+
+  @override
+  State<_QuantityPickerSheet> createState() => _QuantityPickerSheetState();
+}
+
+class _QuantityPickerSheetState extends State<_QuantityPickerSheet> {
+  /// Dynamic upper bound: enough headroom above the current value for normal
+  /// receipt quantities, with a floor so tiny starting values still feel
+  /// scrollable (e.g. qty=1 still reaches at least 30).
+  late final int _upperBound =
+      widget.initialQuantity + 20 < 30 ? 30 : widget.initialQuantity + 20;
+  late int _selected;
+  late final FixedExtentScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    final clamped = widget.initialQuantity.clamp(1, _upperBound);
+    _selected = clamped;
+    _scrollController = FixedExtentScrollController(initialItem: clamped - 1);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 12, 22, 26),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const ReceiptSheetHandle(),
+            const SizedBox(height: 18),
+            Text(
+              'Quantity',
+              textAlign: TextAlign.center,
+              style: balooText(18, FontWeight.w800, color: ReceiptSheetColors.ink),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 200,
+              child: CupertinoPicker(
+                key: const Key('receipt-quantity-picker'),
+                scrollController: _scrollController,
+                itemExtent: 48,
+                selectionOverlay: CupertinoPickerDefaultSelectionOverlay(
+                  // selectedTint is fully opaque — dial it down so the
+                  // centered number stays readable through the highlight.
+                  background: ReceiptSheetColors.selectedTint.withValues(
+                    alpha: 0.35,
+                  ),
+                ),
+                onSelectedItemChanged: (i) {
+                  setState(() => _selected = i + 1);
+                },
+                children: [
+                  for (var q = 1; q <= _upperBound; q++)
+                    Center(
+                      child: Text(
+                        '$q',
+                        style: balooText(
+                          34,
+                          FontWeight.w800,
+                          color: ReceiptSheetColors.ink,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            ReceiptSheetCta(
+              label: 'Done',
+              onPressed: () => Navigator.pop(context, _selected),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

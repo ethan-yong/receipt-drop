@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/core/theme/app_theme.dart';
@@ -363,6 +364,137 @@ void main() {
     expect(find.byKey(const Key('receipt-item-name-field')), findsNothing);
     expect(find.text('Rsb Biasa excluded'), findsOneWidget);
     expect(find.text('2 of 3 items'), findsOneWidget);
+  });
+
+  testWidgets(
+      'tapping a quantity opens a wheel picker centered on the current value',
+      (tester) async {
+    await _openSheet(tester, _draft(), (_) {});
+
+    // Teh O Limau Ais is index 1 with OCR quantity 3.
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('receipt-quantity-picker')), findsOneWidget);
+    expect(find.text('Quantity'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+
+    final picker = tester.widget<CupertinoPicker>(
+      find.byKey(const Key('receipt-quantity-picker')),
+    );
+    expect(picker.scrollController!.initialItem, 2); // qty 3 → index 2
+  });
+
+  testWidgets(
+      'confirming a quantity change updates the row and persists on save',
+      (tester) async {
+    ReceiptIngestDraft? savedDraft;
+    await _openSheet(
+      tester,
+      _draft(),
+      (_) {},
+      onSave: (amount, draft, impact) async => savedDraft = draft,
+    );
+
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Drag one itemExtent (48) up to select quantity 4.
+    await tester.drag(
+      find.byKey(const Key('receipt-quantity-picker')),
+      const Offset(0, -48),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Done'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('receipt-quantity-picker')), findsNothing);
+    expect(find.text('×4'), findsOneWidget);
+    // Total must be unchanged — quantity is display metadata only.
+    expect(_amountFieldText(tester), '19.90');
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      savedDraft!.lineItems
+          .firstWhere((i) => i.name == 'Teh O Limau Ais')
+          .quantity,
+      4,
+    );
+  });
+
+  testWidgets(
+      'dismissing the quantity picker without Done leaves the quantity unchanged',
+      (tester) async {
+    await _openSheet(tester, _draft(), (_) {});
+
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.drag(
+      find.byKey(const Key('receipt-quantity-picker')),
+      const Offset(0, -96),
+    );
+    await tester.pumpAndSettle();
+
+    // Tap the modal barrier (top of screen, above the sheet).
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('receipt-quantity-picker')), findsNothing);
+    expect(find.text('×3'), findsOneWidget);
+  });
+
+  testWidgets(
+      'untouched null quantity stays null when a sibling item is price-edited',
+      (tester) async {
+    ReceiptIngestDraft? savedDraft;
+    await _openSheet(
+      tester,
+      _draft(),
+      (_) {},
+      onSave: (amount, draft, impact) async => savedDraft = draft,
+    );
+
+    // Rsb Biasa (index 0) has quantity: null; edit its price so the
+    // lineItems rebuild path runs without a quantity override for it.
+    await tester.ensureVisible(find.text('RM 7.00'));
+    await tester.pump();
+    await tester.tap(find.text('RM 7.00'));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('receipt-price-field')), '8.00');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final rsb =
+        savedDraft!.lineItems.firstWhere((i) => i.name == 'Rsb Biasa');
+    expect(rsb.quantity, isNull);
+    expect(rsb.priceMyr, closeTo(8.00, 0.001));
+    // Sibling with an explicit OCR quantity must also keep it.
+    expect(
+      savedDraft!.lineItems
+          .firstWhere((i) => i.name == 'Teh O Limau Ais')
+          .quantity,
+      3,
+    );
   });
 
   group('field-correction capture', () {

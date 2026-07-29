@@ -109,8 +109,10 @@ class ReceiptCaptureFlow {
   }) async {
     PlatformFeedback.lightTap();
     if (!context.mounted) return;
-    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+    final draft = await Navigator.of(context, rootNavigator: true)
+        .push<ReceiptIngestDraft>(
       MaterialPageRoute<ReceiptIngestDraft>(
+        fullscreenDialog: true,
         builder: (_) => ReceiptScanProcessingScreen(
           attemptFactory: () => _startPathAttempt(path, mimeType),
         ),
@@ -125,8 +127,10 @@ class ReceiptCaptureFlow {
     required Uint8List bytes,
     required String mimeType,
   }) async {
-    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+    final draft = await Navigator.of(context, rootNavigator: true)
+        .push<ReceiptIngestDraft>(
       MaterialPageRoute<ReceiptIngestDraft>(
+        fullscreenDialog: true,
         builder: (_) => ReceiptScanProcessingScreen(
           attemptFactory: () => _startBytesAttempt(bytes, mimeType),
         ),
