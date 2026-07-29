@@ -134,14 +134,6 @@ abstract final class PendingImportService {
           completedThisReceipt = true;
         }
       },
-      onSaveForLater: (editedDraft) async {
-        await AppServices.transactions.ingestReceipt(
-          editedDraft.toNeedsReviewRequest(),
-        );
-        // Receipt is now in the review queue — remove from pending inbox.
-        await AppServices.pendingImports.delete(import.id);
-        completedThisReceipt = true;
-      },
       onCancel: (cancelledDraft) async {
         // Delete the OCR copy; keep the pending import for retry.
         await ReceiptIngestService.discardDraft(cancelledDraft);

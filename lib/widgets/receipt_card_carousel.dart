@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/platform/platform_feedback.dart';
 import '../core/theme/app_theme.dart';
 import '../domain/models/transaction_view.dart';
 import 'receipt_card.dart';
@@ -69,6 +70,7 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
   final GlobalKey _dotsKey = GlobalKey();
   double? _dotDragStartGlobalX;
   bool _dotDragMoved = false;
+  bool _scrubbing = false;
 
   bool get _busy => _previous != null;
 
@@ -224,17 +226,35 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     if (!_dotDragMoved &&
         (d.globalPosition.dx - start).abs() > _dragTapTolerance) {
       _dotDragMoved = true;
+      // One-shot enter: medium haptic + pill chrome. No continuous buzz
+      // while the finger stays down.
+      if (!_scrubbing) {
+        setState(() => _scrubbing = true);
+        PlatformFeedback.mediumTap();
+      }
     }
     if (_dotDragMoved) _setScrubIndex(_globalXToDotIndex(d.globalPosition.dx));
   }
 
   void _onDotPanEnd(DragEndDetails _) {
+    _endDotGesture();
+  }
+
+  void _onDotPanCancel() {
+    _endDotGesture();
+  }
+
+  void _endDotGesture() {
     final start = _dotDragStartGlobalX;
-    if (!_dotDragMoved && start != null) {
+    final wasTap = !_dotDragMoved && start != null;
+    if (wasTap) {
       _dotJump(_globalXToDotIndex(start));
     }
     _dotDragStartGlobalX = null;
     _dotDragMoved = false;
+    if (_scrubbing) {
+      setState(() => _scrubbing = false);
+    }
     _resumeAutoRotateSoon();
   }
 
@@ -407,12 +427,14 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
             key: _dotsKey,
             count: n,
             current: current,
+            scrubbing: _scrubbing,
             palettes: txs
                 .map((t) => receiptPaletteForCategory(t.effectiveCategory))
                 .toList(),
             onPanStart: _onDotPanStart,
             onPanUpdate: _onDotPanUpdate,
             onPanEnd: _onDotPanEnd,
+            onPanCancel: _onDotPanCancel,
           ),
         ],
       ],
@@ -618,18 +640,22 @@ class _DotIndicator extends StatelessWidget {
     super.key,
     required this.count,
     required this.current,
+    required this.scrubbing,
     required this.palettes,
     required this.onPanStart,
     required this.onPanUpdate,
     required this.onPanEnd,
+    required this.onPanCancel,
   });
 
   final int count;
   final int current;
+  final bool scrubbing;
   final List<ReceiptCardPalette> palettes;
   final GestureDragStartCallback onPanStart;
   final GestureDragUpdateCallback onPanUpdate;
   final GestureDragEndCallback onPanEnd;
+  final VoidCallback onPanCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -638,25 +664,44 @@ class _DotIndicator extends StatelessWidget {
       onPanStart: onPanStart,
       onPanUpdate: onPanUpdate,
       onPanEnd: onPanEnd,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(count, (i) {
-          final isActive = i == current;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeInOut,
-              width: isActive ? 22 : 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: isActive ? palettes[i].acc : AppColors.divider,
-                borderRadius: BorderRadius.circular(999),
+      onPanCancel: onPanCancel,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.symmetric(
+          horizontal: scrubbing ? 12 : 0,
+          vertical: scrubbing ? 6 : 0,
+        ),
+        decoration: BoxDecoration(
+          color: scrubbing
+              ? AppColors.cardSurface.withValues(alpha: 0.92)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: scrubbing ? AppColors.divider : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(count, (i) {
+            final isActive = i == current;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                width: isActive ? 22 : 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: isActive ? palettes[i].acc : AppColors.divider,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
-            ),
-          );
-        }),
+            );
+          }),
+        ),
       ),
     );
   }

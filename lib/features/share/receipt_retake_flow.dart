@@ -184,13 +184,6 @@ class ReceiptRetakeFlow {
         );
         didReplace = true;
       },
-      onSaveForLater: (editedDraft) async {
-        await AppServices.transactions.replaceArtifactAndReprocess(
-          transactionId,
-          editedDraft.toNeedsReviewRequest(),
-        );
-        didReplace = true;
-      },
       // Discards only the newly captured local file — original untouched.
       onCancel: ReceiptIngestService.discardDraft,
     );

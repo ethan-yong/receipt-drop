@@ -361,15 +361,23 @@ List<GeoBucket> bucketClusters(List<TransactionView> rows, int precision) {
   }
   return buckets.entries.map((e) {
     final txs = e.value;
-    final center = geohashCentroid(e.key);
+    // Mean of the actual transaction coordinates — not the geohash cell's
+    // geometric midpoint, which at coarse precision can be tens of km from
+    // the real data and makes tap-to-zoom land far from the visible bubble.
+    var latSum = 0.0;
+    var lngSum = 0.0;
+    for (final t in txs) {
+      latSum += t.placeLat!;
+      lngSum += t.placeLng!;
+    }
     final placeKeys = <String>{
       for (final t in txs)
         effectivePlaceKey(t.placeGooglePlaceId, t.placeLat!, t.placeLng!),
     };
     return GeoBucket(
       bucketKey: e.key,
-      lat: center.lat,
-      lng: center.lng,
+      lat: latSum / txs.length,
+      lng: lngSum / txs.length,
       receiptCount: txs.length,
       placeCount: placeKeys.length,
       dominantCategory: _dominantCategory(txs),

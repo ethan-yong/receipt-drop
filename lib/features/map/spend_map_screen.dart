@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -25,31 +24,6 @@ import 'widgets/friend_pin_sheet.dart';
 import 'widgets/place_detail_panel.dart';
 import 'widgets/spend_cluster_bubble.dart';
 import 'widgets/spend_place_marker.dart';
-
-/// Standard Web Mercator tile-pixel projection (256px tiles, doubling per
-/// zoom level) — mirrors the maths `flutter_map`'s `MapCamera.projectAtZoom`
-/// used internally. `google_maps_flutter` has no client-side equivalent, so
-/// it's reimplemented here purely for the "shift the pin up a quarter
-/// viewport" trick in `_selectPlace` — kept as synchronous math rather than
-/// an async `getScreenCoordinate` round trip, since that API is tied to the
-/// *current* camera/zoom, not the *target* zoom being animated to.
-Offset _mercatorProject(LatLng point, double zoom) {
-  final scale = 256.0 * math.pow(2, zoom);
-  final x = (point.longitude + 180) / 360 * scale;
-  final sinLat =
-      math.sin(point.latitude * math.pi / 180).clamp(-0.9999, 0.9999);
-  final y =
-      (0.5 - math.log((1 + sinLat) / (1 - sinLat)) / (4 * math.pi)) * scale;
-  return Offset(x, y);
-}
-
-LatLng _mercatorUnproject(Offset point, double zoom) {
-  final scale = 256.0 * math.pow(2, zoom);
-  final lng = point.dx / scale * 360 - 180;
-  final n = math.pi - 2 * math.pi * point.dy / scale;
-  final lat = 180 / math.pi * math.atan(0.5 * (math.exp(n) - math.exp(-n)));
-  return LatLng(lat, lng);
-}
 
 /// Lightweight signature of "everything about the local dataset that could
 /// change what pins the map should show" — id + sync status of every
@@ -249,20 +223,12 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     );
   }
 
-  /// Google-Maps-style pin tap: open the half-screen panel and zoom in with
-  /// the pin resting in the upper half (the panel covers the lower half).
+  /// Open the place-detail panel and zoom so the pin is centered on screen.
   void _selectPlace(MapPlaceCluster cluster) {
     setState(() => _selectedCluster = cluster);
     const zoom = 16.5;
     final pin = LatLng(cluster.lat, cluster.lng);
-    // Center the camera a quarter viewport south of the pin so the pin sits
-    // ~25% from the top once the panel is up.
-    final viewportHeight = MediaQuery.sizeOf(context).height;
-    final shifted = _mercatorUnproject(
-      _mercatorProject(pin, zoom) + Offset(0, viewportHeight * 0.25),
-      zoom,
-    );
-    _controller?.animateCamera(CameraUpdate.newLatLngZoom(shifted, zoom));
+    _controller?.animateCamera(CameraUpdate.newLatLngZoom(pin, zoom));
   }
 
   /// Cluster-bubble tap: single-place buckets open the detail panel
