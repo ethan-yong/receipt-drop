@@ -4,7 +4,7 @@ import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/insights_worker.dart';
 import '../../domain/models/insight_candidate.dart';
-import '../../widgets/insight_home_card.dart';
+import '../../widgets/spending_insights_card.dart';
 
 /// Detail view listing up to 3 curated insights with per-item dismiss.
 class InsightsDetailScreen extends StatelessWidget {
@@ -28,18 +28,41 @@ class InsightsDetailScreen extends StatelessWidget {
           final insights = snapshot.data ?? const [];
           if (insights.isEmpty) {
             return Center(
-              child: Text(
-                'No insights right now',
-                style: Theme.of(context).textTheme.bodyMedium,
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.lg),
+                child: Text(
+                  SpendingInsightsCardView.emptyHeadline,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                ),
               ),
             );
           }
+
+          // Prefer rank-0; fall back to newest createdAt.
+          final freshest = insights.reduce((a, b) {
+            if (a.rank != b.rank) return a.rank < b.rank ? a : b;
+            return a.createdAt.isAfter(b.createdAt) ? a : b;
+          });
+          final freshness = insightFreshnessLabel(freshest.createdAt);
+
           return ListView.separated(
             padding: const EdgeInsets.all(AppSpacing.md),
-            itemCount: insights.length,
-            separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
+            itemCount: insights.length + 1,
+            separatorBuilder: (_, index) {
+              if (index == 0) return const SizedBox(height: AppSpacing.md);
+              return const SizedBox(height: AppSpacing.sm);
+            },
             itemBuilder: (context, index) {
-              final insight = insights[index];
+              if (index == 0) {
+                return Text(
+                  freshness,
+                  style: Theme.of(context).textTheme.labelSmall,
+                );
+              }
+              final insight = insights[index - 1];
               return Dismissible(
                 key: ValueKey(insight.id),
                 direction: DismissDirection.endToStart,

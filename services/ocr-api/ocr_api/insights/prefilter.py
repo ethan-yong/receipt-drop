@@ -79,7 +79,10 @@ def _dismiss_multiplier(
         return 0.5
 
     group = _entity_group(candidate)
-    if group in dismissed_entity_groups and candidate.severity < SOFT_BAN_RESURFACE_SEVERITY:
+    if (
+        group in dismissed_entity_groups
+        and candidate.severity < SOFT_BAN_RESURFACE_SEVERITY
+    ):
         return 0.4
 
     return 1.0

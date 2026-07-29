@@ -114,7 +114,7 @@ class InsightCandidateIn(BaseModel):
 class CurateInsightsRequest(BaseModel):
     candidates: list[InsightCandidateIn]
     dismissed_fact_keys: list[str] | None = None
-    # Per fact_key dismiss counts from the client (aggregated to type weights server-side).
+    # Per fact_key dismiss counts from the client (type weights aggregated server-side).
     dismiss_counts: dict[str, int] | None = None
 
 

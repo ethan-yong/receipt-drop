@@ -84,14 +84,10 @@ def test_signals_for_returns_only_that_agents_slice():
 
 def test_soft_ban_drops_high_dismiss_count_unless_severe():
     cands = [_c("streak", "streak:3", severity=0.5)]
-    decision = route_candidates(
-        cands, dismiss_counts={"streak:3": 5}
-    )
+    decision = route_candidates(cands, dismiss_counts={"streak:3": 5})
     assert decision.is_empty
     assert decision.dropped_below_floor == 1
 
     strong = [_c("streak", "streak:3", severity=0.9)]
-    decision2 = route_candidates(
-        strong, dismiss_counts={"streak:3": 5}
-    )
+    decision2 = route_candidates(strong, dismiss_counts={"streak:3": 5})
     assert len(decision2.eligible) == 1

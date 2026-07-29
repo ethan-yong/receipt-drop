@@ -26,9 +26,21 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Spending Insights Home card: always-visible + funnel placement (2026-07-29)
+
+**Decision**: Replace the compact `InsightHomeCard` (hidden when empty, above Today's Receipts) with a Strava/Apple-Fitness-inspired `SpendingInsightsCard` that is **always visible** on Home — active state surfaces one top insight with eyebrow / headline / supporting / "View insights →"; empty state shows aspirational copy ("Your spending story is just getting started") with **no CTA, no ripple, no navigation**. Place the card **between** the receipt carousel / Drop Receipt CTA and the Badges section (Capture → Review → Understand → Reward). Timestamps stay off the Home card; a lightweight "Updated today" freshness line may appear only on the Insights detail screen.
+
+**Reason**: An invisible feature until the first curated insight undercuts habit-building and the "app noticed something about you" beat. Separating upload ("I give the app data") from insight ("the app tells me something") means the empty card must not become a disguised capture shortcut. Funnel placement keeps Review (carousel) → Understand (insights) → Reward (badges) as a readable scroll order.
+
+**Alternatives considered**: Keep hide-when-empty (rejected — contradicts the highlight-card product goal); empty-state tap → `ReceiptCaptureFlow` (rejected — blurs upload vs insight mental models); separate Insights tab / modal / banner (rejected — product constraints); charts or dense stats on the Home card (rejected — not a dashboard).
+
+**Tradeoffs**: Empty-state card always occupies vertical space on sparse accounts (accepted — better than a silent feature); headline/supporting split recovers curator `title`/`description` client-side from joined `body` rather than a schema change (template fallbacks may render headline-only).
+
+---
+
 ## Orchestrator-driven insight curation via LangGraph (2026-07-28)
 
-**Decision**: Replace the single-call curator in `services/ocr-api/ocr_api/insight_curator.py` with a LangGraph state graph under `ocr_api/insights/` (`insight_router` → optional specialist agents → Critic). Routing stays rule-based (never an LLM). Module is named `insight_router` (not `orchestrator`) to avoid colliding with `ocr_api/skills/orchestrator.py`. Specialist LLM agents are gated by `INSIGHTS_SPECIALIST_AGENTS_ENABLED` (default off). `langgraph` is pinned `>=1.2.0,<2.0` in `pyproject.toml`. Edge Function `UPSTREAM_TIMEOUT_MS` raised to 55s for the two-hop critical path. Optional `dismiss_counts` on the request enables Phase-4 engagement-weighted routing without a schema change.
+**Decision**: Replace the single-call curator in `services/ocr-api/ocr_api/insight_curator.py` with a LangGraph state graph under `ocr_api/insights/` (`insight_router` → optional specialist agents → Critic). Routing stays rule-based (never an LLM). Module is named `insight_router` (not `orchestrator`) to avoid colliding with `ocr_api/skills/orchestrator.py`. Specialist LLM agents are gated by `INSIGHTS_SPECIALIST_AGENTS_ENABLED` (default on as of 2026-07-29; set `"0"` in `ocr-api-secrets` to roll back). `langgraph` is pinned `>=1.2.0,<2.0` in `pyproject.toml`. Edge Function `UPSTREAM_TIMEOUT_MS` raised to 55s for the two-hop critical path. Optional `dismiss_counts` on the request enables Phase-4 engagement-weighted routing without a schema change.
 
 **Reason**: Per-domain prompt iteration and explicit cheap pre-LLM routing ("should we reason about category behavior this cycle?") without rewriting the on-device detectors, persistence, or client UI. Wire contract of `POST /curate-insights` unchanged.
 

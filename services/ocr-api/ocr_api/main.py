@@ -319,7 +319,7 @@ async def curate_insights(
     unavailable (unlike /understand's no-fallback testing-phase stance —
     insights must never fail loudly for the user)."""
     use_llm = os.environ.get("INSIGHTS_CURATOR_LLM", "1") == "1"
-    use_specialists = os.environ.get("INSIGHTS_SPECIALIST_AGENTS_ENABLED", "0") == "1"
+    use_specialists = os.environ.get("INSIGHTS_SPECIALIST_AGENTS_ENABLED", "1") == "1"
     engagement_weights = None
     if body.dismiss_counts:
         from ocr_api.insights.adaptive_routing import (

@@ -53,7 +53,9 @@ def test_parse_accepts_title_description_format():
     parsed = parse_curated_insights(raw, _cands())
     assert parsed is not None
     assert len(parsed.insights) == 1
-    assert parsed.insights[0].body == "Nice streak. You logged receipts 3 days in a row."
+    assert (
+        parsed.insights[0].body == "Nice streak. You logged receipts 3 days in a row."
+    )
     assert parsed.insights[0].priority == 0.9
 
 

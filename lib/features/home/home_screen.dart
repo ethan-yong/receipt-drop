@@ -16,10 +16,10 @@ import '../../domain/models/pending_import_model.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../features/share/receipt_capture_flow.dart';
 import '../../widgets/adaptive_sync_banner.dart';
-import '../../widgets/insight_home_card.dart';
 import '../../widgets/pending_drop_indicator.dart';
 import '../../widgets/receipt_card_carousel.dart';
 import '../../widgets/share_coach_mark.dart';
+import '../../widgets/spending_insights_card.dart';
 import '../../widgets/top_badges_grid.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -125,7 +125,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: AppSpacing.lg),
-                        const InsightHomeCard(),
                         Text(
                           "TODAY'S RECEIPTS",
                           style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -151,7 +150,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.lg),
+                        const SpendingInsightsCard(),
+                        const SizedBox(height: AppSpacing.lg),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           crossAxisAlignment: CrossAxisAlignment.end,

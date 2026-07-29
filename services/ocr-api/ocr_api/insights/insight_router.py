@@ -95,10 +95,7 @@ def route_candidates(
             dropped_unknown += 1
             continue
         dismiss_n = counts.get(c.fact_key, 0)
-        if (
-            dismiss_n >= SOFT_BAN_THRESHOLD
-            and c.severity < SOFT_BAN_RESURFACE_SEVERITY
-        ):
+        if dismiss_n >= SOFT_BAN_THRESHOLD and c.severity < SOFT_BAN_RESURFACE_SEVERITY:
             dropped_below += 1
             continue
         floor = floors.get(c.type, DEFAULT_SEVERITY_FLOOR)
