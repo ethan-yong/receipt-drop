@@ -148,9 +148,9 @@ void main() {
 
     // The added Category dropdown + Impact picker push item rows below the
     // fold in the test viewport — scroll them into view before tapping.
-    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
-    await tester.tap(find.text('Rsb Biasa'));
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
 
     expect(_amountFieldText(tester), '12.90');
@@ -171,9 +171,9 @@ void main() {
 
     // The added Category dropdown + Impact picker push item rows below the
     // fold in the test viewport — scroll them into view before tapping.
-    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
-    await tester.tap(find.text('Rsb Biasa'));
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
     expect(find.text('Rsb Biasa excluded'), findsOneWidget);
 
@@ -204,9 +204,9 @@ void main() {
 
     // The added Category dropdown + Impact picker push item rows below the
     // fold in the test viewport — scroll them into view before tapping.
-    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
-    await tester.tap(find.text('Rsb Biasa'));
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
 
     await tester.tap(find.text('Save'));
@@ -311,6 +311,58 @@ void main() {
       savedDraft!.lineItems.firstWhere((i) => i.name == 'Rsb Biasa').priceMyr,
       closeTo(9.50, 0.001),
     );
+  });
+
+  testWidgets(
+      'tapping an item name edits it inline and persists the correction on save',
+      (tester) async {
+    ReceiptIngestDraft? savedDraft;
+    await _openSheet(
+      tester,
+      _draft(),
+      (_) {},
+      onSave: (amount, draft, impact) async => savedDraft = draft,
+    );
+
+    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.pump();
+    await tester.tap(find.text('Rsb Biasa'));
+    await tester.pump();
+
+    final nameField = find.byKey(const Key('receipt-item-name-field'));
+    expect(nameField, findsOneWidget);
+    await tester.enterText(nameField, 'Nasi Lemak Biasa');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(nameField, findsNothing);
+    expect(find.text('Nasi Lemak Biasa'), findsOneWidget);
+    // Name edit must not toggle inclusion.
+    expect(find.text('3 of 3 items'), findsOneWidget);
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      savedDraft!.lineItems.map((i) => i.name),
+      ['Nasi Lemak Biasa', 'Teh O Limau Ais', 'Milo Ais Bungkus'],
+    );
+  });
+
+  testWidgets(
+      'tapping the checkbox still excludes an item without starting name edit',
+      (tester) async {
+    await _openSheet(tester, _draft(), (_) {});
+
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('receipt-item-name-field')), findsNothing);
+    expect(find.text('Rsb Biasa excluded'), findsOneWidget);
+    expect(find.text('2 of 3 items'), findsOneWidget);
   });
 
   group('field-correction capture', () {
@@ -592,9 +644,9 @@ void main() {
 
     // Excluding an item afterwards must not silently overwrite what the
     // user just typed directly into the total.
-    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
-    await tester.tap(find.text('Rsb Biasa'));
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
 
     expect(_amountFieldText(tester), '50.00');
@@ -693,7 +745,7 @@ void main() {
       await tester.drag(find.byType(ListView), const Offset(0, -600));
       await tester.pump();
 
-      await tester.tap(find.text('Line Item 14'));
+      await tester.tap(find.byKey(const Key('receipt-item-checkbox-14')));
       await tester.pump();
       expect(find.text('14 of 15 items'), findsOneWidget);
       expect(find.text('Line Item 14 excluded'), findsOneWidget);

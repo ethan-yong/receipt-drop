@@ -14,8 +14,8 @@ class ReceiptLineItem {
   final double? confidence; // parser confidence for this row
   final int? lineIndex; // source line in OCR text (debug / UI)
 
-  ReceiptLineItem copyWith({double? priceMyr}) => ReceiptLineItem(
-        name: name,
+  ReceiptLineItem copyWith({String? name, double? priceMyr}) => ReceiptLineItem(
+        name: name ?? this.name,
         priceMyr: priceMyr ?? this.priceMyr,
         quantity: quantity,
         confidence: confidence,
