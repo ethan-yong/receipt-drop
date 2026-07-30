@@ -123,6 +123,9 @@ class CuratedInsightOut(BaseModel):
     fact_key: str
     body: str
     priority: float = 0.0
+    # Visualization Story Agent output — None when no visual strengthens
+    # this insight. See ocr_api.insights.visualization_agent.
+    visualization: dict[str, Any] | None = None
 
 
 class CurateInsightsResponse(BaseModel):
@@ -257,8 +260,11 @@ def template_fallback(
     candidates: list[InsightCandidateIn],
 ) -> CurateInsightsResponse:
     """Non-LLM soft-launch path: use template_hint or a minimal fact sentence."""
+    from ocr_api.insights.visualization_agent import attach_visualizations
+
     ranked = sorted(candidates, key=lambda c: c.severity, reverse=True)
     out: list[CuratedInsightOut] = []
+    facts_by_key: dict[str, dict[str, Any]] = {}
     for c in ranked[:MAX_INSIGHTS]:
         body = (c.template_hint or "").strip()
         if not body:
@@ -271,7 +277,8 @@ def template_fallback(
                 priority=c.severity,
             )
         )
-    return CurateInsightsResponse(insights=out)
+        facts_by_key[c.fact_key] = c.facts
+    return CurateInsightsResponse(insights=attach_visualizations(out, facts_by_key))
 
 
 async def run_critic(

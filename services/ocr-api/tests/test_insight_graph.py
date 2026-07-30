@@ -220,3 +220,27 @@ def test_deterministic_drafts_passthrough():
 def test_graph_compiles():
     g = build_insight_graph()
     assert g is not None
+
+
+@pytest.mark.asyncio
+async def test_visualization_attached_after_critic_in_template_path():
+    """The visualization node runs after Critic even on the non-LLM path."""
+    cands = [
+        InsightCandidateIn(
+            type="habit",
+            fact_key="habit:tealive",
+            facts={"place_name": "Tealive", "visits": 5, "window_days": 7},
+            severity=0.6,
+            template_hint="You visited Tealive 5 times this week",
+        ),
+        _c("streak", "streak:3"),
+    ]
+    async with httpx.AsyncClient() as client:
+        result = await run_insight_graph(
+            cands, http_client=client, use_llm=False, use_specialists=False
+        )
+    by_key = {i.fact_key: i for i in result.insights}
+    assert by_key["habit:tealive"].visualization is not None
+    assert by_key["habit:tealive"].visualization["type"] == "habit_timeline"
+    # streak has no rule — must degrade to None, never fabricate one.
+    assert by_key["streak:3"].visualization is None

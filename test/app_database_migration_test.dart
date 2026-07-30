@@ -40,7 +40,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 11);
+    expect(await userVersion(db), 13);
     await db.customSelect(
       'SELECT llm_understanding_json FROM outbox_transactions',
     ).get();
@@ -54,7 +54,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 11);
+    expect(await userVersion(db), 13);
     await db.close();
   });
 
@@ -67,7 +67,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 11);
+    expect(await userVersion(db), 13);
     await db.customSelect('SELECT id FROM pending_imports').get();
     await db.close();
   });
@@ -82,7 +82,7 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 11);
+    expect(await userVersion(db), 13);
     await db.customSelect(
       'SELECT cleaned_ocr_text, ocr_corrections_json FROM outbox_transactions',
     ).get();
@@ -97,8 +97,25 @@ void main() {
     await db.close();
 
     db = await openDb();
-    expect(await userVersion(db), 11);
+    expect(await userVersion(db), 13);
     await db.customSelect('SELECT id FROM outbox_field_corrections').get();
+    await db.close();
+  });
+
+  test('reopening after a partial v13 migration does not crash', () async {
+    // Simulate the crash state: the schema is fully at v13 (visualization_json
+    // already exists, since the first openDb() below creates tables from the
+    // current schema regardless of version) but user_version is still 12.
+    // Reopening must re-run the v13 step without "duplicate column name".
+    var db = await openDb();
+    await db.customStatement('PRAGMA user_version = 12');
+    await db.close();
+
+    db = await openDb();
+    expect(await userVersion(db), 13);
+    await db.customSelect(
+      'SELECT visualization_json FROM local_spending_insights',
+    ).get();
     await db.close();
   });
 }

@@ -3,6 +3,8 @@
 Phase 2: SignalLoader → insight_router → Critic (one LLM call).
 Phase 3: when use_specialists=True, router fans out via Send to specialist
 nodes; Critic fans in over reducer-merged drafts.
+Critic → visualization (rule-based Visualization Story Agent, not an LLM) →
+END attaches a visual spec to each of the <=3 final insights.
 
 http_client is passed through RunnableConfig.configurable so it never
 lands in LLM prompt state. userId is intentionally absent from graph state.
@@ -31,6 +33,7 @@ from ocr_api.insight_curator import (
 from ocr_api.insights.insight_router import route_candidates
 from ocr_api.insights.prefilter import prefilter_candidates
 from ocr_api.insights.specialist_agents import run_specialist
+from ocr_api.insights.visualization_agent import attach_visualizations
 from ocr_api.receipt_understanding import ReceiptUnderstandingError
 
 logger = logging.getLogger("ocr_api.insights.graph")
@@ -161,6 +164,20 @@ async def critic_node(
     return {"final_insights": result.insights}
 
 
+def visualization_node(state: InsightGraphState) -> dict[str, Any]:
+    """Visualization Story Agent: attach a visual spec to each final insight.
+
+    Rule-based (not an LLM) — see visualization_agent.py. Runs after Critic
+    so it only does work for the <=3 insights that survived dedupe/rank,
+    not every raw candidate.
+    """
+    final_insights = state.get("final_insights") or []
+    if not final_insights:
+        return {"final_insights": final_insights}
+    facts_by_key = {c.fact_key: c.facts for c in state.get("candidate_insights") or []}
+    return {"final_insights": attach_visualizations(final_insights, facts_by_key)}
+
+
 def build_insight_graph():
     """Compile the curation graph. Safe to call once and reuse."""
     g = StateGraph(InsightGraphState)
@@ -168,12 +185,14 @@ def build_insight_graph():
     g.add_node("router", router_node)
     g.add_node("specialist", specialist_node)
     g.add_node("critic", critic_node)
+    g.add_node("visualization", visualization_node)
 
     g.add_edge(START, "signal_loader")
     g.add_edge("signal_loader", "router")
     g.add_conditional_edges("router", _after_router, ["critic", "specialist", END])
     g.add_edge("specialist", "critic")
-    g.add_edge("critic", END)
+    g.add_edge("critic", "visualization")
+    g.add_edge("visualization", END)
     return g.compile()
 
 

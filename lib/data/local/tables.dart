@@ -292,6 +292,10 @@ class LocalSpendingInsights extends Table {
 
   TextColumn get factsJson => text().nullable()();
 
+  /// JSON-encoded visualization spec from the Visualization Story Agent
+  /// (`{type, data_source, parameters, highlight, animation}`), or null.
+  TextColumn get visualizationJson => text().nullable()();
+
   DateTimeColumn get createdAt =>
       dateTime().withDefault(currentDateAndTime)();
 

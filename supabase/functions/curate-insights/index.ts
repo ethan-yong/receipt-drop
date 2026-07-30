@@ -27,6 +27,14 @@ const ALLOWED_TYPES = new Set([
   "forecast",
 ]);
 
+const ALLOWED_VISUALIZATION_TYPES = new Set([
+  "line_trend",
+  "before_after_bar",
+  "habit_timeline",
+  "location_heatmap",
+  "forecast_projection",
+]);
+
 const UPSTREAM_TIMEOUT_MS = 55_000;
 const MAX_INSIGHTS = 3;
 
@@ -134,12 +142,15 @@ Deno.serve(async (req) => {
     rank: i,
     dismissed: false,
     facts: c.facts ?? null,
+    visualization: c.visualization ?? null,
   }));
 
   const { data: inserted, error: insertError } = await client
     .from("spending_insights")
     .insert(rowsToInsert)
-    .select("id, insight_type, fact_key, body, rank, created_at, dismissed");
+    .select(
+      "id, insight_type, fact_key, body, rank, created_at, dismissed, visualization",
+    );
 
   if (insertError || !inserted) {
     // Soft degrade — return validated content with ephemeral ids so the
@@ -153,6 +164,7 @@ Deno.serve(async (req) => {
         rank: i,
         created_at: new Date().toISOString(),
         dismissed: false,
+        visualization: c.visualization ?? null,
       })),
     });
   }
@@ -166,6 +178,7 @@ Deno.serve(async (req) => {
       rank: row.rank,
       created_at: row.created_at,
       dismissed: row.dismissed === true,
+      visualization: row.visualization ?? null,
     })),
   });
 });
@@ -214,6 +227,43 @@ function sanitizeCandidates(raw: unknown): Candidate[] {
   return out.slice(0, 20);
 }
 
+function sanitizeVisualization(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const rec = raw as Record<string, unknown>;
+  const type = typeof rec.type === "string" ? rec.type : "";
+  if (!ALLOWED_VISUALIZATION_TYPES.has(type)) return null;
+  const parameters =
+    rec.parameters && typeof rec.parameters === "object" &&
+      !Array.isArray(rec.parameters)
+      ? rec.parameters
+      : {};
+  const highlight =
+    rec.highlight && typeof rec.highlight === "object" &&
+      !Array.isArray(rec.highlight)
+      ? rec.highlight
+      : {};
+  const animationRec =
+    rec.animation && typeof rec.animation === "object" &&
+      !Array.isArray(rec.animation)
+      ? (rec.animation as Record<string, unknown>)
+      : {};
+  const animation = {
+    type: typeof animationRec.type === "string" ? animationRec.type : "none",
+    duration_ms:
+      typeof animationRec.duration_ms === "number" &&
+        Number.isFinite(animationRec.duration_ms)
+        ? animationRec.duration_ms
+        : 0,
+  };
+  return {
+    type,
+    data_source: typeof rec.data_source === "string" ? rec.data_source : "",
+    parameters,
+    highlight,
+    animation,
+  };
+}
+
 function validateCurated(
   raw: unknown,
   candidates: Candidate[],
@@ -223,6 +273,7 @@ function validateCurated(
   body: string;
   facts?: Record<string, unknown>;
   priority?: number;
+  visualization: Record<string, unknown> | null;
 }> {
   if (!raw || typeof raw !== "object") return [];
   const list = (raw as { insights?: unknown }).insights;
@@ -235,6 +286,7 @@ function validateCurated(
     body: string;
     facts?: Record<string, unknown>;
     priority: number;
+    visualization: Record<string, unknown> | null;
   }> = [];
   const seen = new Set<string>();
 
@@ -272,6 +324,7 @@ function validateCurated(
       body,
       facts: source.facts,
       priority,
+      visualization: sanitizeVisualization(rec.visualization),
     });
   }
 

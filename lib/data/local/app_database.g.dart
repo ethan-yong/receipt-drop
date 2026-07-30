@@ -4787,6 +4787,18 @@ class $LocalSpendingInsightsTable extends LocalSpendingInsights
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _visualizationJsonMeta = const VerificationMeta(
+    'visualizationJson',
+  );
+  @override
+  late final GeneratedColumn<String> visualizationJson =
+      GeneratedColumn<String>(
+        'visualization_json',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -4832,6 +4844,7 @@ class $LocalSpendingInsightsTable extends LocalSpendingInsights
     rank,
     dismissed,
     factsJson,
+    visualizationJson,
     createdAt,
     dismissedAt,
     syncStatus,
@@ -4906,6 +4919,15 @@ class $LocalSpendingInsightsTable extends LocalSpendingInsights
         factsJson.isAcceptableOrUnknown(data['facts_json']!, _factsJsonMeta),
       );
     }
+    if (data.containsKey('visualization_json')) {
+      context.handle(
+        _visualizationJsonMeta,
+        visualizationJson.isAcceptableOrUnknown(
+          data['visualization_json']!,
+          _visualizationJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -4968,6 +4990,10 @@ class $LocalSpendingInsightsTable extends LocalSpendingInsights
         DriftSqlType.string,
         data['${effectivePrefix}facts_json'],
       ),
+      visualizationJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}visualization_json'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -5001,6 +5027,10 @@ class LocalSpendingInsight extends DataClass
   final int rank;
   final bool dismissed;
   final String? factsJson;
+
+  /// JSON-encoded visualization spec from the Visualization Story Agent
+  /// (`{type, data_source, parameters, highlight, animation}`), or null.
+  final String? visualizationJson;
   final DateTime createdAt;
   final DateTime? dismissedAt;
 
@@ -5015,6 +5045,7 @@ class LocalSpendingInsight extends DataClass
     required this.rank,
     required this.dismissed,
     this.factsJson,
+    this.visualizationJson,
     required this.createdAt,
     this.dismissedAt,
     required this.syncStatus,
@@ -5031,6 +5062,9 @@ class LocalSpendingInsight extends DataClass
     map['dismissed'] = Variable<bool>(dismissed);
     if (!nullToAbsent || factsJson != null) {
       map['facts_json'] = Variable<String>(factsJson);
+    }
+    if (!nullToAbsent || visualizationJson != null) {
+      map['visualization_json'] = Variable<String>(visualizationJson);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || dismissedAt != null) {
@@ -5052,6 +5086,9 @@ class LocalSpendingInsight extends DataClass
       factsJson: factsJson == null && nullToAbsent
           ? const Value.absent()
           : Value(factsJson),
+      visualizationJson: visualizationJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(visualizationJson),
       createdAt: Value(createdAt),
       dismissedAt: dismissedAt == null && nullToAbsent
           ? const Value.absent()
@@ -5074,6 +5111,9 @@ class LocalSpendingInsight extends DataClass
       rank: serializer.fromJson<int>(json['rank']),
       dismissed: serializer.fromJson<bool>(json['dismissed']),
       factsJson: serializer.fromJson<String?>(json['factsJson']),
+      visualizationJson: serializer.fromJson<String?>(
+        json['visualizationJson'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       dismissedAt: serializer.fromJson<DateTime?>(json['dismissedAt']),
       syncStatus: serializer.fromJson<String>(json['syncStatus']),
@@ -5091,6 +5131,7 @@ class LocalSpendingInsight extends DataClass
       'rank': serializer.toJson<int>(rank),
       'dismissed': serializer.toJson<bool>(dismissed),
       'factsJson': serializer.toJson<String?>(factsJson),
+      'visualizationJson': serializer.toJson<String?>(visualizationJson),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'dismissedAt': serializer.toJson<DateTime?>(dismissedAt),
       'syncStatus': serializer.toJson<String>(syncStatus),
@@ -5106,6 +5147,7 @@ class LocalSpendingInsight extends DataClass
     int? rank,
     bool? dismissed,
     Value<String?> factsJson = const Value.absent(),
+    Value<String?> visualizationJson = const Value.absent(),
     DateTime? createdAt,
     Value<DateTime?> dismissedAt = const Value.absent(),
     String? syncStatus,
@@ -5118,6 +5160,9 @@ class LocalSpendingInsight extends DataClass
     rank: rank ?? this.rank,
     dismissed: dismissed ?? this.dismissed,
     factsJson: factsJson.present ? factsJson.value : this.factsJson,
+    visualizationJson: visualizationJson.present
+        ? visualizationJson.value
+        : this.visualizationJson,
     createdAt: createdAt ?? this.createdAt,
     dismissedAt: dismissedAt.present ? dismissedAt.value : this.dismissedAt,
     syncStatus: syncStatus ?? this.syncStatus,
@@ -5134,6 +5179,9 @@ class LocalSpendingInsight extends DataClass
       rank: data.rank.present ? data.rank.value : this.rank,
       dismissed: data.dismissed.present ? data.dismissed.value : this.dismissed,
       factsJson: data.factsJson.present ? data.factsJson.value : this.factsJson,
+      visualizationJson: data.visualizationJson.present
+          ? data.visualizationJson.value
+          : this.visualizationJson,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       dismissedAt: data.dismissedAt.present
           ? data.dismissedAt.value
@@ -5155,6 +5203,7 @@ class LocalSpendingInsight extends DataClass
           ..write('rank: $rank, ')
           ..write('dismissed: $dismissed, ')
           ..write('factsJson: $factsJson, ')
+          ..write('visualizationJson: $visualizationJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('dismissedAt: $dismissedAt, ')
           ..write('syncStatus: $syncStatus')
@@ -5172,6 +5221,7 @@ class LocalSpendingInsight extends DataClass
     rank,
     dismissed,
     factsJson,
+    visualizationJson,
     createdAt,
     dismissedAt,
     syncStatus,
@@ -5188,6 +5238,7 @@ class LocalSpendingInsight extends DataClass
           other.rank == this.rank &&
           other.dismissed == this.dismissed &&
           other.factsJson == this.factsJson &&
+          other.visualizationJson == this.visualizationJson &&
           other.createdAt == this.createdAt &&
           other.dismissedAt == this.dismissedAt &&
           other.syncStatus == this.syncStatus);
@@ -5203,6 +5254,7 @@ class LocalSpendingInsightsCompanion
   final Value<int> rank;
   final Value<bool> dismissed;
   final Value<String?> factsJson;
+  final Value<String?> visualizationJson;
   final Value<DateTime> createdAt;
   final Value<DateTime?> dismissedAt;
   final Value<String> syncStatus;
@@ -5216,6 +5268,7 @@ class LocalSpendingInsightsCompanion
     this.rank = const Value.absent(),
     this.dismissed = const Value.absent(),
     this.factsJson = const Value.absent(),
+    this.visualizationJson = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.dismissedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
@@ -5230,6 +5283,7 @@ class LocalSpendingInsightsCompanion
     this.rank = const Value.absent(),
     this.dismissed = const Value.absent(),
     this.factsJson = const Value.absent(),
+    this.visualizationJson = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.dismissedAt = const Value.absent(),
     this.syncStatus = const Value.absent(),
@@ -5248,6 +5302,7 @@ class LocalSpendingInsightsCompanion
     Expression<int>? rank,
     Expression<bool>? dismissed,
     Expression<String>? factsJson,
+    Expression<String>? visualizationJson,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? dismissedAt,
     Expression<String>? syncStatus,
@@ -5262,6 +5317,7 @@ class LocalSpendingInsightsCompanion
       if (rank != null) 'rank': rank,
       if (dismissed != null) 'dismissed': dismissed,
       if (factsJson != null) 'facts_json': factsJson,
+      if (visualizationJson != null) 'visualization_json': visualizationJson,
       if (createdAt != null) 'created_at': createdAt,
       if (dismissedAt != null) 'dismissed_at': dismissedAt,
       if (syncStatus != null) 'sync_status': syncStatus,
@@ -5278,6 +5334,7 @@ class LocalSpendingInsightsCompanion
     Value<int>? rank,
     Value<bool>? dismissed,
     Value<String?>? factsJson,
+    Value<String?>? visualizationJson,
     Value<DateTime>? createdAt,
     Value<DateTime?>? dismissedAt,
     Value<String>? syncStatus,
@@ -5292,6 +5349,7 @@ class LocalSpendingInsightsCompanion
       rank: rank ?? this.rank,
       dismissed: dismissed ?? this.dismissed,
       factsJson: factsJson ?? this.factsJson,
+      visualizationJson: visualizationJson ?? this.visualizationJson,
       createdAt: createdAt ?? this.createdAt,
       dismissedAt: dismissedAt ?? this.dismissedAt,
       syncStatus: syncStatus ?? this.syncStatus,
@@ -5326,6 +5384,9 @@ class LocalSpendingInsightsCompanion
     if (factsJson.present) {
       map['facts_json'] = Variable<String>(factsJson.value);
     }
+    if (visualizationJson.present) {
+      map['visualization_json'] = Variable<String>(visualizationJson.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -5352,6 +5413,7 @@ class LocalSpendingInsightsCompanion
           ..write('rank: $rank, ')
           ..write('dismissed: $dismissed, ')
           ..write('factsJson: $factsJson, ')
+          ..write('visualizationJson: $visualizationJson, ')
           ..write('createdAt: $createdAt, ')
           ..write('dismissedAt: $dismissedAt, ')
           ..write('syncStatus: $syncStatus, ')
@@ -8318,6 +8380,7 @@ typedef $$LocalSpendingInsightsTableCreateCompanionBuilder =
       Value<int> rank,
       Value<bool> dismissed,
       Value<String?> factsJson,
+      Value<String?> visualizationJson,
       Value<DateTime> createdAt,
       Value<DateTime?> dismissedAt,
       Value<String> syncStatus,
@@ -8333,6 +8396,7 @@ typedef $$LocalSpendingInsightsTableUpdateCompanionBuilder =
       Value<int> rank,
       Value<bool> dismissed,
       Value<String?> factsJson,
+      Value<String?> visualizationJson,
       Value<DateTime> createdAt,
       Value<DateTime?> dismissedAt,
       Value<String> syncStatus,
@@ -8385,6 +8449,11 @@ class $$LocalSpendingInsightsTableFilterComposer
 
   ColumnFilters<String> get factsJson => $composableBuilder(
     column: $table.factsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get visualizationJson => $composableBuilder(
+    column: $table.visualizationJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8453,6 +8522,11 @@ class $$LocalSpendingInsightsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get visualizationJson => $composableBuilder(
+    column: $table.visualizationJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -8503,6 +8577,11 @@ class $$LocalSpendingInsightsTableAnnotationComposer
 
   GeneratedColumn<String> get factsJson =>
       $composableBuilder(column: $table.factsJson, builder: (column) => column);
+
+  GeneratedColumn<String> get visualizationJson => $composableBuilder(
+    column: $table.visualizationJson,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -8572,6 +8651,7 @@ class $$LocalSpendingInsightsTableTableManager
                 Value<int> rank = const Value.absent(),
                 Value<bool> dismissed = const Value.absent(),
                 Value<String?> factsJson = const Value.absent(),
+                Value<String?> visualizationJson = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> dismissedAt = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
@@ -8585,6 +8665,7 @@ class $$LocalSpendingInsightsTableTableManager
                 rank: rank,
                 dismissed: dismissed,
                 factsJson: factsJson,
+                visualizationJson: visualizationJson,
                 createdAt: createdAt,
                 dismissedAt: dismissedAt,
                 syncStatus: syncStatus,
@@ -8600,6 +8681,7 @@ class $$LocalSpendingInsightsTableTableManager
                 Value<int> rank = const Value.absent(),
                 Value<bool> dismissed = const Value.absent(),
                 Value<String?> factsJson = const Value.absent(),
+                Value<String?> visualizationJson = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> dismissedAt = const Value.absent(),
                 Value<String> syncStatus = const Value.absent(),
@@ -8613,6 +8695,7 @@ class $$LocalSpendingInsightsTableTableManager
                 rank: rank,
                 dismissed: dismissed,
                 factsJson: factsJson,
+                visualizationJson: visualizationJson,
                 createdAt: createdAt,
                 dismissedAt: dismissedAt,
                 syncStatus: syncStatus,

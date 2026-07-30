@@ -29,7 +29,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   /// True when [column] already exists on [table] (SQLite `PRAGMA table_info`).
   ///
@@ -116,6 +116,10 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 12) {
             await m.createTable(localSpendingInsights);
+          }
+          if (from < 13) {
+            await _addColumnIfAbsent(
+                m, localSpendingInsights, localSpendingInsights.visualizationJson);
           }
         },
         // sqlite disables FK enforcement by default; needed for cascade

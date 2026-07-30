@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
@@ -84,6 +85,11 @@ class InsightsRepository {
             body: insight.body,
             rank: Value(insight.rank),
             dismissed: const Value(false),
+            visualizationJson: Value(
+              insight.visualization == null
+                  ? null
+                  : jsonEncode(insight.visualization),
+            ),
             createdAt: Value(insight.createdAt),
             syncStatus: const Value('synced'),
           ),
@@ -132,6 +138,11 @@ class InsightsRepository {
       rank: row.rank,
       createdAt: row.createdAt,
       dismissed: row.dismissed,
+      visualization: row.visualizationJson == null
+          ? null
+          : Map<String, dynamic>.from(
+              jsonDecode(row.visualizationJson!) as Map,
+            ),
     );
   }
 }

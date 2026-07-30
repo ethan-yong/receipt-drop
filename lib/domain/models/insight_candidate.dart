@@ -79,6 +79,7 @@ class CuratedInsight {
     required this.rank,
     required this.createdAt,
     this.dismissed = false,
+    this.visualization,
   });
 
   final String id;
@@ -89,6 +90,12 @@ class CuratedInsight {
   final DateTime createdAt;
   final bool dismissed;
 
+  /// Optional visual spec from the backend's Visualization Story Agent
+  /// (`{type, data_source, parameters, highlight, animation}`). Null when no
+  /// visual strengthens this insight. See `insight_visualization.dart` for
+  /// how this is dispatched to a chart widget.
+  final Map<String, dynamic>? visualization;
+
   CuratedInsight copyWith({bool? dismissed}) => CuratedInsight(
         id: id,
         type: type,
@@ -97,6 +104,7 @@ class CuratedInsight {
         rank: rank,
         createdAt: createdAt,
         dismissed: dismissed ?? this.dismissed,
+        visualization: visualization,
       );
 
   static CuratedInsight? tryFromJson(Object? json) {
@@ -130,6 +138,7 @@ class CuratedInsight {
     } else if (createdAt is DateTime) {
       parsed = createdAt;
     }
+    final visualizationRaw = json['visualization'];
     return CuratedInsight(
       id: id,
       type: type,
@@ -138,6 +147,9 @@ class CuratedInsight {
       rank: rank is num ? rank.toInt() : 0,
       createdAt: parsed ?? DateTime.now(),
       dismissed: json['dismissed'] == true,
+      visualization: visualizationRaw is Map
+          ? Map<String, dynamic>.from(visualizationRaw)
+          : null,
     );
   }
 
@@ -149,5 +161,6 @@ class CuratedInsight {
         'rank': rank,
         'created_at': createdAt.toUtc().toIso8601String(),
         'dismissed': dismissed,
+        if (visualization != null) 'visualization': visualization,
       };
 }

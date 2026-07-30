@@ -4,6 +4,7 @@ import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/insights_worker.dart';
 import '../../domain/models/insight_candidate.dart';
+import '../../widgets/insight_visualization.dart';
 import '../../widgets/spending_insights_card.dart';
 
 /// Detail view listing up to 3 curated insights with per-item dismiss.
@@ -84,25 +85,36 @@ class InsightsDetailScreen extends StatelessWidget {
                     borderRadius: AppSpacing.cardBorderRadius,
                     border: Border.all(color: AppColors.divider),
                   ),
-                  child: Row(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        insightTypeIcon(insight.type),
-                        color: AppColors.primaryGreen,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            insightTypeIcon(insight.type),
+                            color: AppColors.primaryGreen,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              insight.body,
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Dismiss',
+                            onPressed: () => _dismiss(context, insight),
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          insight.body,
-                          style: Theme.of(context).textTheme.bodyLarge,
+                      if (insight.visualization != null) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        InsightVisualization(
+                          visualization: insight.visualization,
                         ),
-                      ),
-                      IconButton(
-                        tooltip: 'Dismiss',
-                        onPressed: () => _dismiss(context, insight),
-                        icon: const Icon(Icons.close_rounded, size: 20),
-                      ),
+                      ],
                     ],
                   ),
                 ),
