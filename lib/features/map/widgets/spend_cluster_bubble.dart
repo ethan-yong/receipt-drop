@@ -7,8 +7,8 @@ import 'marker_tail_painter.dart';
 /// Zoomed-out cluster bubble for a geohash bucket of nearby spend places:
 /// shows total receipt count and distinct place count rather than any single
 /// place's detail. Sibling to [SpendPlaceMarker] using the same pill+tail
-/// visual. Tapping zooms the camera into the bucket's extent instead of
-/// opening the per-place detail panel.
+/// visual. Tapping fits the camera to the places inside the bucket (with
+/// edge padding) instead of opening the per-place detail panel.
 class SpendClusterBubble extends StatelessWidget {
   const SpendClusterBubble({
     super.key,

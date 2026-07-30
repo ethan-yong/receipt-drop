@@ -134,6 +134,31 @@ void main() {
     test('empty input yields no buckets', () {
       expect(bucketClusters(const [], 5), isEmpty);
     });
+
+    test('bucket lat/lng equal the single transaction coordinates, not the geohash cell midpoint', () {
+      // Precision 3 cells are ~156km wide; the geometric cell midpoint is
+      // far from any particular point inside the cell. Using the real
+      // transaction coordinate keeps the bubble (and tap-to-zoom target)
+      // on the pin the user actually sees.
+      const lat = 3.1390;
+      const lng = 101.6869;
+      final buckets = bucketClusters([
+        _tx(id: 'a', amount: 10, lat: lat, lng: lng),
+      ], 3);
+      expect(buckets, hasLength(1));
+      expect(buckets.single.lat, lat);
+      expect(buckets.single.lng, lng);
+    });
+
+    test('bucket lat/lng are the arithmetic mean of the transactions in the bucket', () {
+      final buckets = bucketClusters([
+        _tx(id: 'a', amount: 10, lat: 3.1390, lng: 101.6869),
+        _tx(id: 'b', amount: 20, lat: 3.1410, lng: 101.6889),
+      ], 5);
+      expect(buckets, hasLength(1));
+      expect(buckets.single.lat, closeTo((3.1390 + 3.1410) / 2, 1e-9));
+      expect(buckets.single.lng, closeTo((101.6869 + 101.6889) / 2, 1e-9));
+    });
   });
 
   group('zoomBucketPrecision', () {

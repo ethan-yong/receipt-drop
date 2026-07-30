@@ -109,8 +109,10 @@ class ReceiptCaptureFlow {
   }) async {
     PlatformFeedback.lightTap();
     if (!context.mounted) return;
-    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+    final draft = await Navigator.of(context, rootNavigator: true)
+        .push<ReceiptIngestDraft>(
       MaterialPageRoute<ReceiptIngestDraft>(
+        fullscreenDialog: true,
         builder: (_) => ReceiptScanProcessingScreen(
           attemptFactory: () => _startPathAttempt(path, mimeType),
         ),
@@ -125,8 +127,10 @@ class ReceiptCaptureFlow {
     required Uint8List bytes,
     required String mimeType,
   }) async {
-    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+    final draft = await Navigator.of(context, rootNavigator: true)
+        .push<ReceiptIngestDraft>(
       MaterialPageRoute<ReceiptIngestDraft>(
+        fullscreenDialog: true,
         builder: (_) => ReceiptScanProcessingScreen(
           attemptFactory: () => _startBytesAttempt(bytes, mimeType),
         ),
@@ -147,8 +151,8 @@ class ReceiptCaptureFlow {
     if (!context.mounted) return;
 
     // ReceiptConfirmSheet reviews and saves in one step now (no separate
-    // "edit details" sheet) — true only on a completed save; cancel and
-    // "save for later" both return false.
+    // "edit details" sheet) — true only on a completed save; cancel returns
+    // false.
     final saved = await ReceiptConfirmSheet.show(
       context,
       draft: draft,
@@ -163,13 +167,6 @@ class ReceiptCaptureFlow {
         );
         final tx = savedTx;
         if (tx != null) SocialRepository.createFeedPost(tx);
-      },
-      // Parks the receipt in the review queue (no ritual, no feed post) —
-      // closing the "cancel = receipt lost" hole for unreadable receipts.
-      onSaveForLater: (editedDraft) async {
-        await AppServices.transactions.ingestReceipt(
-          editedDraft.toNeedsReviewRequest(),
-        );
       },
       onCancel: ReceiptIngestService.discardDraft,
     );

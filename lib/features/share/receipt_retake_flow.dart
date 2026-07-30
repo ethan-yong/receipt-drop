@@ -143,8 +143,10 @@ class ReceiptRetakeFlow {
     required String transactionId,
   }) async {
     // OCR failure / back-out returns null — original transaction untouched.
-    final draft = await Navigator.of(context).push<ReceiptIngestDraft>(
+    final draft = await Navigator.of(context, rootNavigator: true)
+        .push<ReceiptIngestDraft>(
       MaterialPageRoute<ReceiptIngestDraft>(
+        fullscreenDialog: true,
         builder: (_) => ReceiptScanProcessingScreen(
           attemptFactory: () => _startBytesAttempt(bytes, mimeType),
         ),
@@ -179,13 +181,6 @@ class ReceiptRetakeFlow {
             confirmedAmount: amount,
             impactUser: impact.name,
           ),
-        );
-        didReplace = true;
-      },
-      onSaveForLater: (editedDraft) async {
-        await AppServices.transactions.replaceArtifactAndReprocess(
-          transactionId,
-          editedDraft.toNeedsReviewRequest(),
         );
         didReplace = true;
       },

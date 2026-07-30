@@ -96,7 +96,8 @@ class ReceiptIngestDraft {
   /// Runner-up amount (MYR) when the top pick is suspicious/ambiguous.
   final double? amountAlternativeMyr;
 
-  /// Routes into the existing "Save for later" path more precisely.
+  /// True when the top amount pick is suspicious/ambiguous and warrants
+  /// extra user attention on the confirm sheet.
   final bool amountSuspicious;
 
   /// Per-field: amount's underlying OCR confidence was low.

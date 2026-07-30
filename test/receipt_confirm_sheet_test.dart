@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/core/theme/app_theme.dart';
@@ -49,8 +50,8 @@ ReceiptIngestDraft _draft({
 }
 
 /// Hosts the sheet behind a launcher button so tests can observe the value
-/// [ReceiptConfirmSheet.show] pops with, plus whatever [onSave]/[onCancel]/
-/// [onSaveForLater] were invoked with (the sheet now saves directly instead
+/// [ReceiptConfirmSheet.show] pops with, plus whatever [onSave]/[onCancel]
+/// were invoked with (the sheet now saves directly instead
 /// of just popping an edited draft).
 Future<void> _openSheet(
   WidgetTester tester,
@@ -59,7 +60,6 @@ Future<void> _openSheet(
   Future<void> Function(double? amount, ReceiptIngestDraft draft, ImpactLevel impact)?
       onSave,
   Future<void> Function(ReceiptIngestDraft draft)? onCancel,
-  Future<void> Function(ReceiptIngestDraft draft)? onSaveForLater,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -73,7 +73,6 @@ Future<void> _openSheet(
               categories: _testCategories,
               onSave: onSave ?? (_, _, _) async {},
               onCancel: onCancel ?? (_) async {},
-              onSaveForLater: onSaveForLater,
               mapOverride: const SizedBox.shrink(),
             ));
           },
@@ -87,14 +86,58 @@ Future<void> _openSheet(
   await tester.pump(const Duration(milliseconds: 400)); // sheet entrance
 }
 
-/// The total field is now always a live editable [TextField] (not a plain
-/// `Text`), so its value has to be read off the controller rather than
-/// matched via `find.text('RM ...')`.
-String _amountFieldText(WidgetTester tester) {
+/// Reads the banking-style amount display label (e.g. `RM 19.90`).
+String _amountDisplayText(WidgetTester tester) {
   return tester
-      .widget<TextField>(find.byKey(const Key('receipt-amount-field')))
-      .controller!
-      .text;
+      .widget<Text>(
+        find.descendant(
+          of: find.byKey(const Key('receipt-amount-display')),
+          matching: find.byType(Text),
+        ),
+      )
+      .data!;
+}
+
+/// Opens the amount keypad (if closed) and taps digits to set an absolute
+/// amount via the cents shift-from-right algorithm. Digits are the decimal
+/// representation without the point — e.g. `2500` for RM 25.00.
+Future<void> _enterAmountViaKeypad(
+  WidgetTester tester,
+  String digitString,
+) async {
+  final display = find.byKey(const Key('receipt-amount-display'));
+  await tester.ensureVisible(display);
+  await tester.pump();
+
+  // Open keypad if needed.
+  if (find.byKey(const Key('receipt-amount-keypad')).evaluate().isEmpty) {
+    await tester.tap(display);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+  }
+
+  // Clear existing digits first so we start from RM 0.00.
+  final backspace = find.byKey(const Key('receipt-amount-keypad-backspace'));
+  await tester.ensureVisible(backspace);
+  await tester.pump();
+  for (var i = 0; i < 12; i++) {
+    await tester.tap(backspace);
+    await tester.pump();
+  }
+
+  for (final ch in digitString.split('')) {
+    final digit = int.parse(ch);
+    final digitKey = find.byKey(Key('receipt-amount-keypad-digit-$digit'));
+    await tester.ensureVisible(digitKey);
+    await tester.tap(digitKey);
+    await tester.pump();
+  }
+
+  final confirm = find.byKey(const Key('receipt-amount-keypad-confirm'));
+  await tester.ensureVisible(confirm);
+  await tester.tap(confirm);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 250));
 }
 
 void main() {
@@ -110,9 +153,11 @@ void main() {
     await _openSheet(tester, _draft(), (_) {});
 
     expect(find.text('Sf Cafe'), findsOneWidget); // cleaned merchant
-    expect(_amountFieldText(tester), '19.90');
+    expect(_amountDisplayText(tester), 'RM 19.90');
     expect(find.text('Food & Drink'), findsWidgets); // chip + dropdown
     expect(find.text('3 of 3 items'), findsOneWidget);
+    expect(find.text('Detected Items'), findsOneWidget);
+    expect(find.text('Tap an item to make changes'), findsOneWidget);
     expect(find.text('Rsb Biasa'), findsOneWidget);
     expect(find.text('Teh O Limau Ais'), findsOneWidget);
     expect(find.text('RM 8.70'), findsOneWidget);
@@ -126,41 +171,25 @@ void main() {
     expect(find.text('Save'), findsOneWidget);
   });
 
-  testWidgets('shows caution banner when confidence is low', (tester) async {
-    await _openSheet(tester, _draft(lowConfidence: true), (_) {});
-    expect(
-      find.text("Double-check this amount — we're not fully sure."),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('hides caution banner when confidence is not low', (tester) async {
-    await _openSheet(tester, _draft(), (_) {});
-    expect(
-      find.text("Double-check this amount — we're not fully sure."),
-      findsNothing,
-    );
-  });
-
   testWidgets('unchecking an item recalculates the total and shows Undo',
       (tester) async {
     await _openSheet(tester, _draft(), (_) {});
 
     // The added Category dropdown + Impact picker push item rows below the
     // fold in the test viewport — scroll them into view before tapping.
-    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
-    await tester.tap(find.text('Rsb Biasa'));
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
 
-    expect(_amountFieldText(tester), '12.90');
+    expect(_amountDisplayText(tester), 'RM 12.90');
     expect(find.text('2 of 3 items'), findsOneWidget);
     expect(find.text('Rsb Biasa excluded'), findsOneWidget);
 
     await tester.tap(find.text('Undo'));
     await tester.pump();
 
-    expect(_amountFieldText(tester), '19.90');
+    expect(_amountDisplayText(tester), 'RM 19.90');
     expect(find.text('3 of 3 items'), findsOneWidget);
     expect(find.text('Rsb Biasa excluded'), findsNothing);
   });
@@ -171,16 +200,16 @@ void main() {
 
     // The added Category dropdown + Impact picker push item rows below the
     // fold in the test viewport — scroll them into view before tapping.
-    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
-    await tester.tap(find.text('Rsb Biasa'));
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
     expect(find.text('Rsb Biasa excluded'), findsOneWidget);
 
     await tester.pump(const Duration(seconds: 5));
 
     expect(find.text('Rsb Biasa excluded'), findsNothing);
-    expect(_amountFieldText(tester), '12.90');
+    expect(_amountDisplayText(tester), 'RM 12.90');
   });
 
   testWidgets('Save invokes onSave with exclusions applied and pops true',
@@ -204,9 +233,9 @@ void main() {
 
     // The added Category dropdown + Impact picker push item rows below the
     // fold in the test viewport — scroll them into view before tapping.
-    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
-    await tester.tap(find.text('Rsb Biasa'));
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
 
     await tester.tap(find.text('Save'));
@@ -300,7 +329,7 @@ void main() {
     await tester.pump();
 
     expect(priceField, findsNothing);
-    expect(_amountFieldText(tester), '22.40'); // 19.90 + (9.50 - 7.00)
+    expect(_amountDisplayText(tester), 'RM 22.40'); // 19.90 + (9.50 - 7.00)
 
     await tester.tap(find.text('Save'));
     await tester.pump();
@@ -310,6 +339,207 @@ void main() {
     expect(
       savedDraft!.lineItems.firstWhere((i) => i.name == 'Rsb Biasa').priceMyr,
       closeTo(9.50, 0.001),
+    );
+  });
+
+  testWidgets(
+      'tapping an item name edits it inline and persists the correction on save',
+      (tester) async {
+    ReceiptIngestDraft? savedDraft;
+    await _openSheet(
+      tester,
+      _draft(),
+      (_) {},
+      onSave: (amount, draft, impact) async => savedDraft = draft,
+    );
+
+    await tester.ensureVisible(find.text('Rsb Biasa'));
+    await tester.pump();
+    await tester.tap(find.text('Rsb Biasa'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final nameField = find.byKey(const Key('receipt-item-name-field'));
+    expect(nameField, findsOneWidget);
+    // Expanded layout keeps the read-only label visible above the field.
+    expect(find.text('Rsb Biasa'), findsWidgets);
+    await tester.enterText(nameField, 'Nasi Lemak Biasa');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(nameField, findsNothing);
+    expect(find.text('Nasi Lemak Biasa'), findsOneWidget);
+    // Name edit must not toggle inclusion.
+    expect(find.text('3 of 3 items'), findsOneWidget);
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      savedDraft!.lineItems.map((i) => i.name),
+      ['Nasi Lemak Biasa', 'Teh O Limau Ais', 'Milo Ais Bungkus'],
+    );
+  });
+
+  testWidgets(
+      'detected-items helper is hidden when the draft has no line items',
+      (tester) async {
+    await _openSheet(
+      tester,
+      _draft(lineItems: const [], amount: 12.0),
+      (_) {},
+    );
+
+    expect(find.text('Detected Items'), findsNothing);
+    expect(find.text('Tap an item to make changes'), findsNothing);
+  });
+
+  testWidgets(
+      'tapping the checkbox still excludes an item without starting name edit',
+      (tester) async {
+    await _openSheet(tester, _draft(), (_) {});
+
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('receipt-item-name-field')), findsNothing);
+    expect(find.text('Rsb Biasa excluded'), findsOneWidget);
+    expect(find.text('2 of 3 items'), findsOneWidget);
+  });
+
+  testWidgets(
+      'tapping a quantity opens a wheel picker centered on the current value',
+      (tester) async {
+    await _openSheet(tester, _draft(), (_) {});
+
+    // Teh O Limau Ais is index 1 with OCR quantity 3.
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('receipt-quantity-picker')), findsOneWidget);
+    expect(find.text('Teh O Limau Ais'), findsWidgets);
+    expect(find.text('Quantity'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+
+    final picker = tester.widget<CupertinoPicker>(
+      find.byKey(const Key('receipt-quantity-picker')),
+    );
+    expect(picker.scrollController!.initialItem, 2); // qty 3 → index 2
+  });
+
+  testWidgets(
+      'confirming a quantity change updates the row and persists on save',
+      (tester) async {
+    ReceiptIngestDraft? savedDraft;
+    await _openSheet(
+      tester,
+      _draft(),
+      (_) {},
+      onSave: (amount, draft, impact) async => savedDraft = draft,
+    );
+
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Drag one itemExtent (48) up to select quantity 4.
+    await tester.drag(
+      find.byKey(const Key('receipt-quantity-picker')),
+      const Offset(0, -48),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Done'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('receipt-quantity-picker')), findsNothing);
+    expect(find.text('×4'), findsOneWidget);
+    // Total must be unchanged — quantity is display metadata only.
+    expect(_amountDisplayText(tester), 'RM 19.90');
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      savedDraft!.lineItems
+          .firstWhere((i) => i.name == 'Teh O Limau Ais')
+          .quantity,
+      4,
+    );
+  });
+
+  testWidgets(
+      'dismissing the quantity picker without Done leaves the quantity unchanged',
+      (tester) async {
+    await _openSheet(tester, _draft(), (_) {});
+
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('receipt-item-quantity-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.drag(
+      find.byKey(const Key('receipt-quantity-picker')),
+      const Offset(0, -96),
+    );
+    await tester.pumpAndSettle();
+
+    // Tap the modal barrier (top of screen, above the sheet).
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('receipt-quantity-picker')), findsNothing);
+    expect(find.text('×3'), findsOneWidget);
+  });
+
+  testWidgets(
+      'untouched null quantity stays null when a sibling item is price-edited',
+      (tester) async {
+    ReceiptIngestDraft? savedDraft;
+    await _openSheet(
+      tester,
+      _draft(),
+      (_) {},
+      onSave: (amount, draft, impact) async => savedDraft = draft,
+    );
+
+    // Rsb Biasa (index 0) has quantity: null; edit its price so the
+    // lineItems rebuild path runs without a quantity override for it.
+    await tester.ensureVisible(find.text('RM 7.00'));
+    await tester.pump();
+    await tester.tap(find.text('RM 7.00'));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('receipt-price-field')), '8.00');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final rsb =
+        savedDraft!.lineItems.firstWhere((i) => i.name == 'Rsb Biasa');
+    expect(rsb.quantity, isNull);
+    expect(rsb.priceMyr, closeTo(8.00, 0.001));
+    // Sibling with an explicit OCR quantity must also keep it.
+    expect(
+      savedDraft!.lineItems
+          .firstWhere((i) => i.name == 'Teh O Limau Ais')
+          .quantity,
+      3,
     );
   });
 
@@ -510,17 +740,17 @@ void main() {
   });
 
   testWidgets(
-      'needs-amount draft with no line items shows an empty, editable amount field',
+      'needs-amount draft with no line items shows RM 0.00 and a keypad',
       (tester) async {
     await _openSheet(tester, _draft(amount: null, lineItems: const []), (_) {});
 
     expect(find.text('–'), findsNothing);
-    expect(find.byKey(const Key('receipt-amount-field')), findsOneWidget);
-    expect(_amountFieldText(tester), '');
+    expect(find.byKey(const Key('receipt-amount-display')), findsOneWidget);
+    expect(_amountDisplayText(tester), 'RM 0.00');
     expect(find.text('Save'), findsOneWidget);
     expect(
       find.text("We couldn't read the amount — enter it above."),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.text("Double-check this amount — we're not fully sure."),
@@ -528,8 +758,13 @@ void main() {
     );
   });
 
-  testWidgets('needs-amount draft: typing an amount and saving invokes onSave',
+  testWidgets('needs-amount draft: keypad entry and saving invokes onSave',
       (tester) async {
+    tester.view.physicalSize = const Size(500, 1100);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     double? savedAmount;
     await _openSheet(
       tester,
@@ -538,11 +773,7 @@ void main() {
       onSave: (amount, draft, impact) async => savedAmount = amount,
     );
 
-    await tester.enterText(
-      find.byKey(const Key('receipt-amount-field')),
-      '25.00',
-    );
-    await tester.pump();
+    await _enterAmountViaKeypad(tester, '2500');
 
     await tester.tap(find.text('Save'));
     await tester.pump();
@@ -562,7 +793,7 @@ void main() {
       onSave: (amount, draft, impact) async => savedAmount = amount,
     );
 
-    expect(_amountFieldText(tester), '19.90');
+    expect(_amountDisplayText(tester), 'RM 19.90');
 
     await tester.tap(find.text('Save'));
     await tester.pump();
@@ -572,8 +803,13 @@ void main() {
   });
 
   testWidgets(
-      'the total field stays editable on a confident draft and overrides item math',
+      'the total stays editable via keypad and overrides item math',
       (tester) async {
+    tester.view.physicalSize = const Size(500, 1100);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     double? savedAmount;
     await _openSheet(
       tester,
@@ -582,22 +818,18 @@ void main() {
       onSave: (amount, draft, impact) async => savedAmount = amount,
     );
 
-    expect(_amountFieldText(tester), '19.90');
+    expect(_amountDisplayText(tester), 'RM 19.90');
 
-    await tester.enterText(
-      find.byKey(const Key('receipt-amount-field')),
-      '50.00',
-    );
-    await tester.pump();
+    await _enterAmountViaKeypad(tester, '5000');
 
     // Excluding an item afterwards must not silently overwrite what the
-    // user just typed directly into the total.
-    await tester.ensureVisible(find.text('Rsb Biasa'));
+    // user just entered on the keypad.
+    await tester.ensureVisible(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
-    await tester.tap(find.text('Rsb Biasa'));
+    await tester.tap(find.byKey(const Key('receipt-item-checkbox-0')));
     await tester.pump();
 
-    expect(_amountFieldText(tester), '50.00');
+    expect(_amountDisplayText(tester), 'RM 50.00');
 
     await tester.tap(find.text('Save'));
     await tester.pump();
@@ -606,42 +838,59 @@ void main() {
     expect(savedAmount, closeTo(50.00, 0.001));
   });
 
-  testWidgets('offers Save for later on a needs-amount draft and invokes it',
+  testWidgets('keypad shifts digits from the right like a banking app',
       (tester) async {
-    ReceiptIngestDraft? parked;
+    // Tall portrait surface so the pinned keypad isn't clipped.
+    tester.view.physicalSize = const Size(500, 1100);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await _openSheet(
       tester,
       _draft(amount: null, lineItems: const []),
       (_) {},
-      onSaveForLater: (draft) async => parked = draft,
     );
 
-    final button = find.text('Save for later');
-    expect(button, findsOneWidget);
+    expect(_amountDisplayText(tester), 'RM 0.00');
 
-    await tester.tap(button);
+    final display = find.byKey(const Key('receipt-amount-display'));
+    await tester.tap(display);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 250));
 
-    expect(parked, isNotNull);
-    expect(parked!.needsAmount, isTrue);
-  });
+    Future<void> tapDigit(int d) async {
+      final key = find.byKey(Key('receipt-amount-keypad-digit-$d'));
+      await tester.ensureVisible(key);
+      await tester.tap(key);
+      await tester.pump();
+    }
 
-  testWidgets('hides Save for later on a confident draft', (tester) async {
-    await _openSheet(
-      tester,
-      _draft(),
-      (_) {},
-      onSaveForLater: (_) async {},
-    );
+    await tapDigit(1);
+    expect(_amountDisplayText(tester), 'RM 0.01');
 
-    expect(find.text('Save for later'), findsNothing);
-  });
+    await tapDigit(5);
+    expect(_amountDisplayText(tester), 'RM 0.15');
 
-  testWidgets('hides Save for later when no callback is wired', (tester) async {
-    await _openSheet(tester, _draft(amount: null, lineItems: const []), (_) {});
+    await tapDigit(9);
+    expect(_amountDisplayText(tester), 'RM 1.59');
 
-    expect(find.text('Save for later'), findsNothing);
+    await tapDigit(9);
+    expect(_amountDisplayText(tester), 'RM 15.99');
+
+    final backspace = find.byKey(const Key('receipt-amount-keypad-backspace'));
+    await tester.ensureVisible(backspace);
+    await tester.tap(backspace);
+    await tester.pump();
+    expect(_amountDisplayText(tester), 'RM 1.59');
+
+    await tester.tap(backspace);
+    await tester.pump();
+    expect(_amountDisplayText(tester), 'RM 0.15');
+
+    await tester.tap(backspace);
+    await tester.pump();
+    expect(_amountDisplayText(tester), 'RM 0.01');
   });
 
   group('items scroll section', () {
@@ -690,14 +939,24 @@ void main() {
       await usePhoneViewport(tester);
       await _openSheet(tester, _draft(lineItems: manyItems(15)), (_) {});
 
-      await tester.drag(find.byType(ListView), const Offset(0, -600));
+      final itemCheckbox = find.byKey(const Key('receipt-item-checkbox-14'));
+      await tester.scrollUntilVisible(
+        itemCheckbox,
+        80,
+        scrollable: find.descendant(
+          of: find.byType(RawScrollbar),
+          matching: find.byType(Scrollable),
+        ),
+      );
       await tester.pump();
 
-      await tester.tap(find.text('Line Item 14'));
+      await tester.tap(itemCheckbox);
       await tester.pump();
       expect(find.text('14 of 15 items'), findsOneWidget);
       expect(find.text('Line Item 14 excluded'), findsOneWidget);
 
+      await tester.ensureVisible(find.text('RM 14.00'));
+      await tester.pump();
       await tester.tap(find.text('RM 14.00')); // Line Item 13's price
       await tester.pump();
       final priceField = find.byKey(const Key('receipt-price-field'));

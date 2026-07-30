@@ -137,7 +137,7 @@ class _TierColumn extends StatelessWidget {
     final labelColor = isLocked ? const Color(0xFFB4AC9C) : tierColor;
 
     return SizedBox(
-      width: 88,
+      width: 64,
       child: Column(
         children: [
           _TierHex(
@@ -199,8 +199,8 @@ class _TierHex extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 80.0;
-    const inset = 3.0;
+    const size = 56.0;
+    const inset = 2.0;
     final ringColor = isLocked ? _kLockedRing : tierColor;
     final innerBg = isLocked ? _kInnerLocked : _kInnerUnlocked;
     final badgeColor = isLocked ? const Color(0xFF9A9384) : tierColor;
@@ -253,8 +253,8 @@ class _TierHex extends StatelessWidget {
             top: 2,
             left: 2,
             child: Container(
-              width: 18,
-              height: 18,
+              width: 16,
+              height: 16,
               decoration: BoxDecoration(
                 color: badgeColor,
                 shape: BoxShape.circle,
@@ -271,7 +271,7 @@ class _TierHex extends StatelessWidget {
                 '${tierIndex + 1}',
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 9,
+                  fontSize: 8,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -285,8 +285,8 @@ class _TierHex extends StatelessWidget {
               right: 0,
               child: Center(
                 child: SizedBox(
-                  width: 14,
-                  height: 12,
+                  width: 12,
+                  height: 10,
                   child: CustomPaint(painter: _LockPainter()),
                 ),
               ),

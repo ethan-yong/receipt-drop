@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/auth_redirect.dart';
@@ -220,12 +221,10 @@ class _AuthScreenState extends State<AuthScreen> {
                         ? null
                         : () => _oauth(OAuthProvider.google),
                     label: 'Continue with Google',
-                    leading: const Text(
-                      'G',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    leading: SvgPicture.asset(
+                      'assets/branding/google_g.svg',
+                      width: 20,
+                      height: 20,
                     ),
                   ),
                   if (showApple) ...[

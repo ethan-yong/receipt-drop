@@ -25,6 +25,10 @@ typedef OcrAttemptFactory = OcrAttemptHandle Function();
 /// failure). On failure the screen stays open with an inline retry state
 /// instead of popping immediately.
 ///
+/// Callers must push this via the root navigator (`rootNavigator: true`) so
+/// it covers the shell's docked capture FAB and bottom nav — a nested
+/// branch push leaves that chrome visible on top of the processing UI.
+///
 /// When [batchProgress] is supplied with more than one receipt in the
 /// batch, a progress footer ("N of M completed") is shown below the log
 /// panel; omit it (or leave totalCount at 1) for a single-receipt scan.

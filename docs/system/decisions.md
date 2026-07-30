@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Map cluster fit-bounds + spiderfy for overlapping pins (2026-07-30)
+
+**Decision**: Cluster-bubble taps fit the camera to the bounding box of every distinct place inside the tapped geohash bucket (`CameraUpdate.newLatLngBounds` with 80px padding, plus a ~65m minimum span guard for near-co-located places). At individual-pin zoom, place pins whose screen positions fall within 56px of each other are collapsed into one tap-to-expand "N nearby" overlap indicator; tapping it spiderfies the group into a circular fan-out (screen-space offsets from `map_pin_layout.dart`), and tapping the bare map collapses it. Grouping is a pure union-find over already-projected screen coordinates — not a change to the geohash clustering pipeline.
+
+**Reason**: The previous fixed `newLatLngZoom(..., 16.0)` on cluster tap often left some of a bucket's places off-screen or overshot when places were already nearby. Distinct places a few meters apart (different Google `place_id`s / geohash-8 keys) still rendered as stacked untappable widgets at pin zoom; native marker clustering libraries (`google_maps_cluster_manager`/`fluster`) can't host our custom Flutter overlay pins.
+
+**Alternatives considered**: Step-by-step one-geohash-level zoom per tap (rejected — extra taps for the common "show me these places" case); always-on auto-spread without a tap (rejected — clutters the map when many near-coincident places share a viewport); geographic (lat/lng) spiderfy offsets instead of screen-space (rejected — distance in degrees varies with latitude/zoom and wouldn't guarantee tappable separation).
+
+**Tradeoffs**: Only one spiderfy group open at a time; expand/collapse is a cross-fade+scale (`AnimatedSwitcher`), not literal pin flight along the radius. Overlap detection uses a fixed pixel threshold tuned to pill width — may need retuning if marker size changes. Friend pins and the "you are here" avatar are out of scope.
+
+---
+
 ## Receipt-first map pin resolution (2026-07-28)
 
 **Decision**: Map pins use the merchant/address read from the receipt (LLM `address_text` / `location_clues` geocoded via Google Places), not device GPS at upload time. The confirm sheet auto-saves its receipt-derived preview place as `place_status = 'guess'`; `enrich-transaction` runs unbiased text search (no 300 m share-GPS bias, no nearby search) when the receipt carries a location signal; `get_map_transactions_in_bounds` and `place_geom` use `place_lat/lng` only. `share_location_*` is retained for enrichment fallback when the receipt has no address/clue.

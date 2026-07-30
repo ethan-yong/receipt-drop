@@ -4,13 +4,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/platform/adaptive_sheet.dart';
 import '../core/platform/platform_feedback.dart';
 import '../core/platform/platform_utils.dart';
 import '../core/theme/app_theme.dart';
 import '../features/share/receipt_capture_flow.dart';
 
 /// Bottom navigation: Home, Feed, Map, Ranks — with a center capture FAB on
-/// Home and Map only.
+/// Feed, Map, and Ranks (Home uses the in-page Drop Receipt CTA instead).
 class MainShell extends StatelessWidget {
   const MainShell({super.key, required this.navigationShell});
 
@@ -32,30 +33,42 @@ class MainShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final index = navigationShell.currentIndex;
-    // Capture FAB only on Home (0) and Map (2) — not Feed or Ranks.
-    final showFab = index == 0 || index == 2;
+    // Capture FAB on Feed / Map / Ranks — Home already has Drop Receipt.
+    final tabWantsFab = index != 0;
 
-    return Scaffold(
-      backgroundColor: AppColors.scaffold,
-      body: navigationShell,
-      extendBody: true,
-      floatingActionButton: showFab
-          ? Transform.translate(
-              offset: const Offset(0, -12),
-              child: FloatingActionButton(
-                onPressed: () => _onFabTap(context),
-                elevation: 6,
-                child: Icon(
-                  PlatformUtils.isCupertino ? CupertinoIcons.add : Icons.add,
-                  size: 28,
-                ),
-              ),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: PlatformUtils.isCupertino
-          ? _IosTabBar(index: index, onTap: _goBranch)
-          : _AndroidTabBar(index: index, onTap: _goBranch),
+    return ValueListenableBuilder<int>(
+      valueListenable: AdaptiveSheet.openCount,
+      builder: (context, openSheets, _) {
+        // Hide while any adaptive sheet is up — the FAB is a Scaffold child
+        // and otherwise paints above receipt confirm / quantity pickers.
+        final showFab = tabWantsFab && openSheets == 0;
+
+        return Scaffold(
+          backgroundColor: AppColors.scaffold,
+          body: navigationShell,
+          extendBody: true,
+          floatingActionButton: showFab
+              ? Transform.translate(
+                  offset: const Offset(0, -12),
+                  child: FloatingActionButton(
+                    onPressed: () => _onFabTap(context),
+                    elevation: 6,
+                    child: Icon(
+                      PlatformUtils.isCupertino
+                          ? CupertinoIcons.add
+                          : Icons.add,
+                      size: 28,
+                    ),
+                  ),
+                )
+              : null,
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerDocked,
+          bottomNavigationBar: PlatformUtils.isCupertino
+              ? _IosTabBar(index: index, onTap: _goBranch)
+              : _AndroidTabBar(index: index, onTap: _goBranch),
+        );
+      },
     );
   }
 }

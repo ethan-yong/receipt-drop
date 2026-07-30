@@ -198,9 +198,9 @@ class _TierHexSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Column(
       children: [
-        SkeletonBox(width: 80, height: 80, radius: 12),
+        SkeletonBox(width: 56, height: 56, radius: 12),
         SizedBox(height: 6),
-        SkeletonBox(width: 44, height: 10),
+        SkeletonBox(width: 40, height: 10),
       ],
     );
   }

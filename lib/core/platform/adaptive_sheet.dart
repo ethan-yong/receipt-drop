@@ -6,14 +6,31 @@ import 'platform_utils.dart';
 
 /// Presents action menus and forms using platform-native surfaces.
 abstract final class AdaptiveSheet {
+  /// Depth of currently-open adaptive sheets. [MainShell] hides its capture
+  /// FAB while this is > 0 — the FAB lives on the shell Scaffold and would
+  /// otherwise paint above nested or root-presented sheets.
+  @visibleForTesting
+  static final ValueNotifier<int> openCount = ValueNotifier<int>(0);
+
+  static Future<T?> _trackOpen<T>(Future<T?> future) async {
+    openCount.value++;
+    try {
+      return await future;
+    } finally {
+      openCount.value--;
+    }
+  }
+
   static Future<T?> showActions<T>({
     required BuildContext context,
     required String title,
     required List<AdaptiveAction<T>> actions,
   }) {
     if (PlatformUtils.isCupertino) {
-      return showCupertinoModalPopup<T>(
+      return _trackOpen(showCupertinoModalPopup<T>(
         context: context,
+        // Cover MainShell's center-docked capture FAB and bottom nav.
+        useRootNavigator: true,
         builder: (ctx) => CupertinoActionSheet(
           title: Text(title),
           actions: [
@@ -29,11 +46,12 @@ abstract final class AdaptiveSheet {
             child: const Text('Cancel'),
           ),
         ),
-      );
+      ));
     }
 
-    return showModalBottomSheet<T>(
+    return _trackOpen(showModalBottomSheet<T>(
       context: context,
+      useRootNavigator: true,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -62,7 +80,7 @@ abstract final class AdaptiveSheet {
           ),
         ),
       ),
-    );
+    ));
   }
 
   static Future<T?> showForm<T>({
@@ -74,8 +92,11 @@ abstract final class AdaptiveSheet {
     bool showDragHandle = true,
   }) {
     if (PlatformUtils.isCupertino) {
-      return showCupertinoModalPopup<T>(
+      return _trackOpen(showCupertinoModalPopup<T>(
         context: context,
+        // Cover MainShell's center-docked capture FAB and bottom nav —
+        // without this the FAB paints above quantity / confirm sheets.
+        useRootNavigator: true,
         builder: (ctx) {
           final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
           return Material(
@@ -101,11 +122,12 @@ abstract final class AdaptiveSheet {
             ),
           );
         },
-      );
+      ));
     }
 
-    return showModalBottomSheet<T>(
+    return _trackOpen(showModalBottomSheet<T>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: isScrollControlled,
       showDragHandle: showDragHandle,
       backgroundColor: backgroundColor,
@@ -122,7 +144,7 @@ abstract final class AdaptiveSheet {
         ),
         child: child,
       ),
-    );
+    ));
   }
 }
 
