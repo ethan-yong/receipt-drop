@@ -15,12 +15,14 @@ import '../../data/repositories/places_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
 import '../../domain/logic/dashboard_aggregates.dart';
+import '../../domain/logic/map_pin_layout.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/blob_avatar.dart';
 import '../../widgets/map_filter_chips.dart';
 import 'widgets/friend_map_marker.dart';
 import 'widgets/friend_pin_sheet.dart';
+import 'widgets/overlap_stack_marker.dart';
 import 'widgets/place_detail_panel.dart';
 import 'widgets/spend_cluster_bubble.dart';
 import 'widgets/spend_place_marker.dart';
@@ -89,6 +91,11 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   Position? _myPosition;
   AvatarConfig? _myAvatarConfig;
   MapPlaceCluster? _selectedCluster;
+
+  /// Place keys of the overlap group currently expanded via spiderfy.
+  /// `null` means nothing is expanded. Cleared on bare-map tap, when the
+  /// live grouping no longer matches, or when zooming out to bucket mode.
+  Set<String>? _spiderfiedGroup;
 
   /// Viewport-fetched rows backing the map's own-place clustering/heat data
   /// (see [MapTransactionsRepository]) — replaces streaming the user's
@@ -232,9 +239,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   }
 
   /// Cluster-bubble tap: single-place buckets open the detail panel
-  /// immediately; multi-place buckets jump straight to individual-pin zoom
-  /// instead of only fitting the coarse geohash cell (which previously
-  /// required several taps to reach place-level pins).
+  /// immediately; multi-place buckets fit the camera to the places inside
+  /// the bucket (with edge padding) so every pin lands on-screen.
   void _selectBucket(GeoBucket bucket) {
     final precision = _lastZoomBucket ?? zoomBucketPrecision(11);
     final txsInBucket = _viewportRows.where((t) {
@@ -251,16 +257,56 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       return;
     }
 
-    // Multiple distinct places: land at individual-pin zoom in one gesture.
-    const drillDownZoom = 16.0;
+    var minLat = clusters.first.lat;
+    var maxLat = clusters.first.lat;
+    var minLng = clusters.first.lng;
+    var maxLng = clusters.first.lng;
+    for (final c in clusters.skip(1)) {
+      if (c.lat < minLat) minLat = c.lat;
+      if (c.lat > maxLat) maxLat = c.lat;
+      if (c.lng < minLng) minLng = c.lng;
+      if (c.lng > maxLng) maxLng = c.lng;
+    }
+    // newLatLngBounds needs real span; nearly co-located places get a
+    // minimum box so the fit doesn't fail, and spiderfy disambiguates
+    // once the camera settles at individual-pin zoom.
+    const minSpanDeg = 0.0006; // ~65m
+    if (maxLat - minLat < minSpanDeg) {
+      final pad = minSpanDeg / 2;
+      minLat -= pad;
+      maxLat += pad;
+    }
+    if (maxLng - minLng < minSpanDeg) {
+      final pad = minSpanDeg / 2;
+      minLng -= pad;
+      maxLng += pad;
+    }
     _controller?.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(bucket.lat, bucket.lng), drillDownZoom),
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        // Larger than the 64px used for initial auto-fit — custom pill+tail
+        // pins are taller than a native marker.
+        80,
+      ),
     );
   }
 
   void _closePanel() {
     if (_selectedCluster == null) return;
     setState(() => _selectedCluster = null);
+  }
+
+  void _clearSpiderfy() {
+    if (_spiderfiedGroup == null) return;
+    setState(() => _spiderfiedGroup = null);
+  }
+
+  void _onMapBackgroundTap() {
+    _closePanel();
+    _clearSpiderfy();
   }
 
   /// One-time camera fit over everything worth seeing (own places, friend
@@ -408,6 +454,10 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       _lastClusters = bucket == individualPinPrecision ? mapClusters(rows) : const [];
       _lastBuckets =
           bucket == individualPinPrecision ? const [] : bucketClusters(rows, bucket);
+      // Spiderfy only applies in individual-pin mode.
+      if (bucket != individualPinPrecision) {
+        _spiderfiedGroup = null;
+      }
     });
     _scheduleReproject();
   }
@@ -512,18 +562,132 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     List<MapPlaceCluster> clusters,
     Map<String, Offset> positions,
   ) {
+    final byKey = {for (final c in clusters) c.placeKey: c};
+    final screenPoints = <String, ScreenPoint>{
+      for (final e in positions.entries)
+        if (byKey.containsKey(e.key)) e.key: (x: e.value.dx, y: e.value.dy),
+    };
+    final groups = groupOverlappingKeys(screenPoints);
+
+    // Drop a spiderfy that no longer matches any live overlap group
+    // (zoom/pan separated the pins, or a place left the viewport).
+    var spiderfied = _spiderfiedGroup;
+    if (spiderfied != null) {
+      final stillValid = groups.any((g) {
+        final set = g.toSet();
+        return set.length == spiderfied!.length &&
+            set.containsAll(spiderfied);
+      });
+      if (!stillValid) {
+        spiderfied = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _clearSpiderfy();
+        });
+      }
+    }
+
     final widgets = <Widget>[];
-    for (final c in clusters) {
-      final pos = positions[c.placeKey];
-      if (pos == null) continue;
-      // Bubble sits above the point; the tail tip is the anchor (96×56 box,
-      // point at bottom-center).
+    for (final groupKeys in groups) {
+      if (groupKeys.length == 1) {
+        final key = groupKeys.single;
+        final c = byKey[key];
+        final pos = positions[key];
+        if (c == null || pos == null) continue;
+        widgets.add(Positioned(
+          left: pos.dx - 48,
+          top: pos.dy - 56,
+          child: SpendPlaceMarker(
+            cluster: c,
+            onTap: () => _selectPlace(c),
+          ),
+        ));
+        continue;
+      }
+
+      final members = <MapPlaceCluster>[
+        for (final k in groupKeys)
+          if (byKey[k] != null) byKey[k]!,
+      ];
+      if (members.length < 2) continue;
+
+      var cx = 0.0;
+      var cy = 0.0;
+      for (final k in groupKeys) {
+        final p = positions[k]!;
+        cx += p.dx;
+        cy += p.dy;
+      }
+      cx /= groupKeys.length;
+      cy /= groupKeys.length;
+
+      final groupId = (groupKeys.toList()..sort()).join('|');
+      final isExpanded = spiderfied != null &&
+          spiderfied.length == groupKeys.length &&
+          spiderfied.containsAll(groupKeys);
+
+      // Dominant category ≈ highest-spend place in the group (cheap proxy).
+      final dominant = members.reduce(
+        (a, b) => a.totalSpend >= b.totalSpend ? a : b,
+      );
+
+      final offsets = spiderfyOffsets(members.length);
+      // Match spiderfyOffsets radius growth: base 46 + (n-2)*6.
+      final radius = 46.0 + (members.length - 2) * 6.0;
+      // Room for pill+tail (~56 tall) beyond the fan-out radius.
+      final extent = radius + 60.0;
+
       widgets.add(Positioned(
-        left: pos.dx - 48,
-        top: pos.dy - 56,
-        child: SpendPlaceMarker(
-          cluster: c,
-          onTap: () => _selectPlace(c),
+        left: cx - extent,
+        top: cy - extent,
+        width: extent * 2,
+        height: extent * 2,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: ScaleTransition(scale: anim, child: child),
+          ),
+          child: isExpanded
+              ? Stack(
+                  key: ValueKey('expanded-$groupId'),
+                  clipBehavior: Clip.none,
+                  children: [
+                    CustomPaint(
+                      size: Size(extent * 2, extent * 2),
+                      painter: _SpiderfyLegsPainter(
+                        center: Offset(extent, extent),
+                        offsets: [
+                          for (final o in offsets) Offset(o.x, o.y),
+                        ],
+                        color: AppColors.categoryColor(dominant.dominantCategory)
+                            .withValues(alpha: 0.45),
+                      ),
+                    ),
+                    for (var i = 0; i < members.length; i++)
+                      Positioned(
+                        left: extent + offsets[i].x - 48,
+                        top: extent + offsets[i].y - 56,
+                        child: SpendPlaceMarker(
+                          cluster: members[i],
+                          onTap: () => _selectPlace(members[i]),
+                        ),
+                      ),
+                  ],
+                )
+              : Align(
+                  key: ValueKey('collapsed-$groupId'),
+                  // Tail tip at the geographic center (box midpoint).
+                  alignment: const Alignment(0, 0.15),
+                  child: OverlapStackMarker(
+                    count: members.length,
+                    dominantCategory: dominant.dominantCategory,
+                    onTap: () => setState(
+                      () => _spiderfiedGroup = groupKeys.toSet(),
+                    ),
+                  ),
+                ),
         ),
       ));
     }
@@ -678,9 +842,9 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                   zoom: 11,
                 ),
                 onMapCreated: _onMapCreated,
-                // Tapping bare map dismisses the place panel, like
-                // Google Maps.
-                onTap: (_) => _closePanel(),
+                // Tapping bare map dismisses the place panel and any
+                // open spiderfy, like Google Maps.
+                onTap: (_) => _onMapBackgroundTap(),
                 onCameraMove: _scheduleReproject,
                 onCameraIdle: _onCameraIdle,
                 rotateGesturesEnabled: false,
@@ -814,4 +978,36 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       ),
     );
   }
+}
+
+/// Thin "legs" from a spiderfy group's shared center out to each spread pin,
+/// so it's clear which real map point the fanned-out markers came from.
+class _SpiderfyLegsPainter extends CustomPainter {
+  const _SpiderfyLegsPainter({
+    required this.center,
+    required this.offsets,
+    required this.color,
+  });
+
+  final Offset center;
+  final List<Offset> offsets;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    for (final o in offsets) {
+      canvas.drawLine(center, center + o, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SpiderfyLegsPainter oldDelegate) =>
+      oldDelegate.center != center ||
+      oldDelegate.color != color ||
+      oldDelegate.offsets.length != offsets.length;
 }

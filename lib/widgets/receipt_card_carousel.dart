@@ -29,8 +29,10 @@ class ReceiptCardCarousel extends StatefulWidget {
 
 class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     with TickerProviderStateMixin {
-  // Card height plus the newest-card gold frame (5px per side).
-  static const _viewportHeight = kReceiptCardHeight + 10;
+  // Card height plus the newest-card gold frame (5px per side), plus room for
+  // the "Latest Spending" pill (Positioned bottom: -16) and its shadow so it
+  // does not paint over the Drop Receipt CTA below the carousel.
+  static const _latestSpendingBadgeOverflow = 32.0;
   static const _rotateInterval = Duration(seconds: 5);
   static const _resumeDelay = Duration(milliseconds: 400);
   static const _dotChainDelay = Duration(milliseconds: 700);
@@ -384,12 +386,16 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     final n = txs.length;
     final current = _current < n ? _current : n - 1;
     final activeTx = txs[current];
+    // Only the newest receipt (index 0) carries the hanging badge.
+    final viewportHeight = kReceiptCardHeight +
+        10 +
+        (current == 0 ? _latestSpendingBadgeOverflow : 0);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          height: _viewportHeight,
+          height: viewportHeight,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             // Horizontal-only recognizers (the handlers only ever use dx) so
