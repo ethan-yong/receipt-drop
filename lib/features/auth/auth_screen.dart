@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/auth_redirect.dart';
@@ -144,6 +145,51 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// Android uses the native Google Sign-In SDK (in-app account picker, no
+  /// browser/app-switch) instead of the browser-based OAuth flow. iOS stays
+  /// on the browser flow for now — native iOS sign-in needs its own Google
+  /// Cloud OAuth client, deferred (see `pending-tasks.md`).
+  bool get _useNativeGoogle =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  Future<void> _googleSignIn() {
+    return _useNativeGoogle ? _nativeGoogleSignIn() : _oauth(OAuthProvider.google);
+  }
+
+  Future<void> _nativeGoogleSignIn() async {
+    setState(() => _loading = true);
+    try {
+      final googleUser = await GoogleSignIn.instance.authenticate();
+      final idToken = googleUser.authentication.idToken;
+      final authorization =
+          await googleUser.authorizationClient.authorizationForScopes([
+            'email',
+          ]) ?? await googleUser.authorizationClient.authorizeScopes(['email']);
+      await Supabase.instance.client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken!,
+        accessToken: authorization.accessToken,
+      );
+    } on GoogleSignInException catch (e) {
+      // The user closing the picker isn't an error worth surfacing.
+      if (e.code != GoogleSignInExceptionCode.canceled && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-in failed: ${e.description ?? e.code}'),
+          ),
+        );
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final showApple = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
@@ -217,9 +263,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
                   // Social buttons
                   _SocialButton(
-                    onTap: _loading
-                        ? null
-                        : () => _oauth(OAuthProvider.google),
+                    onTap: _loading ? null : _googleSignIn,
                     label: 'Continue with Google',
                     leading: SvgPicture.asset(
                       'assets/branding/google_g.svg',

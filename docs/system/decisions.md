@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Native Google Sign-In on Android, replacing browser OAuth (2026-07-31)
+
+**Decision**: `auth_screen.dart`'s Google button now calls the native `google_sign_in` SDK (v7, `GoogleSignIn.instance.authenticate()`) on **Android only** instead of `Supabase.auth.signInWithOAuth`. The resulting ID token is exchanged via `Supabase.auth.signInWithIdToken`. Sign-in appears as an in-app Credential Manager bottom sheet with no browser tab and no deep-link round trip. `GoogleSignIn.instance.initialize()` runs once at startup (`main.dart`), guarded to Android only, using the existing `Env.googleWebClientId`/`GOOGLE_OAUTH_CLIENT_ID` as Android's `serverClientId` (no new config needed — Android's native flow reuses the same Web client already configured for the browser flow). iOS, web, and desktop are unchanged and still use `signInWithOAuth`.
+
+**Reason**: the browser-redirect OAuth flow visibly "teleported" the user out of the app into Chrome/Safari to pick a Google account, then back in via `com.receiptdrop.receiptdrop://login-callback` — a jarring switch modern apps (YouTube, Gmail, Notion) don't have. Native Google Sign-In shows the picker as an in-app modal instead. Scoped to Android only per explicit request — iOS native sign-in needs its own Google Cloud OAuth client (not yet created) and touches `Info.plist`/xcconfig, deliberately deferred (design already worked out, see `pending-tasks.md`).
+
+**Alternatives considered**: also doing iOS native sign-in in this same pass (reverted — needs a new Google Cloud OAuth client the user hadn't created yet; scoped down to Android-only, which needed zero new Google Cloud setup since it reuses the existing Web client as `serverClientId`); also switching the web build to Google Identity Services/One Tap (rejected — a full-page redirect is a normal, expected pattern on web, and it isn't the UX problem being fixed).
+
+**Tradeoffs**: Apple Sign-In, iOS Google sign-in, and web/desktop Google sign-in are all unchanged and still go through the browser-OAuth + deep-link path — Google sign-in now has two different mechanisms depending on platform (Android native vs. everywhere else browser-based). Fixed a latent, unrelated bug while touching `ios/Runner/Info.plist`: it had two duplicate `CFBundleURLTypes` keys (only the second was ever honored by the plist parser; the first, an unused `receiptdrop://` scheme, was dead) — merged into one array.
+
+---
+
 ## Pending-receipt location context: share-time venue name, passive-only permission check (2026-07-30)
 
 **Decision**: `ShareIntentListener` now also kicks off a fire-and-forget location resolution per saved file — a passive (never-requesting) GPS check via a new `getCurrentPositionPassiveOrNull()` (`lib/core/utils/current_location.dart`), then `PlacesRepository.fetchNearbyCandidates(lat:, lng:, limit: 1)` called with **no** merchant/category bias, so the existing `places-proxy` `nearby_candidates` mode ranks purely by proximity. The resolved place name (never raw coordinates) is written to a new `pending_imports.venueLabel` column (`PendingImportsRepository.setVenueLabel`, mirroring `setNote`'s no-op-on-missing-row contract) and shown as a "📍 `<name>`" line on `PendingImportsScreen`'s pending-import card when present.

@@ -100,6 +100,23 @@ class Env {
   static bool get hasOcrApiConfig =>
       ocrApiUrl.isNotEmpty && ocrSharedSecret.isNotEmpty;
 
+  /// Google OAuth Web client ID. Not a secret (public identifier) — used
+  /// server-side as the Supabase Google provider `client_id` and client-side
+  /// as `serverClientId` for native Google Sign-In on Android.
+  static String get googleWebClientId {
+    const fromDefine = String.fromEnvironment('GOOGLE_OAUTH_CLIENT_ID');
+    if (fromDefine.isNotEmpty) return fromDefine;
+    if (kDebugMode) {
+      try {
+        final v = dotenv.maybeGet('GOOGLE_OAUTH_CLIENT_ID');
+        if (v != null && v.isNotEmpty) return v.trim();
+      } on Object {
+        // dotenv not loaded yet.
+      }
+    }
+    return '';
+  }
+
   /// Skip onboarding + auth redirects while building features (debug only by default).
   ///
   /// Enabled when `SKIP_AUTH=true` in `.env` or `--dart-define=SKIP_AUTH=true`,
