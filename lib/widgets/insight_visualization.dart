@@ -54,11 +54,84 @@ class InsightVisualization extends StatelessWidget {
 AxisTitles get _hiddenAxis =>
     const AxisTitles(sideTitles: SideTitles(showTitles: false));
 
+const _insightTooltipBg = AppColors.textPrimary;
+const _insightTooltipTextStyle = TextStyle(
+  color: AppColors.scaffold,
+  fontWeight: FontWeight.w600,
+  fontSize: 12,
+);
+const _holdToViewDelay = Duration(milliseconds: 120);
+
+String _formatInsightValue(double value) {
+  if (value == value.roundToDouble()) {
+    return value.round().toString();
+  }
+  return value.toStringAsFixed(1);
+}
+
+bool _insightHoldActive(FlTouchEvent event) =>
+    event is FlLongPressStart || event is FlLongPressMoveUpdate;
+
+bool _insightHoldReleased(FlTouchEvent event) =>
+    event is FlLongPressEnd ||
+    event is FlTapUpEvent ||
+    event is FlTapCancelEvent ||
+    event is FlPointerExitEvent ||
+    event is FlPanEndEvent ||
+    event is FlPanCancelEvent;
+
+LineTouchData _insightLineTouchData(
+  void Function(FlTouchEvent, LineTouchResponse?) onTouch,
+) =>
+    LineTouchData(
+      enabled: true,
+      handleBuiltInTouches: false,
+      longPressDuration: _holdToViewDelay,
+      touchCallback: onTouch,
+      touchTooltipData: LineTouchTooltipData(
+        tooltipRoundedRadius: 8,
+        tooltipPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        tooltipMargin: 6,
+        getTooltipColor: (_) => _insightTooltipBg,
+        getTooltipItems: (spots) => spots
+            .map(
+              (spot) => LineTooltipItem(
+                _formatInsightValue(spot.y),
+                _insightTooltipTextStyle,
+              ),
+            )
+            .toList(),
+      ),
+    );
+
+String _formatInsightRm(double value) {
+  final rounded = value.round();
+  if ((value - rounded).abs() < 0.01) {
+    return 'RM$rounded';
+  }
+  return 'RM${value.toStringAsFixed(0)}';
+}
+
+Widget _insightAxisLabel(String text, TitleMeta meta, TextStyle style) {
+  return SideTitleWidget(
+    axisSide: meta.axisSide,
+    space: 4,
+    fitInside: SideTitleFitInsideData.fromTitleMeta(meta),
+    child: Text(
+      text,
+      style: style,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.clip,
+    ),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // spending_spike -> line_trend (animation: line_draw)
 // ---------------------------------------------------------------------------
 
-class _LineTrendVisual extends StatelessWidget {
+class _LineTrendVisual extends StatefulWidget {
   const _LineTrendVisual({
     required this.weekday,
     required this.baseline,
@@ -90,23 +163,44 @@ class _LineTrendVisual extends StatelessWidget {
   final int durationMs;
 
   @override
+  State<_LineTrendVisual> createState() => _LineTrendVisualState();
+}
+
+class _LineTrendVisualState extends State<_LineTrendVisual> {
+  List<ShowingTooltipIndicators> _heldTooltips = const [];
+
+  void _onTouch(FlTouchEvent event, LineTouchResponse? response) {
+    if (_insightHoldReleased(event)) {
+      setState(() => _heldTooltips = const []);
+      return;
+    }
+    final spots = response?.lineBarSpots;
+    if (_insightHoldActive(event) && spots != null && spots.isNotEmpty) {
+      setState(() => _heldTooltips = [ShowingTooltipIndicators(spots)]);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final maxY = math.max(baseline, todayTotal) * 1.3 + 1;
+    final maxY = math.max(widget.baseline, widget.todayTotal) * 1.3 + 1;
     final labelStyle = Theme.of(context).textTheme.labelSmall;
     return SizedBox(
       height: 110,
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0, end: 1),
-        duration: Duration(milliseconds: durationMs),
+        duration: Duration(milliseconds: widget.durationMs),
         curve: Curves.easeOutBack,
         builder: (context, t, _) {
-          final revealedToday = baseline + (todayTotal - baseline) * t;
+          final revealedToday =
+              widget.baseline + (widget.todayTotal - widget.baseline) * t;
           return LineChart(
             LineChartData(
               minY: 0,
               maxY: maxY,
+              showingTooltipIndicators: _heldTooltips,
               gridData: const FlGridData(show: false),
               borderData: FlBorderData(show: false),
+              lineTouchData: _insightLineTouchData(_onTouch),
               titlesData: FlTitlesData(
                 topTitles: _hiddenAxis,
                 rightTitles: _hiddenAxis,
@@ -114,8 +208,9 @@ class _LineTrendVisual extends StatelessWidget {
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
+                    interval: 1,
                     getTitlesWidget: (v, _) => Text(
-                      v.toInt() == 0 ? 'Usual $weekday' : 'Today',
+                      v.round() == 0 ? 'Usual ${widget.weekday}' : 'Today',
                       style: labelStyle,
                     ),
                   ),
@@ -123,7 +218,10 @@ class _LineTrendVisual extends StatelessWidget {
               ),
               lineBarsData: [
                 LineChartBarData(
-                  spots: [FlSpot(0, baseline), FlSpot(1, revealedToday)],
+                  spots: [
+                    FlSpot(0, widget.baseline),
+                    FlSpot(1, revealedToday),
+                  ],
                   color: AppColors.accentOrange,
                   barWidth: 3,
                   dotData: const FlDotData(show: true),
@@ -145,11 +243,16 @@ class _LineTrendVisual extends StatelessWidget {
 // category_shift -> before_after_bar (animation: bars_grow)
 // ---------------------------------------------------------------------------
 
+const _comparisonBarPrevious = Color(0xFFF2E7D5);
+const _comparisonBarCurrent = Color(0xFF8BA9A3);
+const _comparisonBarAspectRatio = 1.35;
+
 class _BeforeAfterBarVisual extends StatefulWidget {
   const _BeforeAfterBarVisual({
-    required this.category,
     required this.previous,
     required this.current,
+    required this.previousLabel,
+    required this.currentLabel,
     required this.durationMs,
   });
 
@@ -157,23 +260,26 @@ class _BeforeAfterBarVisual extends StatefulWidget {
     Map<String, dynamic> params, {
     required int durationMs,
   }) {
-    final category = params['category'];
     final previous = params['previous'];
     final current = params['current'];
-    if (category is! String || previous is! num || current is! num) {
+    if (previous is! num || current is! num) {
       return const SizedBox.shrink();
     }
+    final previousLabel = params['previous_label'];
+    final currentLabel = params['current_label'];
     return _BeforeAfterBarVisual(
-      category: category,
       previous: previous.toDouble(),
       current: current.toDouble(),
+      previousLabel: previousLabel is String ? previousLabel : 'Last month',
+      currentLabel: currentLabel is String ? currentLabel : 'This month',
       durationMs: durationMs,
     );
   }
 
-  final String category;
   final double previous;
   final double current;
+  final String previousLabel;
+  final String currentLabel;
   final int durationMs;
 
   @override
@@ -188,7 +294,6 @@ class _BeforeAfterBarVisualState extends State<_BeforeAfterBarVisual> {
   void initState() {
     super.initState();
     final step = Duration(milliseconds: (widget.durationMs / 2).round());
-    // Previous bar first, current bar grows in shortly after — per bars_grow.
     Future.delayed(Duration.zero, () {
       if (mounted) setState(() => _previousShown = true);
     });
@@ -199,62 +304,121 @@ class _BeforeAfterBarVisualState extends State<_BeforeAfterBarVisual> {
 
   @override
   Widget build(BuildContext context) {
-    final maxY = math.max(widget.previous, widget.current) * 1.3 + 1;
-    final labelStyle = Theme.of(context).textTheme.labelSmall;
+    final textTheme = Theme.of(context).textTheme;
+    final maxValue = math.max(widget.previous, widget.current);
+    final barDuration = Duration(milliseconds: (widget.durationMs / 2).round());
+
+    return AspectRatio(
+      aspectRatio: _comparisonBarAspectRatio,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: _ComparisonBarColumn(
+                value: widget.previous,
+                maxValue: maxValue,
+                label: widget.previousLabel,
+                shown: _previousShown,
+                barColor: _comparisonBarPrevious,
+                animateDuration: barDuration,
+                valueStyle: textTheme.labelMedium?.copyWith(
+                  color: AppColors.textMuted,
+                  fontWeight: FontWeight.w600,
+                ),
+                periodStyle: textTheme.labelSmall?.copyWith(
+                  color: AppColors.textMuted,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Expanded(
+              child: _ComparisonBarColumn(
+                value: widget.current,
+                maxValue: maxValue,
+                label: widget.currentLabel,
+                shown: _currentShown,
+                barColor: _comparisonBarCurrent,
+                animateDuration: barDuration,
+                valueStyle: textTheme.labelMedium?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+                periodStyle: textTheme.labelSmall?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ComparisonBarColumn extends StatelessWidget {
+  const _ComparisonBarColumn({
+    required this.value,
+    required this.maxValue,
+    required this.label,
+    required this.shown,
+    required this.barColor,
+    required this.animateDuration,
+    required this.valueStyle,
+    required this.periodStyle,
+  });
+
+  final double value;
+  final double maxValue;
+  final String label;
+  final bool shown;
+  final Color barColor;
+  final Duration animateDuration;
+  final TextStyle? valueStyle;
+  final TextStyle? periodStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final fraction = maxValue > 0 && shown ? value / maxValue : 0.0;
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(widget.category, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: AppSpacing.xs),
-        SizedBox(
-          height: 110,
-          child: BarChart(
-            BarChartData(
-              maxY: maxY,
-              gridData: const FlGridData(show: false),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                topTitles: _hiddenAxis,
-                rightTitles: _hiddenAxis,
-                leftTitles: _hiddenAxis,
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (v, _) => Text(
-                      v.toInt() == 0 ? 'Before' : 'Now',
-                      style: labelStyle,
+        Text(
+          _formatInsightRm(value),
+          style: valueStyle,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final barHeight = constraints.maxHeight * fraction.clamp(0.0, 1.0);
+              return Align(
+                alignment: Alignment.bottomCenter,
+                child: AnimatedContainer(
+                  duration: animateDuration,
+                  curve: Curves.easeOutCubic,
+                  height: barHeight,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: barColor,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(12),
                     ),
                   ),
                 ),
-              ),
-              barGroups: [
-                BarChartGroupData(
-                  x: 0,
-                  barRods: [
-                    BarChartRodData(
-                      toY: _previousShown ? widget.previous : 0,
-                      color: AppColors.textMuted,
-                      width: 28,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ],
-                ),
-                BarChartGroupData(
-                  x: 1,
-                  barRods: [
-                    BarChartRodData(
-                      toY: _currentShown ? widget.current : 0,
-                      color: AppColors.accentOrange,
-                      width: 28,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            duration: Duration(milliseconds: (widget.durationMs / 2).round()),
-            curve: Curves.easeOutCubic,
+              );
+            },
           ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: periodStyle,
+          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -400,6 +564,7 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
   late final AnimationController _controller;
   late final Animation<double> _actualReveal;
   late final Animation<double> _forecastFade;
+  List<ShowingTooltipIndicators> _heldTooltips = const [];
 
   @override
   void initState() {
@@ -419,6 +584,17 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
     );
   }
 
+  void _onTouch(FlTouchEvent event, LineTouchResponse? response) {
+    if (_insightHoldReleased(event)) {
+      setState(() => _heldTooltips = const []);
+      return;
+    }
+    final spots = response?.lineBarSpots;
+    if (_insightHoldActive(event) && spots != null && spots.isNotEmpty) {
+      setState(() => _heldTooltips = [ShowingTooltipIndicators(spots)]);
+    }
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -428,58 +604,78 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
   @override
   Widget build(BuildContext context) {
     final maxY = math.max(widget.projected, widget.currentSoFar) * 1.2 + 1;
-    final labelStyle = Theme.of(context).textTheme.labelSmall;
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: AppColors.onDarkCardSecondary,
+        );
     return SizedBox(
       height: 110,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          final actualY = widget.currentSoFar * _actualReveal.value;
-          return LineChart(
-            LineChartData(
-              minY: 0,
-              maxY: maxY,
-              gridData: const FlGridData(show: false),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                topTitles: _hiddenAxis,
-                rightTitles: _hiddenAxis,
-                leftTitles: _hiddenAxis,
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (v, _) {
-                      final i = v.toInt();
-                      if (i == 0) return Text('So far', style: labelStyle);
-                      if (i == 2) return Text('Projected', style: labelStyle);
-                      return const SizedBox.shrink();
-                    },
+      child: ClipRect(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final actualY = widget.currentSoFar * _actualReveal.value;
+            return LineChart(
+              LineChartData(
+                minY: 0,
+                maxY: maxY,
+                showingTooltipIndicators: _heldTooltips,
+                gridData: const FlGridData(show: false),
+                borderData: FlBorderData(show: false),
+                lineTouchData: _insightLineTouchData(_onTouch),
+                titlesData: FlTitlesData(
+                  topTitles: _hiddenAxis,
+                  rightTitles: _hiddenAxis,
+                  leftTitles: _hiddenAxis,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      reservedSize: 24,
+                      getTitlesWidget: (v, meta) {
+                        final i = v.round();
+                        if (i == 0) {
+                          return _insightAxisLabel(
+                            'So far',
+                            meta,
+                            labelStyle ?? const TextStyle(),
+                          );
+                        }
+                        if (i == 2) {
+                          return _insightAxisLabel(
+                            'Projected',
+                            meta,
+                            labelStyle ?? const TextStyle(),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
                   ),
                 ),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: [const FlSpot(0, 0), FlSpot(1, actualY)],
+                    color: AppColors.primaryGreenDark,
+                    barWidth: 3,
+                    dotData: const FlDotData(show: true),
+                  ),
+                  LineChartBarData(
+                    spots: [
+                      FlSpot(1, widget.currentSoFar),
+                      FlSpot(2, widget.projected),
+                    ],
+                    color: AppColors.accentOrange.withValues(
+                      alpha: _forecastFade.value,
+                    ),
+                    barWidth: 3,
+                    dashArray: const [6, 4],
+                    dotData: const FlDotData(show: true),
+                  ),
+                ],
               ),
-              lineBarsData: [
-                LineChartBarData(
-                  spots: [const FlSpot(0, 0), FlSpot(1, actualY)],
-                  color: AppColors.primaryGreenDark,
-                  barWidth: 3,
-                  dotData: const FlDotData(show: true),
-                ),
-                LineChartBarData(
-                  spots: [
-                    FlSpot(1, widget.currentSoFar),
-                    FlSpot(2, widget.projected),
-                  ],
-                  color: AppColors.accentOrange.withValues(
-                    alpha: _forecastFade.value,
-                  ),
-                  barWidth: 3,
-                  dashArray: const [6, 4],
-                  dotData: const FlDotData(show: true),
-                ),
-              ],
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

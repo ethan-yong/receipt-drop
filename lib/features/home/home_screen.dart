@@ -109,11 +109,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: AppSpacing.lg),
-                        Text(
-                          "TODAY'S RECEIPTS",
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                letterSpacing: 1.2,
-                              ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "TODAY'S RECEIPTS",
+                              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    letterSpacing: 1.2,
+                                  ),
+                            ),
+                            _ViewHistoryButton(
+                              onTap: () => context.pushNamed('history'),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         ReceiptCardCarousel(transactions: today),
@@ -384,6 +392,36 @@ class _DropCountPill extends StatelessWidget {
           const SizedBox(width: 4),
           Text('$count drops', style: Theme.of(context).textTheme.labelSmall),
         ],
+      ),
+    );
+  }
+}
+
+/// Small boxed text link next to "TODAY'S RECEIPTS" that opens the
+/// receipts-only history view (`ReceiptHistoryScreen`), distinct from the
+/// full Dashboard (which pairs the same receipts with charts).
+class _ViewHistoryButton extends StatelessWidget {
+  const _ViewHistoryButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppSpacing.chipBorderRadius,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: AppSpacing.chipBorderRadius,
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Text(
+          'VIEW HISTORY',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                letterSpacing: 0.8,
+              ),
+        ),
       ),
     );
   }

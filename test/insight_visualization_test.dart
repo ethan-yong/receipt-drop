@@ -87,19 +87,22 @@ void main() {
       expect(find.byType(LineChart), findsOneWidget);
     });
 
-    testWidgets('renders a bar chart for before_after_bar', (tester) async {
+    testWidgets('renders comparison bars for before_after_bar', (tester) async {
       await pump(tester, {
         'type': 'before_after_bar',
         'parameters': {
-          'category': 'Food',
-          'previous': 110.0,
-          'current': 150.0,
+          'category': 'Groceries',
+          'previous': 306.0,
+          'current': 410.0,
         },
         'animation': {'type': 'bars_grow', 'duration_ms': 100},
       });
       await tester.pumpAndSettle();
-      expect(find.byType(BarChart), findsOneWidget);
-      expect(find.text('Food'), findsOneWidget);
+      expect(find.byType(BarChart), findsNothing);
+      expect(find.text('Last month'), findsOneWidget);
+      expect(find.text('This month'), findsOneWidget);
+      expect(find.text('RM306'), findsOneWidget);
+      expect(find.text('RM410'), findsOneWidget);
     });
 
     testWidgets('renders icons for habit_timeline', (tester) async {

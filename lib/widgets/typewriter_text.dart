@@ -12,11 +12,15 @@ class TypewriterText extends StatefulWidget {
     required this.text,
     this.style,
     this.startDelay = Duration.zero,
+    this.minStepDelayMs = 60,
+    this.maxStepDelayMs = 100,
   });
 
   final String text;
   final TextStyle? style;
   final Duration startDelay;
+  final int minStepDelayMs;
+  final int maxStepDelayMs;
 
   @override
   State<TypewriterText> createState() => _TypewriterTextState();
@@ -49,10 +53,13 @@ class _TypewriterTextState extends State<TypewriterText> {
 
   void _step() {
     if (_shown >= widget.text.length) return;
-    _timer = Timer(Duration(milliseconds: 16 + _random.nextInt(22)), () {
+    final stepSpan = max(1, widget.maxStepDelayMs - widget.minStepDelayMs);
+    _timer = Timer(
+      Duration(milliseconds: widget.minStepDelayMs + _random.nextInt(stepSpan)),
+      () {
       if (!mounted) return;
       setState(() {
-        _shown = min(_shown + 1 + _random.nextInt(2), widget.text.length);
+        _shown = min(_shown + 1, widget.text.length);
       });
       _step();
     });

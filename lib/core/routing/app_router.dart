@@ -11,6 +11,7 @@ import '../../features/badges/badges_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/feed/feed_screen.dart';
 import '../../features/friends/friends_screen.dart';
+import '../../features/history/receipt_history_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/insights/insights_detail_screen.dart';
 import '../../features/leaderboard/leaderboard_screen.dart';
@@ -144,6 +145,12 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/badges',
         name: 'badges',
         builder: (context, state) => const BadgesScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/history',
+        name: 'history',
+        builder: (context, state) => const ReceiptHistoryScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

@@ -2,23 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/repositories/insights_worker.dart';
 import '../../domain/logic/insight_badge.dart';
 import '../../domain/models/insight_candidate.dart';
 import '../../widgets/insight_visualization.dart';
 import '../../widgets/spending_insights_card.dart';
 import '../../widgets/typewriter_text.dart';
 
-/// Detail view listing up to 3 curated insights with per-item dismiss.
+/// Detail view listing up to 3 curated insights.
 class InsightsDetailScreen extends StatelessWidget {
   const InsightsDetailScreen({super.key});
-
-  Future<void> _dismiss(BuildContext context, CuratedInsight insight) async {
-    await AppServices.insights.dismissLocally(insight.id);
-    // Fire-and-forget cloud sync of dismiss state on next InsightsWorker run.
-    // Also attempt an immediate best-effort note so volume guard still works.
-    await InsightsWorker.noteSyncedTransaction();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +61,6 @@ class InsightsDetailScreen extends StatelessWidget {
               return _InsightCard(
                 key: ValueKey(insight.id),
                 insight: insight,
-                onDismiss: () => _dismiss(context, insight),
               );
             },
           );
@@ -83,10 +74,9 @@ class InsightsDetailScreen extends StatelessWidget {
 /// (if any), and a typed-out supporting sentence. The forecast type gets a
 /// dark card treatment to read as a distinct "ahead" moment.
 class _InsightCard extends StatelessWidget {
-  const _InsightCard({super.key, required this.insight, required this.onDismiss});
+  const _InsightCard({super.key, required this.insight});
 
   final CuratedInsight insight;
-  final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) {
@@ -100,79 +90,53 @@ class _InsightCard extends StatelessWidget {
     final iconColor =
         dark ? AppColors.insightNeutralOnDark : AppColors.primaryGreenDark;
 
-    return Dismissible(
-      key: ValueKey('dismiss-${insight.id}'),
-      direction: DismissDirection.endToStart,
-      onDismissed: (_) => onDismiss(),
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: Colors.red.shade100,
-          borderRadius: AppSpacing.cardBorderRadius,
-        ),
-        child: const Icon(Icons.close_rounded),
+    return Container(
+      width: double.infinity,
+      padding: AppSpacing.cardPadding,
+      decoration: BoxDecoration(
+        color: dark ? AppColors.textPrimary : AppColors.cardSurface,
+        borderRadius: AppSpacing.cardBorderRadius,
+        border: dark ? null : Border.all(color: AppColors.divider),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: dark ? 0.18 : 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      child: Container(
-        width: double.infinity,
-        padding: AppSpacing.cardPadding,
-        decoration: BoxDecoration(
-          color: dark ? AppColors.textPrimary : AppColors.cardSurface,
-          borderRadius: AppSpacing.cardBorderRadius,
-          border: dark ? null : Border.all(color: AppColors.divider),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: dark ? 0.18 : 0.06),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(insightTypeIcon(insight.type), size: 20, color: iconColor),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    split.headline,
-                    style: textTheme.titleSmall?.copyWith(color: headlineColor),
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(insightTypeIcon(insight.type), size: 20, color: iconColor),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  split.headline,
+                  style: textTheme.titleSmall?.copyWith(color: headlineColor),
                 ),
-                if (badge != null) ...[
-                  const SizedBox(width: AppSpacing.sm),
-                  _InsightBadgeLabel(badge: badge, dark: dark),
-                ],
-                IconButton(
-                  tooltip: 'Dismiss',
-                  onPressed: onDismiss,
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  icon: Icon(
-                    Icons.close_rounded,
-                    size: 18,
-                    color: dark ? Colors.white54 : AppColors.textMuted,
-                  ),
-                ),
-              ],
-            ),
-            if (insight.visualization != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              InsightVisualization(visualization: insight.visualization),
-            ],
-            if (split.supporting != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              TypewriterText(
-                text: split.supporting!,
-                style: textTheme.bodySmall?.copyWith(color: supportingColor),
               ),
+              if (badge != null) ...[
+                const SizedBox(width: AppSpacing.sm),
+                _InsightBadgeLabel(badge: badge, dark: dark),
+              ],
             ],
+          ),
+          if (insight.visualization != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            InsightVisualization(visualization: insight.visualization),
           ],
-        ),
+          if (split.supporting != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            TypewriterText(
+              text: split.supporting!,
+              style: textTheme.bodySmall?.copyWith(color: supportingColor),
+            ),
+          ],
+        ],
       ),
     );
   }
