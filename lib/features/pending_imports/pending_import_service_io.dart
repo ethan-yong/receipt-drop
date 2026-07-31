@@ -8,6 +8,8 @@ import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
 import '../../core/platform/platform_feedback.dart';
+import '../../core/utils/current_location.dart';
+import '../../data/repositories/places_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/models/ocr_progress_event.dart';
 import '../../domain/models/pending_import_model.dart';
@@ -29,8 +31,10 @@ abstract final class PendingImportService {
   }
 
   /// Saves the shared file locally and creates a Drift inbox row. No OCR,
-  /// no network required. Supabase sync fires in the background.
-  static Future<void> saveSharedReceipt({
+  /// no network required. Supabase sync fires in the background. Returns
+  /// the created row so the caller (the share-intent listener) can key the
+  /// post-share notification to it.
+  static Future<PendingImportModel> saveSharedReceipt({
     required String path,
     required String mimeType,
     String? sourceApp,
@@ -43,6 +47,36 @@ abstract final class PendingImportService {
       sourceApp: sourceApp,
     );
     unawaited(AppServices.pendingImports.syncToSupabase(import));
+    return import;
+  }
+
+  /// Best-effort: resolves a share-time GPS fix to a nearby-venue name and
+  /// writes it onto [import]'s row for the pending-imports card to display.
+  /// Every failure mode (no permission, no fix, no nearby match, network
+  /// error) is swallowed here — this must never surface to the caller or
+  /// affect anything else in the share flow. See
+  /// `docs/plans/2026-07-30-pending-receipt-location-context.md`.
+  static Future<void> resolveLocationBestEffort(
+    PendingImportModel import,
+  ) async {
+    try {
+      final position = await getCurrentPositionPassiveOrNull();
+      if (position == null) return;
+
+      final candidates = await PlacesRepository.fetchNearbyCandidates(
+        lat: position.latitude,
+        lng: position.longitude,
+        limit: 1,
+      );
+      if (candidates.isEmpty) return;
+
+      final name = candidates.first.name.trim();
+      if (name.isEmpty) return;
+
+      await AppServices.pendingImports.setVenueLabel(import.id, name);
+    } on Object {
+      // Best-effort only — never a dependency for the rest of the flow.
+    }
   }
 
   /// Runs the OCR pipeline on [import] via the animated processing screen,
@@ -100,6 +134,13 @@ abstract final class PendingImportService {
     );
     if (draft == null) return (progress: batchProgress, savedTx: null);
 
+    // Carry through a note attached earlier via the post-share
+    // notification's inline reply — the confirm sheet prefills it so it
+    // isn't lost between the notification and the user actually opening
+    // this import.
+    final draftWithNote =
+        import.note != null ? draft.copyWith(notes: import.note) : draft;
+
     if (!context.mounted) {
       await AppServices.pendingImports.updateStatus(import.id, 'local');
       await ReceiptIngestService.discardDraft(draft);
@@ -118,7 +159,7 @@ abstract final class PendingImportService {
 
     final saved = await ReceiptConfirmSheet.show(
       context,
-      draft: draft,
+      draft: draftWithNote,
       categories: categories,
       onSave: (amount, editedDraft, impact) async {
         if (amount == null) return;

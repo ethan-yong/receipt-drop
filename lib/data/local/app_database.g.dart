@@ -411,6 +411,15 @@ class $OutboxTransactionsTable extends OutboxTransactions
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+    'notes',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -449,6 +458,7 @@ class $OutboxTransactionsTable extends OutboxTransactions
     llmUnderstandingJson,
     cleanedOcrText,
     ocrCorrectionsJson,
+    notes,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -751,6 +761,12 @@ class $OutboxTransactionsTable extends OutboxTransactions
         ),
       );
     }
+    if (data.containsKey('notes')) {
+      context.handle(
+        _notesMeta,
+        notes.isAcceptableOrUnknown(data['notes']!, _notesMeta),
+      );
+    }
     return context;
   }
 
@@ -904,6 +920,10 @@ class $OutboxTransactionsTable extends OutboxTransactions
         DriftSqlType.string,
         data['${effectivePrefix}ocr_corrections_json'],
       ),
+      notes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}notes'],
+      ),
     );
   }
 
@@ -988,6 +1008,11 @@ class OutboxTransaction extends DataClass
   /// `{line_index, original, corrected}`), synced to
   /// `transactions.ocr_corrections` (jsonb).
   final String? ocrCorrectionsJson;
+
+  /// Freeform user note, most often attached from the post-share notification's
+  /// inline reply before the receipt is even confirmed — see
+  /// `docs/plans/2026-07-30-post-share-receipt-notification.md`.
+  final String? notes;
   const OutboxTransaction({
     required this.id,
     required this.userId,
@@ -1025,6 +1050,7 @@ class OutboxTransaction extends DataClass
     this.llmUnderstandingJson,
     this.cleanedOcrText,
     this.ocrCorrectionsJson,
+    this.notes,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1123,6 +1149,9 @@ class OutboxTransaction extends DataClass
     if (!nullToAbsent || ocrCorrectionsJson != null) {
       map['ocr_corrections_json'] = Variable<String>(ocrCorrectionsJson);
     }
+    if (!nullToAbsent || notes != null) {
+      map['notes'] = Variable<String>(notes);
+    }
     return map;
   }
 
@@ -1218,6 +1247,9 @@ class OutboxTransaction extends DataClass
       ocrCorrectionsJson: ocrCorrectionsJson == null && nullToAbsent
           ? const Value.absent()
           : Value(ocrCorrectionsJson),
+      notes: notes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(notes),
     );
   }
 
@@ -1283,6 +1315,7 @@ class OutboxTransaction extends DataClass
       ocrCorrectionsJson: serializer.fromJson<String?>(
         json['ocrCorrectionsJson'],
       ),
+      notes: serializer.fromJson<String?>(json['notes']),
     );
   }
   @override
@@ -1329,6 +1362,7 @@ class OutboxTransaction extends DataClass
       'llmUnderstandingJson': serializer.toJson<String?>(llmUnderstandingJson),
       'cleanedOcrText': serializer.toJson<String?>(cleanedOcrText),
       'ocrCorrectionsJson': serializer.toJson<String?>(ocrCorrectionsJson),
+      'notes': serializer.toJson<String?>(notes),
     };
   }
 
@@ -1369,6 +1403,7 @@ class OutboxTransaction extends DataClass
     Value<String?> llmUnderstandingJson = const Value.absent(),
     Value<String?> cleanedOcrText = const Value.absent(),
     Value<String?> ocrCorrectionsJson = const Value.absent(),
+    Value<String?> notes = const Value.absent(),
   }) => OutboxTransaction(
     id: id ?? this.id,
     userId: userId ?? this.userId,
@@ -1440,6 +1475,7 @@ class OutboxTransaction extends DataClass
     ocrCorrectionsJson: ocrCorrectionsJson.present
         ? ocrCorrectionsJson.value
         : this.ocrCorrectionsJson,
+    notes: notes.present ? notes.value : this.notes,
   );
   OutboxTransaction copyWithCompanion(OutboxTransactionsCompanion data) {
     return OutboxTransaction(
@@ -1535,6 +1571,7 @@ class OutboxTransaction extends DataClass
       ocrCorrectionsJson: data.ocrCorrectionsJson.present
           ? data.ocrCorrectionsJson.value
           : this.ocrCorrectionsJson,
+      notes: data.notes.present ? data.notes.value : this.notes,
     );
   }
 
@@ -1576,7 +1613,8 @@ class OutboxTransaction extends DataClass
           ..write('ocrHeaderText: $ocrHeaderText, ')
           ..write('llmUnderstandingJson: $llmUnderstandingJson, ')
           ..write('cleanedOcrText: $cleanedOcrText, ')
-          ..write('ocrCorrectionsJson: $ocrCorrectionsJson')
+          ..write('ocrCorrectionsJson: $ocrCorrectionsJson, ')
+          ..write('notes: $notes')
           ..write(')'))
         .toString();
   }
@@ -1619,6 +1657,7 @@ class OutboxTransaction extends DataClass
     llmUnderstandingJson,
     cleanedOcrText,
     ocrCorrectionsJson,
+    notes,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1659,7 +1698,8 @@ class OutboxTransaction extends DataClass
           other.ocrHeaderText == this.ocrHeaderText &&
           other.llmUnderstandingJson == this.llmUnderstandingJson &&
           other.cleanedOcrText == this.cleanedOcrText &&
-          other.ocrCorrectionsJson == this.ocrCorrectionsJson);
+          other.ocrCorrectionsJson == this.ocrCorrectionsJson &&
+          other.notes == this.notes);
 }
 
 class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
@@ -1699,6 +1739,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
   final Value<String?> llmUnderstandingJson;
   final Value<String?> cleanedOcrText;
   final Value<String?> ocrCorrectionsJson;
+  final Value<String?> notes;
   final Value<int> rowid;
   const OutboxTransactionsCompanion({
     this.id = const Value.absent(),
@@ -1737,6 +1778,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.llmUnderstandingJson = const Value.absent(),
     this.cleanedOcrText = const Value.absent(),
     this.ocrCorrectionsJson = const Value.absent(),
+    this.notes = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   OutboxTransactionsCompanion.insert({
@@ -1776,6 +1818,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     this.llmUnderstandingJson = const Value.absent(),
     this.cleanedOcrText = const Value.absent(),
     this.ocrCorrectionsJson = const Value.absent(),
+    this.notes = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        userId = Value(userId);
@@ -1816,6 +1859,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Expression<String>? llmUnderstandingJson,
     Expression<String>? cleanedOcrText,
     Expression<String>? ocrCorrectionsJson,
+    Expression<String>? notes,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1863,6 +1907,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       if (cleanedOcrText != null) 'cleaned_ocr_text': cleanedOcrText,
       if (ocrCorrectionsJson != null)
         'ocr_corrections_json': ocrCorrectionsJson,
+      if (notes != null) 'notes': notes,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1904,6 +1949,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     Value<String?>? llmUnderstandingJson,
     Value<String?>? cleanedOcrText,
     Value<String?>? ocrCorrectionsJson,
+    Value<String?>? notes,
     Value<int>? rowid,
   }) {
     return OutboxTransactionsCompanion(
@@ -1945,6 +1991,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
       llmUnderstandingJson: llmUnderstandingJson ?? this.llmUnderstandingJson,
       cleanedOcrText: cleanedOcrText ?? this.cleanedOcrText,
       ocrCorrectionsJson: ocrCorrectionsJson ?? this.ocrCorrectionsJson,
+      notes: notes ?? this.notes,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2070,6 +2117,9 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
     if (ocrCorrectionsJson.present) {
       map['ocr_corrections_json'] = Variable<String>(ocrCorrectionsJson.value);
     }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2115,6 +2165,7 @@ class OutboxTransactionsCompanion extends UpdateCompanion<OutboxTransaction> {
           ..write('llmUnderstandingJson: $llmUnderstandingJson, ')
           ..write('cleanedOcrText: $cleanedOcrText, ')
           ..write('ocrCorrectionsJson: $ocrCorrectionsJson, ')
+          ..write('notes: $notes, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3545,6 +3596,26 @@ class $PendingImportsTable extends PendingImports
     requiredDuringInsert: false,
     defaultValue: const Constant('local'),
   );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _venueLabelMeta = const VerificationMeta(
+    'venueLabel',
+  );
+  @override
+  late final GeneratedColumn<String> venueLabel = GeneratedColumn<String>(
+    'venue_label',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -3565,6 +3636,8 @@ class $PendingImportsTable extends PendingImports
     mimeType,
     sourceApp,
     status,
+    note,
+    venueLabel,
     createdAt,
   ];
   @override
@@ -3623,6 +3696,18 @@ class $PendingImportsTable extends PendingImports
         status.isAcceptableOrUnknown(data['status']!, _statusMeta),
       );
     }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
+    if (data.containsKey('venue_label')) {
+      context.handle(
+        _venueLabelMeta,
+        venueLabel.isAcceptableOrUnknown(data['venue_label']!, _venueLabelMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -3662,6 +3747,14 @@ class $PendingImportsTable extends PendingImports
         DriftSqlType.string,
         data['${effectivePrefix}status'],
       )!,
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      ),
+      venueLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}venue_label'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -3684,6 +3777,19 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
 
   /// 'local' | 'processing' | 'failed'
   final String status;
+
+  /// Freeform note attached via the post-share notification's inline reply
+  /// (or later, in-app) before this row becomes a confirmed transaction —
+  /// carried into `ReceiptIngestDraft.notes` when the user opens/processes
+  /// this import, then written to `outbox_transactions.notes` on save.
+  final String? note;
+
+  /// Best-effort nearby-venue name ("Sunway Pyramid"), resolved from a
+  /// share-time GPS fix via `places-proxy`'s `nearby_candidates` mode —
+  /// a memory aid only, never raw coordinates. Null until resolved (or
+  /// forever, if location was unavailable/denied — see
+  /// `docs/plans/2026-07-30-pending-receipt-location-context.md`).
+  final String? venueLabel;
   final DateTime createdAt;
   const PendingImport({
     required this.id,
@@ -3692,6 +3798,8 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
     required this.mimeType,
     this.sourceApp,
     required this.status,
+    this.note,
+    this.venueLabel,
     required this.createdAt,
   });
   @override
@@ -3705,6 +3813,12 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
       map['source_app'] = Variable<String>(sourceApp);
     }
     map['status'] = Variable<String>(status);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    if (!nullToAbsent || venueLabel != null) {
+      map['venue_label'] = Variable<String>(venueLabel);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -3719,6 +3833,10 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
           ? const Value.absent()
           : Value(sourceApp),
       status: Value(status),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+      venueLabel: venueLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(venueLabel),
       createdAt: Value(createdAt),
     );
   }
@@ -3735,6 +3853,8 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
       mimeType: serializer.fromJson<String>(json['mimeType']),
       sourceApp: serializer.fromJson<String?>(json['sourceApp']),
       status: serializer.fromJson<String>(json['status']),
+      note: serializer.fromJson<String?>(json['note']),
+      venueLabel: serializer.fromJson<String?>(json['venueLabel']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -3748,6 +3868,8 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
       'mimeType': serializer.toJson<String>(mimeType),
       'sourceApp': serializer.toJson<String?>(sourceApp),
       'status': serializer.toJson<String>(status),
+      'note': serializer.toJson<String?>(note),
+      'venueLabel': serializer.toJson<String?>(venueLabel),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
@@ -3759,6 +3881,8 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
     String? mimeType,
     Value<String?> sourceApp = const Value.absent(),
     String? status,
+    Value<String?> note = const Value.absent(),
+    Value<String?> venueLabel = const Value.absent(),
     DateTime? createdAt,
   }) => PendingImport(
     id: id ?? this.id,
@@ -3767,6 +3891,8 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
     mimeType: mimeType ?? this.mimeType,
     sourceApp: sourceApp.present ? sourceApp.value : this.sourceApp,
     status: status ?? this.status,
+    note: note.present ? note.value : this.note,
+    venueLabel: venueLabel.present ? venueLabel.value : this.venueLabel,
     createdAt: createdAt ?? this.createdAt,
   );
   PendingImport copyWithCompanion(PendingImportsCompanion data) {
@@ -3779,6 +3905,10 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
       mimeType: data.mimeType.present ? data.mimeType.value : this.mimeType,
       sourceApp: data.sourceApp.present ? data.sourceApp.value : this.sourceApp,
       status: data.status.present ? data.status.value : this.status,
+      note: data.note.present ? data.note.value : this.note,
+      venueLabel: data.venueLabel.present
+          ? data.venueLabel.value
+          : this.venueLabel,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -3792,6 +3922,8 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
           ..write('mimeType: $mimeType, ')
           ..write('sourceApp: $sourceApp, ')
           ..write('status: $status, ')
+          ..write('note: $note, ')
+          ..write('venueLabel: $venueLabel, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -3805,6 +3937,8 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
     mimeType,
     sourceApp,
     status,
+    note,
+    venueLabel,
     createdAt,
   );
   @override
@@ -3817,6 +3951,8 @@ class PendingImport extends DataClass implements Insertable<PendingImport> {
           other.mimeType == this.mimeType &&
           other.sourceApp == this.sourceApp &&
           other.status == this.status &&
+          other.note == this.note &&
+          other.venueLabel == this.venueLabel &&
           other.createdAt == this.createdAt);
 }
 
@@ -3827,6 +3963,8 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
   final Value<String> mimeType;
   final Value<String?> sourceApp;
   final Value<String> status;
+  final Value<String?> note;
+  final Value<String?> venueLabel;
   final Value<DateTime> createdAt;
   final Value<int> rowid;
   const PendingImportsCompanion({
@@ -3836,6 +3974,8 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
     this.mimeType = const Value.absent(),
     this.sourceApp = const Value.absent(),
     this.status = const Value.absent(),
+    this.note = const Value.absent(),
+    this.venueLabel = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -3846,6 +3986,8 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
     required String mimeType,
     this.sourceApp = const Value.absent(),
     this.status = const Value.absent(),
+    this.note = const Value.absent(),
+    this.venueLabel = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -3859,6 +4001,8 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
     Expression<String>? mimeType,
     Expression<String>? sourceApp,
     Expression<String>? status,
+    Expression<String>? note,
+    Expression<String>? venueLabel,
     Expression<DateTime>? createdAt,
     Expression<int>? rowid,
   }) {
@@ -3869,6 +4013,8 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
       if (mimeType != null) 'mime_type': mimeType,
       if (sourceApp != null) 'source_app': sourceApp,
       if (status != null) 'status': status,
+      if (note != null) 'note': note,
+      if (venueLabel != null) 'venue_label': venueLabel,
       if (createdAt != null) 'created_at': createdAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -3881,6 +4027,8 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
     Value<String>? mimeType,
     Value<String?>? sourceApp,
     Value<String>? status,
+    Value<String?>? note,
+    Value<String?>? venueLabel,
     Value<DateTime>? createdAt,
     Value<int>? rowid,
   }) {
@@ -3891,6 +4039,8 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
       mimeType: mimeType ?? this.mimeType,
       sourceApp: sourceApp ?? this.sourceApp,
       status: status ?? this.status,
+      note: note ?? this.note,
+      venueLabel: venueLabel ?? this.venueLabel,
       createdAt: createdAt ?? this.createdAt,
       rowid: rowid ?? this.rowid,
     );
@@ -3917,6 +4067,12 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
     if (status.present) {
       map['status'] = Variable<String>(status.value);
     }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (venueLabel.present) {
+      map['venue_label'] = Variable<String>(venueLabel.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -3935,6 +4091,8 @@ class PendingImportsCompanion extends UpdateCompanion<PendingImport> {
           ..write('mimeType: $mimeType, ')
           ..write('sourceApp: $sourceApp, ')
           ..write('status: $status, ')
+          ..write('note: $note, ')
+          ..write('venueLabel: $venueLabel, ')
           ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -5520,6 +5678,7 @@ typedef $$OutboxTransactionsTableCreateCompanionBuilder =
       Value<String?> llmUnderstandingJson,
       Value<String?> cleanedOcrText,
       Value<String?> ocrCorrectionsJson,
+      Value<String?> notes,
       Value<int> rowid,
     });
 typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
@@ -5560,6 +5719,7 @@ typedef $$OutboxTransactionsTableUpdateCompanionBuilder =
       Value<String?> llmUnderstandingJson,
       Value<String?> cleanedOcrText,
       Value<String?> ocrCorrectionsJson,
+      Value<String?> notes,
       Value<int> rowid,
     });
 
@@ -5840,6 +6000,11 @@ class $$OutboxTransactionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> outboxArtifactsRefs(
     Expression<bool> Function($$OutboxArtifactsTableFilterComposer f) f,
   ) {
@@ -6105,6 +6270,11 @@ class $$OutboxTransactionsTableOrderingComposer
     column: $table.ocrCorrectionsJson,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$OutboxTransactionsTableAnnotationComposer
@@ -6280,6 +6450,9 @@ class $$OutboxTransactionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
   Expression<T> outboxArtifactsRefs<T extends Object>(
     Expression<T> Function($$OutboxArtifactsTableAnnotationComposer a) f,
   ) {
@@ -6430,6 +6603,7 @@ class $$OutboxTransactionsTableTableManager
                 Value<String?> llmUnderstandingJson = const Value.absent(),
                 Value<String?> cleanedOcrText = const Value.absent(),
                 Value<String?> ocrCorrectionsJson = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion(
                 id: id,
@@ -6468,6 +6642,7 @@ class $$OutboxTransactionsTableTableManager
                 llmUnderstandingJson: llmUnderstandingJson,
                 cleanedOcrText: cleanedOcrText,
                 ocrCorrectionsJson: ocrCorrectionsJson,
+                notes: notes,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6508,6 +6683,7 @@ class $$OutboxTransactionsTableTableManager
                 Value<String?> llmUnderstandingJson = const Value.absent(),
                 Value<String?> cleanedOcrText = const Value.absent(),
                 Value<String?> ocrCorrectionsJson = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => OutboxTransactionsCompanion.insert(
                 id: id,
@@ -6546,6 +6722,7 @@ class $$OutboxTransactionsTableTableManager
                 llmUnderstandingJson: llmUnderstandingJson,
                 cleanedOcrText: cleanedOcrText,
                 ocrCorrectionsJson: ocrCorrectionsJson,
+                notes: notes,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -7644,6 +7821,8 @@ typedef $$PendingImportsTableCreateCompanionBuilder =
       required String mimeType,
       Value<String?> sourceApp,
       Value<String> status,
+      Value<String?> note,
+      Value<String?> venueLabel,
       Value<DateTime> createdAt,
       Value<int> rowid,
     });
@@ -7655,6 +7834,8 @@ typedef $$PendingImportsTableUpdateCompanionBuilder =
       Value<String> mimeType,
       Value<String?> sourceApp,
       Value<String> status,
+      Value<String?> note,
+      Value<String?> venueLabel,
       Value<DateTime> createdAt,
       Value<int> rowid,
     });
@@ -7695,6 +7876,16 @@ class $$PendingImportsTableFilterComposer
 
   ColumnFilters<String> get status => $composableBuilder(
     column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get venueLabel => $composableBuilder(
+    column: $table.venueLabel,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7743,6 +7934,16 @@ class $$PendingImportsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get venueLabel => $composableBuilder(
+    column: $table.venueLabel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -7777,6 +7978,14 @@ class $$PendingImportsTableAnnotationComposer
 
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<String> get venueLabel => $composableBuilder(
+    column: $table.venueLabel,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -7821,6 +8030,8 @@ class $$PendingImportsTableTableManager
                 Value<String> mimeType = const Value.absent(),
                 Value<String?> sourceApp = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                Value<String?> venueLabel = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingImportsCompanion(
@@ -7830,6 +8041,8 @@ class $$PendingImportsTableTableManager
                 mimeType: mimeType,
                 sourceApp: sourceApp,
                 status: status,
+                note: note,
+                venueLabel: venueLabel,
                 createdAt: createdAt,
                 rowid: rowid,
               ),
@@ -7841,6 +8054,8 @@ class $$PendingImportsTableTableManager
                 required String mimeType,
                 Value<String?> sourceApp = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                Value<String?> venueLabel = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingImportsCompanion.insert(
@@ -7850,6 +8065,8 @@ class $$PendingImportsTableTableManager
                 mimeType: mimeType,
                 sourceApp: sourceApp,
                 status: status,
+                note: note,
+                venueLabel: venueLabel,
                 createdAt: createdAt,
                 rowid: rowid,
               ),

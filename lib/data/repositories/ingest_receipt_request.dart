@@ -38,6 +38,7 @@ class IngestReceiptRequest {
     this.pickedPlaceLng,
     this.pickedPlaceLocked = false,
     this.fieldCorrections = const [],
+    this.notes,
   });
 
   final String localFilePath;
@@ -93,4 +94,9 @@ class IngestReceiptRequest {
   /// alongside the transaction and synced for the feedback-learning
   /// surfaces. See `docs/plans/2026-07-23-feedback-learning-system.md`.
   final List<FieldCorrection> fieldCorrections;
+
+  /// Freeform user note — most often attached via the post-share
+  /// notification's inline reply before this receipt was ever confirmed.
+  /// See `docs/plans/2026-07-30-post-share-receipt-notification.md`.
+  final String? notes;
 }

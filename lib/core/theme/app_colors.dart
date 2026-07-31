@@ -24,6 +24,15 @@ abstract final class AppColors {
   static const destructive = Color(0xFFF94239);
   static const destructiveLight = Color(0xFFFFE5E0);
 
+  // Insight card metric badges — up (spend increase) vs. down (decrease).
+  static const insightAlert = Color(0xFFB4483B);
+  static const insightGood = Color(0xFF3F7D4A);
+  static const insightNeutralOnDark = Color(0xFFF6C64B);
+
+  // Dark-variant insight card (forecast) — bg reuses textPrimary, this is
+  // its secondary/supporting text color.
+  static const onDarkCardSecondary = Color(0xFFD8D2C4);
+
   static const navUnselected = Color(0xFF8C8579);
 
   static const chartFood = Color(0xFF4A90A4);

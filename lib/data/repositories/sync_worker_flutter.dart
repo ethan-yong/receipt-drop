@@ -114,6 +114,7 @@ class SyncWorker {
         'line_items_confidence': row.lineItemsConfidence,
         'parse_failure_reason': row.parseFailureReason,
         'pipeline_status': row.pipelineStatus,
+        'notes': row.notes,
         'merchant_candidates': row.merchantCandidatesJson == null
             ? null
             : jsonDecode(row.merchantCandidatesJson!),

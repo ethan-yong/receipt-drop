@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -55,6 +56,77 @@ class PendingImportsRepository {
   Future<void> updateStatus(String id, String status) async {
     await (_db.update(_db.pendingImports)..where((t) => t.id.equals(id)))
         .write(PendingImportsCompanion(status: Value(status)));
+  }
+
+  /// Attaches a freeform note to a pending import — the write path used by
+  /// the post-share notification's inline reply (both the foreground
+  /// handler and the Android background-isolate callback) as well as any
+  /// later in-app edit. A blank/whitespace-only [note] is a no-op: it must
+  /// never overwrite an existing note with nothing. Returns `false` when the
+  /// row no longer exists (e.g. already confirmed and deleted) so callers
+  /// can treat a stale notification action as a safe no-op.
+  Future<bool> setNote(String id, String note) async {
+    final trimmed = note.trim();
+    if (trimmed.isEmpty) return false;
+    final row = await (_db.select(_db.pendingImports)
+          ..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null) return false;
+
+    await (_db.update(_db.pendingImports)..where((t) => t.id.equals(id)))
+        .write(PendingImportsCompanion(note: Value(trimmed)));
+
+    unawaited(_syncNoteToSupabase(id, trimmed));
+    return true;
+  }
+
+  /// Best-effort — the local write above is the source of truth; this just
+  /// keeps the cloud mirror (`pending_receipts`, used mainly for the
+  /// `sourceApp`/audit trail today) from going stale.
+  Future<void> _syncNoteToSupabase(String id, String note) async {
+    if (!Env.hasSupabaseConfig) return;
+    if (Supabase.instance.client.auth.currentUser == null) return;
+    try {
+      await Supabase.instance.client
+          .from('pending_receipts')
+          .update({'note': note})
+          .eq('id', id);
+    } catch (e) {
+      debugPrint('PendingImportsRepository.syncNoteToSupabase: $e');
+    }
+  }
+
+  /// Attaches a best-effort resolved nearby-venue name — see
+  /// `docs/plans/2026-07-30-pending-receipt-location-context.md`. Same
+  /// blank-is-a-no-op and missing-row-is-a-safe-no-op contract as [setNote]
+  /// (the row may already have been deleted if the receipt was confirmed
+  /// before location resolution finished).
+  Future<bool> setVenueLabel(String id, String label) async {
+    final trimmed = label.trim();
+    if (trimmed.isEmpty) return false;
+    final row = await (_db.select(_db.pendingImports)
+          ..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null) return false;
+
+    await (_db.update(_db.pendingImports)..where((t) => t.id.equals(id)))
+        .write(PendingImportsCompanion(venueLabel: Value(trimmed)));
+
+    unawaited(_syncVenueLabelToSupabase(id, trimmed));
+    return true;
+  }
+
+  Future<void> _syncVenueLabelToSupabase(String id, String label) async {
+    if (!Env.hasSupabaseConfig) return;
+    if (Supabase.instance.client.auth.currentUser == null) return;
+    try {
+      await Supabase.instance.client
+          .from('pending_receipts')
+          .update({'venue_label': label})
+          .eq('id', id);
+    } catch (e) {
+      debugPrint('PendingImportsRepository.syncVenueLabelToSupabase: $e');
+    }
   }
 
   /// Deletes the Drift row and the local file. Called only after a successful
@@ -138,6 +210,8 @@ class PendingImportsRepository {
         status: row.status,
         createdAt: row.createdAt,
         sourceApp: row.sourceApp,
+        note: row.note,
+        venueLabel: row.venueLabel,
       );
 
   static Future<String> _copyToPendingDir(

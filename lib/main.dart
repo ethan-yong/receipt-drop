@@ -7,6 +7,7 @@ import 'app.dart';
 import 'core/bootstrap/app_prefs.dart';
 import 'core/bootstrap/app_services.dart';
 import 'core/config/env.dart';
+import 'core/notifications/receipt_notification_service.dart';
 import 'core/routing/app_router.dart';
 import 'core/routing/auth_refresh.dart';
 import 'data/remote/supabase_client_holder.dart';
@@ -17,6 +18,7 @@ Future<void> main() async {
   await Env.loadDotEnvIfDebug();
   await AppPrefs.init();
   await AppServices.init();
+  await ReceiptNotificationService.init();
 
   if (!Env.hasSupabaseConfig) {
     runApp(const MissingSupabaseConfigApp());

@@ -9,7 +9,7 @@ Step-by-step commands equivalent to `.\deploy\scripts\deploy.ps1`. Run from a **
 | `DEPLOY_USER` | `ubuntu` | SSH user on the VM |
 | `CLOUDFLARE_TUNNEL_ID` | `a1b2c3d4-...` | Tunnel ID from `cloudflared tunnel create receipt-drop` |
 
-The automated script also deploys Supabase Edge Functions separately — that is **not** covered here. After this deploy, run `supabase functions deploy <name>` for `enrich-transaction`, `ocr-proxy`, and `places-proxy` if those changed.
+The automated script also deploys Supabase Edge Functions separately — that is **not** covered here. After this deploy, run `supabase functions deploy <name>` for `enrich-transaction`, `ocr-proxy`, `places-proxy`, and `curate-insights` if those changed.
 
 ---
 
@@ -286,7 +286,7 @@ Remove-Item -Recurse -Force deploy\k8s\.rendered -ErrorAction SilentlyContinue
 | Component | How to deploy |
 |---|---|
 | Supabase Postgres / Auth / Storage | Hosted by Supabase — apply migrations with `supabase db push` |
-| Edge Functions (`enrich-transaction`, `ocr-proxy`, `places-proxy`) | `supabase functions deploy <name>` |
+| Edge Functions (`enrich-transaction`, `ocr-proxy`, `places-proxy`, `curate-insights`) | `supabase functions deploy <name>` |
 | Flutter app | `flutter build apk` / `appbundle` / etc. |
 
 See [`.claude/commands.md`](../.claude/commands.md) for full run/build/test/deploy commands.

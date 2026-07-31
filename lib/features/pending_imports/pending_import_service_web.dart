@@ -4,7 +4,7 @@ import '../../domain/models/pending_import_model.dart';
 import '../share/batch_scan_progress.dart';
 
 abstract final class PendingImportService {
-  static Future<void> saveSharedReceipt({
+  static Future<PendingImportModel> saveSharedReceipt({
     required String path,
     required String mimeType,
     String? sourceApp,
@@ -20,4 +20,8 @@ abstract final class PendingImportService {
   }) async {
     throw UnsupportedError('Pending imports are not supported on web');
   }
+
+  static Future<void> resolveLocationBestEffort(
+    PendingImportModel import,
+  ) async {}
 }

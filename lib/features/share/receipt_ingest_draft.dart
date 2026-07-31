@@ -42,6 +42,7 @@ class ReceiptIngestDraft {
     this.merchantAmbiguous = false,
     this.merchantConfidence,
     this.fieldCorrections = const [],
+    this.notes,
   });
 
   final String localFilePath;
@@ -116,6 +117,11 @@ class ReceiptIngestDraft {
   /// edited draft returned from the confirm sheet's save flow.
   final List<FieldCorrection> fieldCorrections;
 
+  /// Freeform note — most often carried in from `PendingImportModel.note`
+  /// (attached via the post-share notification's inline reply) before this
+  /// draft ever reaches the confirm sheet. Null on a freshly-OCR'd draft.
+  final String? notes;
+
   ReceiptIngestDraft copyWith({
     double? amountMyr,
     bool? needsAmount,
@@ -134,6 +140,7 @@ class ReceiptIngestDraft {
     bool? merchantAmbiguous,
     double? merchantConfidence,
     List<FieldCorrection>? fieldCorrections,
+    String? notes,
   }) {
     return ReceiptIngestDraft(
       localFilePath: localFilePath,
@@ -171,6 +178,7 @@ class ReceiptIngestDraft {
       merchantAmbiguous: merchantAmbiguous ?? this.merchantAmbiguous,
       merchantConfidence: merchantConfidence ?? this.merchantConfidence,
       fieldCorrections: fieldCorrections ?? this.fieldCorrections,
+      notes: notes ?? this.notes,
     );
   }
 
@@ -208,6 +216,7 @@ class ReceiptIngestDraft {
       pickedPlaceLng: pickedPlaceLng,
       pickedPlaceLocked: pickedPlaceLocked,
       fieldCorrections: fieldCorrections,
+      notes: notes,
     );
   }
 
@@ -245,6 +254,7 @@ class ReceiptIngestDraft {
       pickedPlaceLng: pickedPlaceLng,
       pickedPlaceLocked: pickedPlaceLocked,
       fieldCorrections: fieldCorrections,
+      notes: notes,
     );
   }
 }
