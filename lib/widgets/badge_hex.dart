@@ -13,6 +13,10 @@ const _kLockedRing = Color(0xFFC9C0AC);
 const _kInnerUnlocked = Color(0xFFF3ECDE);
 const _kInnerLocked = Color(0xFFDEDACF);
 
+/// Bronze / Silver / Gold ring color for a badge tier (1..3) — shared with
+/// the leaderboard podium so rank medals and badge tiers use the same hues.
+Color badgeTierColor(int tier) => _kTierColors[tier.clamp(1, 3) - 1];
+
 // Flat-top hex: 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%
 class _FlatHexClipper extends CustomClipper<Path> {
   @override

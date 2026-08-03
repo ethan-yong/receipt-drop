@@ -1,21 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/leaderboard_theme.dart';
 import '../../data/repositories/social_repository.dart';
-import '../../domain/logic/avatar_mood.dart';
 import '../../domain/logic/badge_catalog.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../widgets/badge_hex.dart';
-import '../../widgets/blob_avatar.dart';
 import '../../widgets/skeleton.dart';
 
-const _medals = ['🥇', '🥈', '🥉'];
+final _pointsFormat = NumberFormat.decimalPattern();
 
 enum _LeaderboardMode { friends, global }
 
 /// Friends + global ranks. Friends uses Postgres RPC/API cache; global uses
 /// Redis ZSET via FastAPI when `LEADERBOARD_API_URL` is configured.
+///
+/// Visual design from the `Leaderboard.dc.html` handoff (podium for the top
+/// 3, hex badges, dark "YOU" row) — the handoff's own "This Week"/"All-Time"
+/// tabs were replaced with the app's real Friends/Global tabs, since no
+/// week-scoped score exists server-side yet.
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
 
@@ -54,6 +59,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   @override
   Widget build(BuildContext context) {
     final entries = _entries;
+    final isGlobal = _mode == _LeaderboardMode.global;
     return Scaffold(
       backgroundColor: AppColors.scaffold,
       body: SafeArea(
@@ -67,38 +73,124 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               AppSpacing.xl,
             ),
             children: [
-              Text('Ranks', style: Theme.of(context).textTheme.displaySmall),
-              const SizedBox(height: 4),
-              Text(
-                'Consistency over amounts.',
-                style: Theme.of(context).textTheme.bodyMedium,
+              SizedBox(
+                width: double.infinity,
+                child: Column(
+                  children: [
+                    const Text('🏆', style: TextStyle(fontSize: 26)),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Leaderboard',
+                      textAlign: TextAlign.center,
+                      style: leaderboardText(
+                        26,
+                        FontWeight.w800,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isGlobal
+                          ? 'See how you stack up worldwide.'
+                          : 'See how you stack up against friends.',
+                      textAlign: TextAlign.center,
+                      style: leaderboardText(
+                        14,
+                        FontWeight.w600,
+                        color: AppColors.textMuted,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: AppSpacing.lg),
               _ModeToggle(mode: _mode, onChanged: _setMode),
               const SizedBox(height: AppSpacing.lg),
               if (entries == null)
                 const _LeaderboardSkeleton()
-              else if (_mode == _LeaderboardMode.global &&
-                  !Env.hasLeaderboardApiConfig)
+              else if (isGlobal && !Env.hasLeaderboardApiConfig)
                 const _GlobalApiRequiredNotice()
               else if (entries.isEmpty)
-                _EmptyNotice(isGlobal: _mode == _LeaderboardMode.global)
+                _EmptyNotice(isGlobal: isGlobal)
               else ...[
+                if (entries.length >= 3) ...[
+                  _Podium(
+                    top3: entries.take(3).toList(),
+                    catalog: _catalog,
+                    isGlobal: isGlobal,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
                 for (final (i, entry) in entries.indexed)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: _LeaderboardRow(
+                  if (entries.length < 3 || i >= 3)
+                    _LeaderboardRow(
                       rank: i + 1,
                       entry: entry,
                       catalog: _catalog,
-                      isGlobal: _mode == _LeaderboardMode.global,
+                      isGlobal: isGlobal,
                     ),
-                  ),
                 if (_mode == _LeaderboardMode.friends && entries.length <= 1)
                   const _EmptyLeaderboardNotice(),
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Deterministic initials-circle color: reuses the entry's own avatar-color
+/// pick when available (from `avatarConfigJson`), else a stable pick keyed
+/// on user id so the same person always gets the same color.
+Color _avatarColorFor(LeaderboardEntry entry) {
+  final json = entry.avatarConfigJson;
+  if (json != null) {
+    return AvatarConfig.fromJson(json).color.swatch;
+  }
+  final values = AvatarColorOption.values;
+  return values[entry.userId.hashCode.abs() % values.length].swatch;
+}
+
+String _initialsFor(String name) {
+  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length == 1) {
+    final word = parts.first;
+    return (word.length >= 2 ? word.substring(0, 2) : word).toUpperCase();
+  }
+  return (parts.first[0] + parts.last[0]).toUpperCase();
+}
+
+class _InitialsAvatar extends StatelessWidget {
+  const _InitialsAvatar({
+    required this.name,
+    required this.color,
+    required this.size,
+    required this.fontSize,
+  });
+
+  final String name;
+  final Color color;
+  final double size;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor =
+        color.computeLuminance() > 0.55 ? AppColors.textPrimary : Colors.white;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: Text(
+        _initialsFor(name),
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w800,
+          color: textColor,
         ),
       ),
     );
@@ -116,7 +208,7 @@ class _ModeToggle extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: AppColors.divider.withValues(alpha: 0.35),
+        color: AppColors.creamDark,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -144,16 +236,231 @@ class _ModeToggle extends StatelessWidget {
                   child: Text(
                     option == _LeaderboardMode.friends ? 'Friends' : 'Global',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: mode == option
-                              ? AppColors.textPrimary
-                              : AppColors.textMuted,
-                        ),
+                    style: leaderboardText(
+                      14,
+                      FontWeight.w800,
+                      color: mode == option
+                          ? AppColors.textPrimary
+                          : AppColors.textMuted,
+                    ),
                   ),
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _PodiumConf {
+  const _PodiumConf({
+    required this.colWidth,
+    required this.avatar,
+    required this.initialSize,
+    required this.nameSize,
+    required this.elevate,
+    required this.crown,
+  });
+
+  final double colWidth;
+  final double avatar;
+  final double initialSize;
+  final double nameSize;
+  final double elevate;
+  final bool crown;
+}
+
+const _podiumConf = {
+  1: _PodiumConf(
+    colWidth: 104,
+    avatar: 84,
+    initialSize: 22,
+    nameSize: 14,
+    elevate: -16,
+    crown: true,
+  ),
+  2: _PodiumConf(
+    colWidth: 88,
+    avatar: 66,
+    initialSize: 17,
+    nameSize: 12.5,
+    elevate: 6,
+    crown: false,
+  ),
+  3: _PodiumConf(
+    colWidth: 88,
+    avatar: 66,
+    initialSize: 17,
+    nameSize: 12.5,
+    elevate: 14,
+    crown: false,
+  ),
+};
+
+/// Top-3 spotlight, displayed in 2nd / 1st / 3rd order (winner in the
+/// middle), each column elevated/sized per `_podiumConf`.
+class _Podium extends StatelessWidget {
+  const _Podium({required this.top3, required this.catalog, required this.isGlobal});
+
+  final List<LeaderboardEntry> top3;
+  final BadgeCatalog? catalog;
+  final bool isGlobal;
+
+  static const _displayOrder = [1, 0, 2];
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (final i in _displayOrder)
+          if (i < top3.length)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: _PodiumColumn(
+                rank: i + 1,
+                entry: top3[i],
+                catalog: catalog,
+                isGlobal: isGlobal,
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+class _PodiumColumn extends StatelessWidget {
+  const _PodiumColumn({
+    required this.rank,
+    required this.entry,
+    required this.catalog,
+    required this.isGlobal,
+  });
+
+  final int rank;
+  final LeaderboardEntry entry;
+  final BadgeCatalog? catalog;
+  final bool isGlobal;
+
+  @override
+  Widget build(BuildContext context) {
+    final conf = _podiumConf[rank]!;
+    final ringColor = badgeTierColor(4 - rank);
+    final scoreColor =
+        rank == 1 ? leaderboardFirstPlaceScore : AppColors.textPrimary;
+    final name = entry.isMe ? 'You' : (entry.displayName ?? (isGlobal ? 'User' : 'Friend'));
+    final avatarColor = _avatarColorFor(entry);
+
+    return Transform.translate(
+      offset: Offset(0, conf.elevate),
+      child: SizedBox(
+        width: conf.colWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 24,
+              child: conf.crown
+                  ? const Center(child: Text('👑', style: TextStyle(fontSize: 22)))
+                  : null,
+            ),
+            Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: conf.avatar,
+                  height: conf.avatar,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: ringColor, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 14,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(3),
+                  child: _InitialsAvatar(
+                    name: name,
+                    color: avatarColor,
+                    size: conf.avatar - 6,
+                    fontSize: conf.initialSize,
+                  ),
+                ),
+                Positioned(
+                  bottom: -6,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: ringColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.scaffold, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.18),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$rank',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: leaderboardText(
+                conf.nameSize,
+                FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${_pointsFormat.format(entry.rankScore)} pts',
+              textAlign: TextAlign.center,
+              style: leaderboardText(12, FontWeight.w800, color: scoreColor),
+            ),
+            if (catalog != null && entry.topBadges.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final b in entry.topBadges)
+                    if (catalog!.byId(b.badgeId) case final def?)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: BadgeHex(
+                          badge: def,
+                          earned: true,
+                          tier: b.tier,
+                          size: 26,
+                          showTierBadge: false,
+                        ),
+                      ),
+                ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -174,53 +481,165 @@ class _LeaderboardRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final config = entry.avatarConfigJson != null
-        ? AvatarConfig.fromJson(entry.avatarConfigJson!)
-        : AvatarConfig.defaultConfig();
-    final mood = moodFromName(entry.currentMood);
     final fallbackName = isGlobal ? 'User' : 'Friend';
+    final name = entry.isMe ? 'You' : (entry.displayName ?? fallbackName);
+    final avatarColor = _avatarColorFor(entry);
+    final pointsText = _pointsFormat.format(entry.rankScore);
+
+    final badges = [
+      if (catalog != null)
+        for (final b in entry.topBadges)
+          if (catalog!.byId(b.badgeId) case final def?)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: BadgeHex(
+                badge: def,
+                earned: true,
+                tier: b.tier,
+                size: entry.isMe ? 22 : 20,
+                showTierBadge: false,
+              ),
+            ),
+    ];
+
+    final avatar = _InitialsAvatar(name: name, color: avatarColor, size: 40, fontSize: 13);
+
+    if (entry.isMe) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.textPrimary,
+          borderRadius: AppSpacing.cardBorderRadius,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.textPrimary.withValues(alpha: 0.22),
+              blurRadius: 22,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 22,
+              child: Text(
+                '$rank',
+                textAlign: TextAlign.center,
+                style: leaderboardText(
+                  13.5,
+                  FontWeight.w800,
+                  color: AppColors.insightNeutralOnDark,
+                ),
+              ),
+            ),
+            const SizedBox(width: 11),
+            avatar,
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          name,
+                          overflow: TextOverflow.ellipsis,
+                          style: leaderboardText(14, FontWeight.w800, color: Colors.white),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'YOU',
+                          style: leaderboardText(
+                            9,
+                            FontWeight.w800,
+                            color: AppColors.insightNeutralOnDark,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (badges.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Row(mainAxisSize: MainAxisSize.min, children: badges),
+                  ],
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  pointsText,
+                  style: leaderboardText(
+                    14,
+                    FontWeight.w800,
+                    color: AppColors.insightNeutralOnDark,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  'pts',
+                  style: leaderboardText(
+                    10,
+                    FontWeight.w700,
+                    color: AppColors.onDarkCardSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: entry.isMe
-            ? AppColors.primaryGreen.withValues(alpha: 0.18)
-            : AppColors.cardSurface,
-        borderRadius: AppSpacing.cardBorderRadius,
-        border: Border.all(
-          color: entry.isMe ? AppColors.primaryGreen : AppColors.divider,
-        ),
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.divider)),
       ),
       child: Row(
         children: [
           SizedBox(
-            width: 28,
+            width: 22,
             child: Text(
-              rank <= 3 ? _medals[rank - 1] : '$rank',
+              '$rank',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
+              style: leaderboardText(
+                13.5,
+                FontWeight.w800,
+                color: AppColors.textMuted,
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          BlobAvatar(mood: mood, config: config, size: 44, animate: false),
-          const SizedBox(width: AppSpacing.sm),
+          const SizedBox(width: 11),
+          avatar,
+          const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  entry.isMe ? 'You' : (entry.displayName ?? fallbackName),
-                  style: Theme.of(context).textTheme.titleSmall,
+                  name,
                   overflow: TextOverflow.ellipsis,
+                  style: leaderboardText(14, FontWeight.w800),
                 ),
-                if (entry.currentStreak > 0)
-                  Text(
-                    '🔥 ${entry.currentStreak} days',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                if (badges.isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Row(mainAxisSize: MainAxisSize.min, children: badges),
+                ],
               ],
             ),
           ),
@@ -228,29 +647,14 @@ class _LeaderboardRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (catalog != null && entry.topBadges.isNotEmpty)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final b in entry.topBadges)
-                      if (catalog!.byId(b.badgeId) case final def?)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 4),
-                          child: BadgeHex(
-                            badge: def,
-                            earned: true,
-                            tier: b.tier,
-                            size: 32,
-                            showTierBadge: false,
-                          ),
-                        ),
-                  ],
-                ),
               Text(
-                '${entry.rankScore} pts',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: AppColors.textMuted,
-                    ),
+                pointsText,
+                style: leaderboardText(14, FontWeight.w800),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                'pts',
+                style: leaderboardText(10, FontWeight.w700, color: AppColors.textMuted),
               ),
             ],
           ),
@@ -329,14 +733,14 @@ class _GlobalApiRequiredNotice extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(
             'Global ranks unavailable',
-            style: Theme.of(context).textTheme.titleMedium,
             textAlign: TextAlign.center,
+            style: leaderboardText(16, FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
             'Set LEADERBOARD_API_URL to view global ranks.',
-            style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
+            style: leaderboardText(14, FontWeight.w600, color: AppColors.textMuted),
           ),
         ],
       ),
@@ -359,16 +763,16 @@ class _EmptyNotice extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           Text(
             'No ranks yet',
-            style: Theme.of(context).textTheme.titleMedium,
             textAlign: TextAlign.center,
+            style: leaderboardText(16, FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
             isGlobal
                 ? 'Log streaks on the home screen to join the global board.'
                 : 'Add friends from Settings to start a leaderboard.',
-            style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
+            style: leaderboardText(14, FontWeight.w600, color: AppColors.textMuted),
           ),
         ],
       ),
@@ -385,7 +789,7 @@ class _EmptyLeaderboardNotice extends StatelessWidget {
       padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: Text(
         'Add friends from Settings to compare ranks.',
-        style: Theme.of(context).textTheme.bodyMedium,
+        style: leaderboardText(14, FontWeight.w600, color: AppColors.textMuted),
         textAlign: TextAlign.center,
       ),
     );
