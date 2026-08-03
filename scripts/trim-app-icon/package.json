@@ -1,0 +1,13 @@
+{
+  "name": "trim-app-icon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "trim": "tsx trim-app-icon.ts"
+  },
+  "devDependencies": {
+    "sharp": "^0.33.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

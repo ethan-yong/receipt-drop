@@ -56,6 +56,10 @@ class _ReceiptHistoryScreenState extends State<ReceiptHistoryScreen> {
           builder: (context, snapshot) {
             final rows = snapshot.data ?? const [];
             final history = buildReceiptHistory(rows, DateTime.now());
+            final maxWeekTotal = history.weeks.fold(
+              0.0,
+              (max, w) => w.total > max ? w.total : max,
+            );
 
             return Column(
               children: [
@@ -88,6 +92,7 @@ class _ReceiptHistoryScreenState extends State<ReceiptHistoryScreen> {
                         _WeekSection(
                           week: week,
                           expanded: _expandedWeeks.contains(week.weekStart),
+                          maxWeekTotal: maxWeekTotal,
                           expandedDays: _expandedDays,
                           onToggle: () => _toggleWeek(week),
                           onToggleDay: _toggleDay,
@@ -278,6 +283,7 @@ class _WeekSection extends StatelessWidget {
   const _WeekSection({
     required this.week,
     required this.expanded,
+    required this.maxWeekTotal,
     required this.expandedDays,
     required this.onToggle,
     required this.onToggleDay,
@@ -285,12 +291,16 @@ class _WeekSection extends StatelessWidget {
 
   final HistoryWeek week;
   final bool expanded;
+  final double maxWeekTotal;
   final Set<DateTime> expandedDays;
   final VoidCallback onToggle;
   final ValueChanged<HistoryDay> onToggleDay;
 
   @override
   Widget build(BuildContext context) {
+    final zero = week.total == 0;
+    final pct = maxWeekTotal > 0 ? week.total / maxWeekTotal : 0.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -298,28 +308,24 @@ class _WeekSection extends StatelessWidget {
           onTap: onToggle,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: AnimatedRotation(
-                    turns: expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutBack,
-                    child: const Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 18,
-                      color: ReceiptHistoryColors.mutedLabel,
+                Row(
+                  children: [
+                    AnimatedRotation(
+                      turns: expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutBack,
+                      child: const Icon(
+                        Icons.keyboard_arrow_down,
+                        size: 18,
+                        color: ReceiptHistoryColors.mutedLabel,
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
                         week.label,
                         style: receiptHistoryText(
                           14,
@@ -327,28 +333,25 @@ class _WeekSection extends StatelessWidget {
                           letterSpacing: -0.2,
                         ),
                       ),
-                      if (!expanded) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Text(
-                              '${week.count} receipts · RM${week.total.toStringAsFixed(2)}',
-                              style: receiptHistoryText(
-                                11.5,
-                                FontWeight.w600,
-                                color: ReceiptHistoryColors.mutedText,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              week.categories
-                                  .map((c) => receiptPaletteForCategory(c).emoji)
-                                  .join(' '),
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ],
+                    ),
+                    _CategoryAvatarStack(categories: week.categories),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 24),
+                  child: Row(
+                    children: [
+                      Expanded(child: _SpendBar(pct: pct, zero: zero)),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${week.count} · RM${week.total.toStringAsFixed(2)}',
+                        style: receiptHistoryText(
+                          11,
+                          FontWeight.w700,
+                          color: ReceiptHistoryColors.mutedText,
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
@@ -362,31 +365,165 @@ class _WeekSection extends StatelessWidget {
           alignment: Alignment.topCenter,
           child: !expanded
               ? const SizedBox(width: double.infinity)
-              : Container(
-                  margin: const EdgeInsets.only(left: 5, top: 6),
-                  padding: const EdgeInsets.only(left: 17),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      left: BorderSide(
-                        color: ReceiptHistoryColors.timelineLine,
-                        width: 2,
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _WeekHeatmap(week: week),
+                    Container(
+                      margin: const EdgeInsets.only(left: 5, top: 2),
+                      padding: const EdgeInsets.only(left: 17),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                            color: ReceiptHistoryColors.timelineLine,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final day in week.days)
+                            _DaySection(
+                              day: day,
+                              expanded: expandedDays.contains(day.date),
+                              onToggle: () => onToggleDay(day),
+                            ),
+                        ],
                       ),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final day in week.days)
-                        _DaySection(
-                          day: day,
-                          expanded: expandedDays.contains(day.date),
-                          onToggle: () => onToggleDay(day),
-                        ),
-                    ],
-                  ),
+                  ],
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// 7-cell Mon–Sun spend heatmap for the expanded week, from the handoff's
+/// `week.heatmap` — each cell's severity is relative to that week's own
+/// busiest day.
+class _WeekHeatmap extends StatelessWidget {
+  const _WeekHeatmap({required this.week});
+
+  final HistoryWeek week;
+
+  static const _letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  static const _widthFactor = 0.75;
+  static const _gapShare = 7 / (7 * 24 + 6 * 7); // preserve handoff cell:gap ratio
+
+  @override
+  Widget build(BuildContext context) {
+    final totalsByWeekday = <int, double>{
+      for (final day in week.days) day.date.weekday: day.total,
+    };
+    final maxDayTotal = totalsByWeekday.values.isEmpty
+        ? 0.0
+        : totalsByWeekday.values.reduce((a, b) => a > b ? a : b);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 8, 2, 4),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final heatmapWidth = constraints.maxWidth * _widthFactor;
+          final gap = heatmapWidth * _gapShare;
+
+          return Align(
+            alignment: Alignment.center,
+            child: SizedBox(
+              width: heatmapWidth,
+              child: Row(
+                children: [
+                  for (var weekday = DateTime.monday;
+                      weekday <= DateTime.sunday;
+                      weekday++) ...[
+                    if (weekday != DateTime.monday) SizedBox(width: gap),
+                    Expanded(
+                      child: _HeatCell(
+                        letter: _letters[weekday - 1],
+                        total: totalsByWeekday[weekday] ?? 0,
+                        maxTotal: maxDayTotal,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HeatCell extends StatelessWidget {
+  const _HeatCell({required this.letter, required this.total, required this.maxTotal});
+
+  final String letter;
+  final double total;
+  final double maxTotal;
+
+  @override
+  Widget build(BuildContext context) {
+    final zero = total == 0;
+    final pct = maxTotal > 0 ? total / maxTotal : 0.0;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.maxWidth;
+        return Column(
+          children: [
+            Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: receiptHistorySeverityColor(pct, zero: zero),
+                borderRadius: BorderRadius.circular(size * 7 / 24),
+              ),
+            ),
+            SizedBox(height: size * 4 / 24),
+            Text(
+              letter,
+              style: receiptHistoryText(
+                size * 10 / 24,
+                FontWeight.w700,
+                color: ReceiptHistoryColors.mutedLabel,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Spend-severity progress bar behind a week/day's total, from the handoff's
+/// `week.barPct` / `week.barColor`.
+class _SpendBar extends StatelessWidget {
+  const _SpendBar({required this.pct, required this.zero});
+
+  final double pct;
+  final bool zero;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 6,
+      decoration: BoxDecoration(
+        color: ReceiptHistoryColors.divider,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: pct.clamp(0.0, 1.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: receiptHistorySeverityColor(pct, zero: zero),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -434,7 +571,9 @@ class _DaySection extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (!expanded)
+                if (!expanded) ...[
+                  _CategoryAvatarStack(categories: day.categories, size: 15),
+                  const SizedBox(width: 6),
                   Text(
                     '${day.items.length} · RM${day.total.toStringAsFixed(2)}',
                     style: receiptHistoryText(
@@ -443,6 +582,7 @@ class _DaySection extends StatelessWidget {
                       color: ReceiptHistoryColors.mutedLabel,
                     ),
                   ),
+                ],
               ],
             ),
           ),
@@ -533,7 +673,6 @@ class _HistoryItemRow extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: palette.acc,
                     shape: BoxShape.circle,
-                    border: Border.all(color: ReceiptHistoryColors.card, width: 2.5),
                   ),
                 ),
               ),
@@ -592,6 +731,86 @@ class _HistoryItemRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Up-to-3 overlapping category-icon avatars (accent-tint circle + emoji)
+/// plus a "+N" overflow bubble, from the handoff's `week.icons`/`day.icons`
+/// stack — used for both the week header and a collapsed day row.
+class _CategoryAvatarStack extends StatelessWidget {
+  const _CategoryAvatarStack({required this.categories, this.size = 18});
+
+  final List<String> categories;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (categories.isEmpty) return const SizedBox.shrink();
+
+    final visible = categories.take(3).toList();
+    final overflow = categories.length - visible.length;
+    final step = size * 0.65;
+    final slots = visible.length + (overflow > 0 ? 1 : 0);
+
+    return SizedBox(
+      width: size + step * (slots - 1),
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (overflow > 0)
+            Positioned(
+              left: visible.length * step,
+              child: Container(
+                width: size,
+                height: size,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: ReceiptHistoryColors.timelineLine.withValues(alpha: 0.75),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ReceiptHistoryColors.card, width: 1.5),
+                ),
+                child: Text(
+                  '+$overflow',
+                  style: receiptHistoryText(
+                    size * 0.42,
+                    FontWeight.w800,
+                    color: ReceiptHistoryColors.mutedText,
+                  ),
+                ),
+              ),
+            ),
+          for (var i = visible.length - 1; i >= 0; i--)
+            Positioned(
+              left: i * step,
+              child: _AvatarDot(category: visible[i], size: size),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AvatarDot extends StatelessWidget {
+  const _AvatarDot({required this.category, required this.size});
+
+  final String category;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = receiptPaletteForCategory(category);
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: palette.acc,
+        shape: BoxShape.circle,
+        border: Border.all(color: ReceiptHistoryColors.card, width: 1.5),
+      ),
+      child: Text(palette.emoji, style: TextStyle(fontSize: size * 0.5, height: 1)),
     );
   }
 }

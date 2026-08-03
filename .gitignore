@@ -32,6 +32,9 @@ MANIFEST
 # Cursor
 .cursor/
 
+# Node (e.g. scripts/trim-app-icon)
+node_modules/
+
 # Flutter / Dart
 .dart_tool/
 .flutter-plugins

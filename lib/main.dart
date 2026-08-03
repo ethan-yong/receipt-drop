@@ -1,9 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
@@ -22,7 +19,6 @@ Future<void> main() async {
   await AppPrefs.init();
   await AppServices.init();
   await ReceiptNotificationService.init();
-  await _initNativeGoogleSignIn();
 
   if (!Env.hasSupabaseConfig) {
     runApp(const MissingSupabaseConfigApp());
@@ -52,21 +48,4 @@ Future<void> main() async {
   final router = createAppRouter(authRefresh);
 
   runApp(ReceiptDropApp(routerConfig: router));
-}
-
-/// Initializes native (in-app) Google Sign-In on Android so the account
-/// picker is available the moment the auth screen's Google button is
-/// tapped — iOS/web/desktop keep the existing browser-OAuth flow and don't
-/// need this (see `_useNativeGoogle` in `auth_screen.dart`). Failures are
-/// logged, not fatal: the button surfaces a real error if native sign-in is
-/// actually attempted while unconfigured.
-Future<void> _initNativeGoogleSignIn() async {
-  if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
-  try {
-    await GoogleSignIn.instance.initialize(
-      serverClientId: Env.googleWebClientId,
-    );
-  } catch (e) {
-    debugPrint('GoogleSignIn.initialize failed: $e');
-  }
 }

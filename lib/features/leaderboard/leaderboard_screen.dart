@@ -241,6 +241,7 @@ class _LeaderboardRow extends StatelessWidget {
                             earned: true,
                             tier: b.tier,
                             size: 32,
+                            showTierBadge: false,
                           ),
                         ),
                   ],
