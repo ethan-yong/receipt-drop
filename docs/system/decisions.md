@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Settings screen restyled onto the receipt-sheet Baloo 2 system, with avatar editing moved there (2026-08-04)
+
+**Decision**: `SettingsScreen` (`lib/features/settings/settings_screen.dart`) was rewritten to match the approved `Settings.dc.html` design — grouped white rounded-card sections on the warm cream/gold Baloo 2 system (`ReceiptSheetColors`/`balooText`, same family as `/profile-setup` and the receipt-confirm-sheet), replacing the generic `ListTile`-based layout and the now-deleted `lib/widgets/settings_tile.dart` (was only used here). Added a profile-photo header above the settings groups — a 168px avatar with a tap-to-edit affordance — that lets the user change their `avatar_url` any time via `ProfileRepository.updateAvatarUrl`, reusing the same upload path as `/profile-setup` (`uploadAvatarPhoto`) but without touching `profile_setup_complete` or requiring a username. Added `ProfileRepository.fetchProfileHeader` to read `display_name`/`avatar_url` for that header. Two new `ReceiptSheetColors` tokens were added along the way: `heading` (`#2c2c33`, the near-black text color both this and the profile-setup mock use for titles/body text — distinct from `ink`, the warm-brown used on icon strokes) and `cardDivider` (`#EDE4D3`, the row-separator line inside a grouped card). Also corrected `profile_setup_screen.dart`'s heading/username-input text, which had been using `ink` instead of the (at-the-time-missing) `heading` color in the prior pass.
+
+**Reason**: per the approved design; its subtitle is explicit — "Profile photo is now editable from here" — i.e. `/profile-setup`'s photo picker was never meant to be the only chance to set one.
+
+**Alternatives considered**: keeping `SettingsTile`/`ListTile` and only re-skinning colors (rejected — the mock's grouped-card layout, per-row corner clipping, and custom pill toggle don't map onto `ListTile`/`SwitchListTile` without fighting their built-in chrome); giving the settings avatar edit its own dedicated repository method separate from `profile_repository.dart` (rejected — it's the same `avatars` bucket and the same `profiles.avatar_url` column as profile-setup, so it belongs next to `uploadAvatarPhoto`/`completeProfileSetup`, not duplicated).
+
+**Tradeoffs**: `SettingsTile` is now dead and was deleted outright (confirmed unused anywhere else) rather than kept around; any *other* future settings-style screen that still wants the plain `AppColors` look no longer has a shared tile widget to reach for and would need its own.
+
+---
+
 ## Profile setup screen gated by a new `profiles.profile_setup_complete` flag (2026-08-04)
 
 **Decision**: added a `/profile-setup` screen (`lib/features/profile_setup/profile_setup_screen.dart`) shown right after sign-in, letting the user pick a real profile photo and claim an `@username` before entering the app. Backed by two new `profiles` columns (`username` — nullable, case-insensitive unique; `profile_setup_complete` — boolean, default false) and a new `avatars` Storage bucket (public read, own-folder write — same shape as `receipts`/`config`), all in `20260804000000_profile_setup.sql`. `app_router.dart`'s `redirect` gates on `AppPrefs.profileSetupComplete` (a local pref mirroring the existing `onboardingComplete` pattern) rather than an async DB read on every navigation; `main.dart`'s `onAuthStateChange` listener does a one-time best-effort fetch of the server flag on sign-in (`ProfileRepository.syncProfileSetupStatus`) so a reinstall of an already-set-up account doesn't get stuck showing the screen again.

@@ -301,7 +301,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 style: balooText(
                   22,
                   FontWeight.w800,
-                  color: ReceiptSheetColors.ink,
+                  color: ReceiptSheetColors.heading,
                   letterSpacing: -0.3,
                 ),
               ),
@@ -345,7 +345,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                             style: balooText(
                               16,
                               FontWeight.w700,
-                              color: ReceiptSheetColors.ink,
+                              color: ReceiptSheetColors.heading,
                               letterSpacing: -0.2,
                             ),
                             decoration: InputDecoration(

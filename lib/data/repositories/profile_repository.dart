@@ -66,6 +66,38 @@ class ProfileRepository {
     await AppPrefs.setProfileSetupComplete();
   }
 
+  /// Name + photo shown on the Settings screen header. Best-effort; nulls on
+  /// failure (caller falls back to the auth email / a placeholder).
+  static Future<({String? displayName, String? avatarUrl})> fetchProfileHeader(
+    String userId,
+  ) async {
+    try {
+      final row = await Supabase.instance.client
+          .from('profiles')
+          .select('display_name, avatar_url')
+          .eq('id', userId)
+          .maybeSingle();
+      return (
+        displayName: row?['display_name'] as String?,
+        avatarUrl: row?['avatar_url'] as String?,
+      );
+    } on Object {
+      return (displayName: null, avatarUrl: null);
+    }
+  }
+
+  /// Updates just the profile photo — used from Settings, where the user is
+  /// already past the one-time profile-setup flow.
+  static Future<void> updateAvatarUrl({
+    required String userId,
+    required String avatarUrl,
+  }) async {
+    await Supabase.instance.client
+        .from('profiles')
+        .update({'avatar_url': avatarUrl})
+        .eq('id', userId);
+  }
+
   /// Best-effort: if the server already has this account marked as having
   /// completed profile setup (e.g. it was done on another device), syncs
   /// that into the local pref so a reinstall doesn't re-show the screen.
