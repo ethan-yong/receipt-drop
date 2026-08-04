@@ -8,4 +8,9 @@ class AuthRefreshNotifier extends ChangeNotifier {
       notifyListeners();
     });
   }
+
+  /// Re-runs the router's `redirect` from outside a listener callback — used
+  /// after an async local-state change (e.g. AppPrefs) that the redirect
+  /// reads synchronously but that doesn't itself fire onAuthStateChange.
+  void refresh() => notifyListeners();
 }

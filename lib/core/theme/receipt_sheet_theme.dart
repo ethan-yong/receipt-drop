@@ -9,8 +9,10 @@ import 'package:google_fonts/google_fonts.dart';
 /// typeface, per the high-fidelity handoff — distinct from the app-wide
 /// Plus Jakarta Sans theme in `app_typography.dart`.
 abstract final class ReceiptSheetColors {
+  static const background = Color(0xFFFAF3E7);
   static const surface = Color(0xFFFFFDF8);
   static const ink = Color(0xFF4F2D23);
+  static const error = Color(0xFFB4483B);
   static const body = Color(0xFF5A4632);
   static const sub = Color(0xFF9C8A72);
   static const subLight = Color(0xFFB0A48D);

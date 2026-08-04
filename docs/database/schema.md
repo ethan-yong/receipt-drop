@@ -22,8 +22,12 @@ Local dev: `supabase start` then `supabase db reset` (replays all migrations). J
 | `badge_count` | int | default 0, `>=0` — added `20260626000003`, denormalized from `user_badges` |
 | `current_streak` | int | default 0, `>=0` — added `20260626000003`, denormalized |
 | `share_map_location` | boolean | default true — added `20260706000000`, opt-out for friend map pins |
+| `username` | text | nullable, case-insensitive unique (`profiles_username_unique_idx` on `lower(username)`) — added `20260804000000` |
+| `profile_setup_complete` | boolean | default false — added `20260804000000`, gates the post-sign-in `/profile-setup` screen |
 
 `badge_count`/`current_streak`/`current_mood`/`avatar_config` are **write-your-own-row-only** denormalizations pushed by `lib/data/repositories/avatar_repository.dart` (`syncCurrentMood`, `syncCurrentStreak`, `syncBadgeCount`) so friend-facing queries (leaderboard, feed, map) never need to read another user's `transactions`.
+
+`username` availability is checked via the `is_username_available(candidate text)` RPC (`security definer`, `20260804000000`) rather than widening `profiles_select_own` — it only exposes an exists-check, not the underlying rows. `avatar_url` is now actually wired up: `lib/data/repositories/profile_repository.dart` uploads a real photo to the `avatars` Storage bucket (public read, own-folder write — same shape as the `receipts`/`config` buckets in `20260511000001_storage.sql`) and stores its public URL here.
 
 ### `transactions`
 Core receipt row. RLS: owner-only for all of select/insert/update/delete (`20260511000000_init.sql`), unchanged since.

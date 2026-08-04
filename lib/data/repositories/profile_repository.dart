@@ -1,0 +1,88 @@
+import 'dart:typed_data';
+
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../core/bootstrap/app_prefs.dart';
+
+/// Reads/writes the profile-setup fields on `profiles` (username, real
+/// profile photo) and the local completion flag. Single file (no `_io`/`_web`
+/// split) — pure Supabase calls, same shape as `avatar_repository.dart`.
+class ProfileRepository {
+  ProfileRepository._();
+
+  static Future<bool> isUsernameAvailable(String username) async {
+    final result = await Supabase.instance.client.rpc(
+      'is_username_available',
+      params: {'candidate': username},
+    );
+    return result as bool;
+  }
+
+  static Future<String> uploadAvatarPhoto({
+    required String userId,
+    required Uint8List bytes,
+    required String mimeType,
+  }) async {
+    final ext = mimeType == 'image/png' ? 'png' : 'jpg';
+    final path = '$userId/avatar.$ext';
+    await Supabase.instance.client.storage
+        .from('avatars')
+        .uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: mimeType, upsert: true),
+        );
+    return Supabase.instance.client.storage.from('avatars').getPublicUrl(path);
+  }
+
+  /// Persists username/photo and marks setup complete. If [username]
+  /// collides with one claimed since the last availability check, retries
+  /// without it rather than blocking completion of the flow.
+  static Future<void> completeProfileSetup({
+    required String userId,
+    String? username,
+    String? avatarUrl,
+  }) async {
+    final update = {
+      'username': ?username,
+      'avatar_url': ?avatarUrl,
+      'profile_setup_complete': true,
+    };
+    try {
+      await Supabase.instance.client
+          .from('profiles')
+          .update(update)
+          .eq('id', userId);
+    } on PostgrestException catch (e) {
+      if (e.code == '23505' && username != null) {
+        await Supabase.instance.client
+            .from('profiles')
+            .update({'avatar_url': ?avatarUrl, 'profile_setup_complete': true})
+            .eq('id', userId);
+      } else {
+        rethrow;
+      }
+    }
+    await AppPrefs.setProfileSetupComplete();
+  }
+
+  /// Best-effort: if the server already has this account marked as having
+  /// completed profile setup (e.g. it was done on another device), syncs
+  /// that into the local pref so a reinstall doesn't re-show the screen.
+  static Future<void> syncProfileSetupStatus(String userId) async {
+    if (AppPrefs.profileSetupComplete) return;
+    try {
+      final row = await Supabase.instance.client
+          .from('profiles')
+          .select('profile_setup_complete')
+          .eq('id', userId)
+          .maybeSingle();
+      if (row?['profile_setup_complete'] == true) {
+        await AppPrefs.setProfileSetupComplete();
+      }
+    } on Object {
+      // Best-effort; router will show the profile-setup screen if this
+      // failed and the flag is genuinely still unset.
+    }
+  }
+}
