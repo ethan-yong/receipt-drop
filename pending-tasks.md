@@ -8,6 +8,22 @@ _Add new pending tasks below as separate `##` sections._
 
 ---
 
+## Native Google Sign-In on iOS
+
+Android now uses native `google_sign_in` (in-app Credential Manager sheet, no browser) — see 2026-07-31 entry in `docs/system/decisions.md`. iOS deliberately still uses the old `signInWithOAuth` browser-redirect flow, deferred because it needs its own Google Cloud OAuth client that doesn't exist yet (only the Web and Android clients do).
+
+Design already worked out (was implemented and then reverted to Android-only — same shape should work when picked back up):
+
+- Create an **iOS** OAuth client in Google Cloud Console (bundle ID `com.receiptdrop.receiptDrop`, from `PRODUCT_BUNDLE_IDENTIFIER` in `ios/Runner.xcodeproj/project.pbxproj`).
+- `Env.googleIosClientId` getter in `lib/core/config/env.dart` (same `String.fromEnvironment` → `.env` pattern as `googleWebClientId`), reading a new `GOOGLE_IOS_CLIENT_ID` var.
+- Pass it as `clientId` to `GoogleSignIn.instance.initialize()` in `lib/main.dart`, guarded for iOS (alongside the existing Android guard, using `Env.googleWebClientId` as `serverClientId` on both platforms).
+- `ios/Flutter/Secrets.xcconfig` / `Secrets.xcconfig.example`: add `GOOGLE_IOS_REVERSED_CLIENT_ID = com.googleusercontent.apps.<id>` (mirrors the existing `MAPS_API_KEY` xcconfig substitution pattern).
+- `ios/Runner/Info.plist`: add a second `CFBundleURLTypes` array entry with `CFBundleURLSchemes = ["$(GOOGLE_IOS_REVERSED_CLIENT_ID)"]`, alongside the existing `com.receiptdrop.receiptdrop` entry (don't reintroduce the duplicate-key bug that was fixed 2026-07-31 — one array, multiple dict entries).
+- `supabase/config.toml`'s `[auth.external.google]` `client_id` needs both the Web and iOS client IDs to validate ID tokens from both platforms. `env()` only interpolates a whole field (no concatenation), so this means a new combined `.env` var (e.g. `GOOGLE_OAUTH_CLIENT_IDS`, comma-separated, web first) referenced as `client_id = "env(GOOGLE_OAUTH_CLIENT_IDS)"`, and `scripts/supabase_start.ps1` updated to export it. Mirror the same comma-separated list in the remote Supabase dashboard's Google provider settings (`setup.md`).
+- Extend `_useNativeGoogle` in `lib/features/auth/auth_screen.dart` to include `TargetPlatform.iOS`.
+
+---
+
 ## Strip demo receipts from Home
 
 Remove seeded / sample transactions from the home receipt list so the carousel only shows the user’s real captures (`lib/data/repositories/demo_transactions.dart` and any home-screen seeder path).

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../data/repositories/insights_repository_web.dart';
 import '../../data/repositories/transaction_repository_web.dart';
 import '../../domain/models/pending_import_model.dart';
 
@@ -12,7 +13,8 @@ class _PendingImportsStub {
     required String sourcePath,
     required String mimeType,
     String? sourceApp,
-  }) async => throw UnsupportedError('Pending imports not supported on web');
+  }) async =>
+      throw UnsupportedError('Pending imports not supported on web');
 
   Future<void> updateStatus(String id, String status) async {}
   Future<void> delete(String id) async {}
@@ -24,6 +26,7 @@ class _PendingImportsStub {
 abstract final class AppServices {
   static TransactionRepository? _transactions;
   static final _pendingImportsStub = _PendingImportsStub();
+  static final InsightsRepository _insights = InsightsRepository();
 
   static TransactionRepository get transactions {
     final repo = _transactions;
@@ -34,6 +37,8 @@ abstract final class AppServices {
   }
 
   static _PendingImportsStub get pendingImports => _pendingImportsStub;
+
+  static InsightsRepository get insights => _insights;
 
   static Future<void> init() async {
     _transactions = TransactionRepository();

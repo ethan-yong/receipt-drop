@@ -13,6 +13,10 @@ const _kLockedRing = Color(0xFFC9C0AC);
 const _kInnerUnlocked = Color(0xFFF3ECDE);
 const _kInnerLocked = Color(0xFFDEDACF);
 
+/// Bronze / Silver / Gold ring color for a badge tier (1..3) — shared with
+/// the leaderboard podium so rank medals and badge tiers use the same hues.
+Color badgeTierColor(int tier) => _kTierColors[tier.clamp(1, 3) - 1];
+
 // Flat-top hex: 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%
 class _FlatHexClipper extends CustomClipper<Path> {
   @override
@@ -38,6 +42,7 @@ class BadgeHex extends StatelessWidget {
     this.tier = 0,
     this.size = 88,
     this.showLabel = false,
+    this.showTierBadge = true,
     this.onTap,
   });
 
@@ -47,6 +52,8 @@ class BadgeHex extends StatelessWidget {
   final int tier;
   final double size;
   final bool showLabel;
+  /// Tier number chip — hidden on compact surfaces (e.g. leaderboard row).
+  final bool showTierBadge;
   final VoidCallback? onTap;
 
   bool get _locked => badge.comingSoon || !earned;
@@ -124,36 +131,7 @@ class BadgeHex extends StatelessWidget {
               ),
             ),
           ),
-          // Tier number badge (top-left) — shown only when a tier is earned
-          if (tier > 0)
-            Positioned(
-              top: 2,
-              left: 2,
-              child: Container(
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: ringColor,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  '$tier',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
+          if (showTierBadge && tier > 0) _tierBadge(ringColor),
           // Lock icon (bottom-centre)
           if (_locked)
             Positioned(
@@ -169,6 +147,39 @@ class BadgeHex extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _tierBadge(Color ringColor) {
+    final tierBadgeSize = (size * 0.26).clamp(12.0, 22.0);
+    final tierFontSize = (tierBadgeSize * 0.5).clamp(8.0, 11.0);
+    return Positioned(
+      top: 2,
+      left: 2,
+      child: Container(
+        width: tierBadgeSize,
+        height: tierBadgeSize,
+        decoration: BoxDecoration(
+          color: ringColor,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          '$tier',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: tierFontSize,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
   }

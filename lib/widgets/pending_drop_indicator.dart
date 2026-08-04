@@ -146,7 +146,8 @@ class _PendingDropIndicatorState extends State<PendingDropIndicator>
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
       child: Material(
-        color: Colors.transparent,
+        color: const Color(0xFFFFFBF2),
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
           onTap: widget.onTap,
           borderRadius: BorderRadius.circular(18),
@@ -161,8 +162,8 @@ class _PendingDropIndicatorState extends State<PendingDropIndicator>
               border: Border.all(color: _kGold.withValues(alpha: 0.28), width: 1.5),
               boxShadow: [
                 BoxShadow(
-                  color: _kGold.withValues(alpha: 0.14),
-                  blurRadius: 22,
+                  color: _kGold.withValues(alpha: 0.18),
+                  blurRadius: 28,
                   offset: const Offset(0, 8),
                 ),
               ],

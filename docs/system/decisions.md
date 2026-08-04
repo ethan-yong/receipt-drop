@@ -14,6 +14,42 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Native Google Sign-In on Android, replacing browser OAuth (2026-07-31)
+
+**Decision**: `auth_screen.dart`'s Google button now calls the native `google_sign_in` SDK (v7, `GoogleSignIn.instance.authenticate()`) on **Android only** instead of `Supabase.auth.signInWithOAuth`. The resulting ID token is exchanged via `Supabase.auth.signInWithIdToken`. Sign-in appears as an in-app Credential Manager bottom sheet with no browser tab and no deep-link round trip. `GoogleSignIn.instance.initialize()` runs once at startup (`main.dart`), guarded to Android only, using the existing `Env.googleWebClientId`/`GOOGLE_OAUTH_CLIENT_ID` as Android's `serverClientId` (no new config needed — Android's native flow reuses the same Web client already configured for the browser flow). iOS, web, and desktop are unchanged and still use `signInWithOAuth`.
+
+**Reason**: the browser-redirect OAuth flow visibly "teleported" the user out of the app into Chrome/Safari to pick a Google account, then back in via `com.receiptdrop.receiptdrop://login-callback` — a jarring switch modern apps (YouTube, Gmail, Notion) don't have. Native Google Sign-In shows the picker as an in-app modal instead. Scoped to Android only per explicit request — iOS native sign-in needs its own Google Cloud OAuth client (not yet created) and touches `Info.plist`/xcconfig, deliberately deferred (design already worked out, see `pending-tasks.md`).
+
+**Alternatives considered**: also doing iOS native sign-in in this same pass (reverted — needs a new Google Cloud OAuth client the user hadn't created yet; scoped down to Android-only, which needed zero new Google Cloud setup since it reuses the existing Web client as `serverClientId`); also switching the web build to Google Identity Services/One Tap (rejected — a full-page redirect is a normal, expected pattern on web, and it isn't the UX problem being fixed).
+
+**Tradeoffs**: Apple Sign-In, iOS Google sign-in, and web/desktop Google sign-in are all unchanged and still go through the browser-OAuth + deep-link path — Google sign-in now has two different mechanisms depending on platform (Android native vs. everywhere else browser-based). Fixed a latent, unrelated bug while touching `ios/Runner/Info.plist`: it had two duplicate `CFBundleURLTypes` keys (only the second was ever honored by the plist parser; the first, an unused `receiptdrop://` scheme, was dead) — merged into one array.
+
+---
+
+## Pending-receipt location context: share-time venue name, passive-only permission check (2026-07-30)
+
+**Decision**: `ShareIntentListener` now also kicks off a fire-and-forget location resolution per saved file — a passive (never-requesting) GPS check via a new `getCurrentPositionPassiveOrNull()` (`lib/core/utils/current_location.dart`), then `PlacesRepository.fetchNearbyCandidates(lat:, lng:, limit: 1)` called with **no** merchant/category bias, so the existing `places-proxy` `nearby_candidates` mode ranks purely by proximity. The resolved place name (never raw coordinates) is written to a new `pending_imports.venueLabel` column (`PendingImportsRepository.setVenueLabel`, mirroring `setNote`'s no-op-on-missing-row contract) and shown as a "📍 `<name>`" line on `PendingImportsScreen`'s pending-import card when present.
+
+**Reason**: full spec at `docs/plans/2026-07-30-pending-receipt-location-context.md`. Pending receipts showed only a thumbnail, timestamp, and (as of the notification feature above) an optional source-app chip — not enough to recall which unprocessed receipt is which once a few pile up. Reused `places-proxy`'s existing nearby mode as-is (confirmed by reading `handleNearbyMode` in `supabase/functions/places-proxy/index.ts`: with no query/candidates it already weights ~85% on distance) rather than adding a new Edge Function mode or a geocoding integration.
+
+**Alternatives considered**: reusing `getCurrentPositionOrNull()` unmodified (rejected — it actively calls `Geolocator.requestPermission()`, which would pop a first-time OS permission dialog in the middle of a share-sheet handoff; added a passive-only variant instead, used only from this path); consolidating this with the existing OCR-time `shareLocationLat/Lng` capture in `receipt_ingest_service.dart` into one capture point (deferred — a real architectural cleanup, but a separate, larger change than this feature needed; flagged as a follow-up in the plan doc, not done here, so the two capture points currently coexist independently).
+
+**Tradeoffs**: only the resolved venue *name* is persisted (locally and in the `pending_receipts` Postgres mirror) — no raw lat/lng column was added, by design, to keep this unambiguously "a memory aid, not a tracking feature." A user who denies location permission, or shares before ever granting it, sees the pending card exactly as it looked before this feature existed — no placeholder, no prompt, no error state.
+
+---
+
+## Post-share receipt notification: acknowledgment + inline note, OCR stays manual for now (2026-07-30)
+
+**Decision**: replaced the plain in-app toast shown after an OS share (`ShareIntentListener`) with an interactive local notification (`flutter_local_notifications`, already a pubspec dependency with zero prior call sites) — "🧾 Receipt saved" / "`{Provider}` receipt is processing" or the generic "Your receipt is processing", with an inline "Add a note"/Update action that writes straight to a new `pending_imports.note` column (synced to `transactions.notes` when the receipt is later confirmed) without opening the app. Source identification (`PendingImportModel.sourceApp`) is now actually populated for the first time via Android's `Activity.getReferrer()` (small native addition, `MainActivity.kt`) matched against a curated package-name allow-list (`receipt_source_providers.dart`) — that field existed end-to-end (Drift, Postgres, UI) since 2026-07-12 but no call site ever passed a value. iOS has no equivalent referrer API, so source stays generic there. Multi-file batch shares get one grouped, non-interactive notification, not one per file.
+
+**Reason**: full spec at `docs/plans/2026-07-30-post-share-receipt-notification.md`. The literal requested UX ("Maybank receipt is processing") implies OCR should auto-trigger on share, but that reverses the 2026-07-21 decision below (manual `PendingImportsScreen` Process gate) and has real, unbounded backend-load implications for the self-hosted `ocr-api`/LLM gateway. Shipped the notification/note-capture shell on its own first — lower risk, immediately useful, fully reversible — and deferred auto-triggering OCR to a follow-up behind a flag once load is validated.
+
+**Alternatives considered**: auto-triggering background OCR in this same pass (matches the literal ask, but stacks an architecture reversal with unvalidated load on top of a UI change — rejected for this pass, not rejected outright); per-file interactive notifications for batch shares (rejected — echoes the exact "N celebrations" anti-pattern already rejected for save-success in the 2026-07-22 entry below); guessing the source from OCR content alone (rejected — the user explicitly asked not to guess; referrer + curated allow-list only).
+
+**Tradeoffs**: the note field can't be cleared back to blank once set from the confirm sheet (same "no explicit clear" limitation the vendor-name field already has — consistent, not a new gap). The Android background-isolate note-write path (`@pragma('vm:entry-point')`, `receipt_notification_service_io.dart`) is the first place this codebase touches Drift from outside the main Flutter engine/isolate — everything else (`SyncWorker`) runs in-process. iOS reliability for the inline-reply action while the app is fully terminated is unverified (flagged as an open spike in the plan doc, not assumed solved).
+
+---
+
 ## Map cluster fit-bounds + spiderfy for overlapping pins (2026-07-30)
 
 **Decision**: Cluster-bubble taps fit the camera to the bounding box of every distinct place inside the tapped geohash bucket (`CameraUpdate.newLatLngBounds` with 80px padding, plus a ~65m minimum span guard for near-co-located places). At individual-pin zoom, place pins whose screen positions fall within 56px of each other are collapsed into one tap-to-expand "N nearby" overlap indicator; tapping it spiderfies the group into a circular fan-out (screen-space offsets from `map_pin_layout.dart`), and tapping the bare map collapses it. Grouping is a pure union-find over already-projected screen coordinates — not a change to the geohash clustering pipeline.
@@ -23,6 +59,44 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 **Alternatives considered**: Step-by-step one-geohash-level zoom per tap (rejected — extra taps for the common "show me these places" case); always-on auto-spread without a tap (rejected — clutters the map when many near-coincident places share a viewport); geographic (lat/lng) spiderfy offsets instead of screen-space (rejected — distance in degrees varies with latitude/zoom and wouldn't guarantee tappable separation).
 
 **Tradeoffs**: Only one spiderfy group open at a time; expand/collapse is a cross-fade+scale (`AnimatedSwitcher`), not literal pin flight along the radius. Overlap detection uses a fixed pixel threshold tuned to pill width — may need retuning if marker size changes. Friend pins and the "you are here" avatar are out of scope.
+
+---
+
+## Spending Insights Home card: always-visible + funnel placement (2026-07-29)
+
+**Decision**: Replace the compact `InsightHomeCard` (hidden when empty, above Today's Receipts) with a Strava/Apple-Fitness-inspired `SpendingInsightsCard` that is **always visible** on Home — active state surfaces one top insight with eyebrow / headline / supporting / "View insights →"; empty state shows aspirational copy ("Your spending story is just getting started") with **no CTA, no ripple, no navigation**. Place the card **between** the receipt carousel / Drop Receipt CTA and the Badges section (Capture → Review → Understand → Reward). Timestamps stay off the Home card; a lightweight "Updated today" freshness line may appear only on the Insights detail screen.
+
+**Reason**: An invisible feature until the first curated insight undercuts habit-building and the "app noticed something about you" beat. Separating upload ("I give the app data") from insight ("the app tells me something") means the empty card must not become a disguised capture shortcut. Funnel placement keeps Review (carousel) → Understand (insights) → Reward (badges) as a readable scroll order.
+
+**Alternatives considered**: Keep hide-when-empty (rejected — contradicts the highlight-card product goal); empty-state tap → `ReceiptCaptureFlow` (rejected — blurs upload vs insight mental models); separate Insights tab / modal / banner (rejected — product constraints); charts or dense stats on the Home card (rejected — not a dashboard).
+
+**Tradeoffs**: Empty-state card always occupies vertical space on sparse accounts (accepted — better than a silent feature); headline/supporting split recovers curator `title`/`description` client-side from joined `body` rather than a schema change (template fallbacks may render headline-only).
+
+---
+
+## Visualization Story Agent: rule-based node after Critic, rendered on the Insights detail screen only (2026-07-30)
+
+**Decision**: Add a `visualization` node to the insight curation graph (`services/ocr-api/ocr_api/insights/graph.py`), running `critic → visualization → END`. It attaches a small visual spec (chart type, `data_source` slug, `parameters`, `highlight`, `animation`) to each of the ≤3 final insights, or `null` when no visual strengthens that insight. Implemented as a **deterministic lookup table** (`ocr_api/insights/visualization_agent.py`), not an LLM call — `insight_type → {viz type, animation}` is a closed 5-entry mapping, the same shape as the existing rule-based `insight_router.py`. `CuratedInsightOut.visualization: dict | None` carries it through `template_fallback()` too, so every code path (graph success, graph-failure fallback, main.py's outer exception fallback) gets it for free. Persisted via a nullable `spending_insights.visualization jsonb` column and passed through `curate-insights/index.ts` (validated against a closed visualization-type vocabulary before insert, matching the file's existing `sanitize*` pattern).
+
+**Client rendering (follow-up, same day)**: `CuratedInsight.visualization` (`lib/domain/models/insight_candidate.dart`) carries the field through local persistence (`local_spending_insights.visualization_json`, schema v13) to a new `InsightVisualization` widget (`lib/widgets/insight_visualization.dart`) that dispatches on `insightVisualKind()` (`lib/domain/logic/insight_visualization.dart`) to one of four small `fl_chart` widgets — line/bar/icon-timeline/dashed-forecast — each with its own calm one-shot entrance animation (`TweenAnimationBuilder`/`AnimationController`, no new package). Rendered **inline inside each insight's card on `insights_detail_screen.dart` only** — the Home `SpendingInsightsCard` stays text-only, so the 2026-07-29 "not a dashboard" decision for Home is preserved; the visual only appears once a user has already opted into the detail view. Building the client also surfaced that 3 of the 4 backend rules didn't select enough `facts` keys to actually draw their named chart (e.g. `spending_spike` needs the spike amount, not just the baseline) — `visualization_agent.py`'s `parameter_keys` were extended (`today_total`, `visits`, `projected`) to fix this.
+
+**Reason**: A user-supplied "Visualization Story Agent" spec asked for one focused visual per insight (never a dashboard) placed between the specialist agents and the Critic. Since the decision rules in that spec are a straight type→viz lookup (not a judgment call), routing it through an LLM would add latency/cost for no benefit. Placed *after* Critic instead of before (as literally diagrammed) so visualization is computed only for the ≤3 insights that survive dedupe/rank, not the up-to-4 raw candidates Critic receives. Client rendering was scoped to the detail screen specifically to avoid reversing the Home-card "not a dashboard" call rather than reopening it.
+
+**Alternatives considered**: LLM-backed visualization agent (rejected — no ambiguity for the model to resolve, given facts already provide the exact parameters needed); running the node before Critic per the literal diagram (rejected — wastes computation on discarded candidates, though it is deterministic so the wasted cost is small); rendering the visual on the Home card (rejected — reopens the 2026-07-29 "not a dashboard" decision); a new Flutter animation package for the entrance motion (rejected — no animation package is used anywhere in this codebase; raw `AnimationController`/`TweenAnimationBuilder` matches `save_success_screen.dart`'s existing precedent).
+
+**Tradeoffs**: `streak` insights never get a visualization (no reliable "meaningful history" signal in `facts` to gate on) — may need revisiting if streak visuals are wanted later. `location_heatmap` is an allowed wire value with no backend rule and no client widget yet — both sides treat it as an unsupported/no-op type until a location-based insight type exists.
+
+---
+
+## Orchestrator-driven insight curation via LangGraph (2026-07-28)
+
+**Decision**: Replace the single-call curator in `services/ocr-api/ocr_api/insight_curator.py` with a LangGraph state graph under `ocr_api/insights/` (`insight_router` → optional specialist agents → Critic). Routing stays rule-based (never an LLM). Module is named `insight_router` (not `orchestrator`) to avoid colliding with `ocr_api/skills/orchestrator.py`. Specialist LLM agents are gated by `INSIGHTS_SPECIALIST_AGENTS_ENABLED` (default on as of 2026-07-29; set `"0"` in `ocr-api-secrets` to roll back). `langgraph` is pinned `>=1.2.0,<2.0` in `pyproject.toml`. Edge Function `UPSTREAM_TIMEOUT_MS` raised to 55s for the two-hop critical path. Optional `dismiss_counts` on the request enables Phase-4 engagement-weighted routing without a schema change.
+
+**Reason**: Per-domain prompt iteration and explicit cheap pre-LLM routing ("should we reason about category behavior this cycle?") without rewriting the on-device detectors, persistence, or client UI. Wire contract of `POST /curate-insights` unchanged.
+
+**Alternatives considered**: LLM-based orchestrator (rejected — 5-type vocabulary is a lookup table); hand-rolled async fan-out without LangGraph (rejected — explicit ask for LangGraph's reducer/`Send` semantics); splitting insights into a separate deployable from `/ocr` (rejected — disproportionate vs. smoke test + version pin + memory measurement on the existing single-replica pod).
+
+**Tradeoffs**: New dependency on the capture-critical-path service (mitigated by startup smoke test and soft-degrade on graph failure); Phase 3 roughly doubles worst-case latency and needs vLLM concurrency headroom; complexity increases for a small team iterating rarely on this surface.
 
 ---
 

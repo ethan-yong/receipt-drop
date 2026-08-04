@@ -360,3 +360,19 @@ def test_ocr_success_includes_cleaned_ocr_fields_when_cleanup_enabled(
         "confidence",
         "words",
     }
+
+
+def test_capture_critical_path_routes_remain_importable(client: TestClient) -> None:
+    """Smoke: /health and capture path stay up with the insight graph loaded.
+
+    Guards against langgraph/insight-graph import failures taking down the
+    single-replica ocr-api pod (which also serves /ocr and /understand).
+    """
+    assert client.get("/health").status_code == 200
+    from ocr_api.insights import route_candidates  # noqa: F401
+    from ocr_api.insights.graph import build_insight_graph, get_insight_graph
+
+    g = build_insight_graph()
+    assert g is not None
+    assert get_insight_graph() is not None
+    assert client.get("/health").json() == {"status": "ok"}

@@ -67,6 +67,7 @@ class TransactionRepository {
       lineItems: request.lineItems,
       rawOcrText: request.rawOcrText,
       ocrConfidence: request.ocrConfidence,
+      categoryConfidence: request.categoryConfidence,
       shareLocationLat: request.shareLocationLat,
       shareLocationLng: request.shareLocationLng,
     );
@@ -110,6 +111,7 @@ class TransactionRepository {
       lineItems: request.lineItems,
       rawOcrText: request.rawOcrText,
       ocrConfidence: request.ocrConfidence,
+      categoryConfidence: request.categoryConfidence,
       shareLocationLat: row.shareLocationLat,
       shareLocationLng: row.shareLocationLng,
     );
@@ -163,6 +165,7 @@ class TransactionRepository {
       lineItems: row.lineItems,
       rawOcrText: row.rawOcrText,
       ocrConfidence: row.ocrConfidence,
+      categoryConfidence: row.categoryConfidence,
     );
     _emit();
   }
@@ -210,6 +213,7 @@ class TransactionRepository {
           thumbnailBytes: _rows[i].thumbnailBytes,
           impactUser: _rows[i].impactUser,
           lineItems: _rows[i].lineItems,
+          categoryConfidence: _rows[i].categoryConfidence,
         );
       }
     }

@@ -19,6 +19,7 @@ import '../../widgets/adaptive_sync_banner.dart';
 import '../../widgets/pending_drop_indicator.dart';
 import '../../widgets/receipt_card_carousel.dart';
 import '../../widgets/share_coach_mark.dart';
+import '../../widgets/spending_insights_card.dart';
 import '../../widgets/top_badges_grid.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -33,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
       AppPrefs.shareCoachMarkPending && !AppPrefs.shareCoachMarkSeen;
   BadgeCatalog? _badgeCatalog;
   final _badgeStream = BadgeRepository.streamAll();
+  double _topOverlayHeight = 0;
 
   @override
   void initState() {
@@ -47,6 +49,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _retrySync() async {
     await AppServices.transactions.retryStuckSync();
+  }
+
+  void _onTopOverlayHeightChanged(double height) {
+    if (height == _topOverlayHeight) return;
+    setState(() => _topOverlayHeight = height);
   }
 
   @override
@@ -74,35 +81,13 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             });
 
-            return Column(
+            return Stack(
               children: [
-                if (_showCoachMark)
-                  ShareCoachMark(
-                    onDismiss: () => setState(() => _showCoachMark = false),
-                  ),
-                AdaptiveSyncBanner(stuckCount: stuck, onRetry: _retrySync),
-                StreamBuilder<List<PendingImportModel>>(
-                  stream: AppServices.pendingImports.watchAll(),
-                  builder: (context, pendingSnapshot) {
-                    final pending = pendingSnapshot.data ?? const [];
-                    if (pending.isEmpty) return const SizedBox.shrink();
-                    return PendingDropIndicator(
-                      pending: pending,
-                      onTap: () => context.pushNamed('pending-imports'),
-                    );
-                  },
-                ),
-                if (needsReview > 0)
-                  _NeedsReviewBanner(
-                    count: needsReview,
-                    onTap: () => context.pushNamed('review'),
-                  ),
-                Expanded(
+                Positioned.fill(
                   child: SingleChildScrollView(
-                    clipBehavior: Clip.none,
-                    padding: const EdgeInsets.fromLTRB(
+                    padding: EdgeInsets.fromLTRB(
                       AppSpacing.md,
-                      AppSpacing.xs,
+                      _topOverlayHeight + AppSpacing.xs,
                       AppSpacing.md,
                       AppSpacing.xl,
                     ),
@@ -124,11 +109,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(height: AppSpacing.lg),
-                        Text(
-                          "TODAY'S RECEIPTS",
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                letterSpacing: 1.2,
-                              ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "TODAY'S RECEIPTS",
+                              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    letterSpacing: 1.2,
+                                  ),
+                            ),
+                            _ViewHistoryButton(
+                              onTap: () => context.pushNamed('history'),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         ReceiptCardCarousel(transactions: today),
@@ -149,7 +142,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.lg),
+                        const SpendingInsightsCard(),
+                        const SizedBox(height: AppSpacing.lg),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           crossAxisAlignment: CrossAxisAlignment.end,
@@ -206,9 +201,112 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: _HomeTopOverlay(
+                    showCoachMark: _showCoachMark,
+                    onDismissCoachMark: () =>
+                        setState(() => _showCoachMark = false),
+                    stuckCount: stuck,
+                    onRetrySync: _retrySync,
+                    needsReview: needsReview,
+                    onHeightChanged: _onTopOverlayHeightChanged,
+                  ),
+                ),
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// Pinned home-screen alerts that stay above scrolling content.
+class _HomeTopOverlay extends StatefulWidget {
+  const _HomeTopOverlay({
+    required this.showCoachMark,
+    required this.onDismissCoachMark,
+    required this.stuckCount,
+    required this.onRetrySync,
+    required this.needsReview,
+    required this.onHeightChanged,
+  });
+
+  final bool showCoachMark;
+  final VoidCallback onDismissCoachMark;
+  final int stuckCount;
+  final VoidCallback onRetrySync;
+  final int needsReview;
+  final ValueChanged<double> onHeightChanged;
+
+  @override
+  State<_HomeTopOverlay> createState() => _HomeTopOverlayState();
+}
+
+class _HomeTopOverlayState extends State<_HomeTopOverlay> {
+  final _key = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
+  }
+
+  @override
+  void didUpdateWidget(covariant _HomeTopOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
+  }
+
+  void _reportHeight() {
+    final box = _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    widget.onHeightChanged(box.size.height);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
+        return true;
+      },
+      child: SizeChangedLayoutNotifier(
+        child: DecoratedBox(
+          key: _key,
+          decoration: const BoxDecoration(color: AppColors.scaffold),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.showCoachMark)
+                ShareCoachMark(onDismiss: widget.onDismissCoachMark),
+              AdaptiveSyncBanner(
+                stuckCount: widget.stuckCount,
+                onRetry: widget.onRetrySync,
+              ),
+              StreamBuilder<List<PendingImportModel>>(
+                stream: AppServices.pendingImports.watchAll(),
+                builder: (context, pendingSnapshot) {
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _reportHeight());
+                  final pending = pendingSnapshot.data ?? const [];
+                  if (pending.isEmpty) return const SizedBox.shrink();
+                  return PendingDropIndicator(
+                    pending: pending,
+                    onTap: () => context.pushNamed('pending-imports'),
+                  );
+                },
+              ),
+              if (widget.needsReview > 0)
+                _NeedsReviewBanner(
+                  count: widget.needsReview,
+                  onTap: () => context.pushNamed('review'),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -294,6 +392,36 @@ class _DropCountPill extends StatelessWidget {
           const SizedBox(width: 4),
           Text('$count drops', style: Theme.of(context).textTheme.labelSmall),
         ],
+      ),
+    );
+  }
+}
+
+/// Small boxed text link next to "TODAY'S RECEIPTS" that opens the
+/// receipts-only history view (`ReceiptHistoryScreen`), distinct from the
+/// full Dashboard (which pairs the same receipts with charts).
+class _ViewHistoryButton extends StatelessWidget {
+  const _ViewHistoryButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppSpacing.chipBorderRadius,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          borderRadius: AppSpacing.chipBorderRadius,
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Text(
+          'VIEW HISTORY',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                letterSpacing: 0.8,
+              ),
+        ),
       ),
     );
   }

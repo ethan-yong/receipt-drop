@@ -26,6 +26,7 @@ class TransactionView {
     this.lineItems,
     this.rawOcrText,
     this.ocrConfidence,
+    this.categoryConfidence,
     this.shareLocationLat,
     this.shareLocationLng,
   });
@@ -61,6 +62,10 @@ class TransactionView {
 
   /// Amount-extraction confidence (0..1) as stored on the outbox row.
   final double? ocrConfidence;
+
+  /// Category-guess confidence (0..1) from the parse pipeline. Null on older
+  /// rows. Used by insight detectors to skip unreliable category signals.
+  final double? categoryConfidence;
 
   final double? shareLocationLat;
   final double? shareLocationLng;
@@ -189,6 +194,7 @@ class TransactionView {
       lineItems: lineItems ?? this.lineItems,
       rawOcrText: rawOcrText,
       ocrConfidence: ocrConfidence,
+      categoryConfidence: categoryConfidence,
       shareLocationLat: shareLocationLat,
       shareLocationLng: shareLocationLng,
     );

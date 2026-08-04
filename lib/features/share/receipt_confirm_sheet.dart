@@ -160,11 +160,13 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
   bool _showAmountAlternative = true;
   bool _amountManuallyEdited = false;
   double? _amountOverride;
+  late final TextEditingController _notesController;
 
   @override
   void initState() {
     super.initState();
     final vm = ReceiptSummaryViewModel.from(widget.draft);
+    _notesController = TextEditingController(text: widget.draft.notes ?? '');
     _items = widget.draft.lineItems;
     _checked = List.filled(_items.length, true);
     _prices = [for (final item in _items) item.priceMyr];
@@ -221,6 +223,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     _priceFocus.dispose();
     _nameController.dispose();
     _nameFocus.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -649,6 +652,12 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       pickedPlaceLng: place?.lng,
       pickedPlaceLocked: _pickedPlace != null,
       fieldCorrections: _buildFieldCorrections(),
+      // Same "no explicit clear" convention as the vendor-name field above:
+      // an edit sets a new note, but backspacing to empty doesn't erase an
+      // already-attached one (e.g. from the post-share notification reply).
+      notes: _notesController.text.trim().isNotEmpty
+          ? _notesController.text.trim()
+          : null,
     );
   }
 
@@ -862,6 +871,42 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
               ),
             ],
           ],
+        ),
+        const SizedBox(height: 14),
+        Text('Note', style: balooText(13, FontWeight.w700, color: ReceiptSheetColors.subLight)),
+        const SizedBox(height: 6),
+        TextField(
+          key: const Key('receipt-note-field'),
+          controller: _notesController,
+          minLines: 1,
+          maxLines: 2,
+          textInputAction: TextInputAction.done,
+          style: balooText(14, FontWeight.w600, color: ReceiptSheetColors.ink),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: ReceiptSheetColors.tile,
+            hintText: 'Dinner with friends',
+            hintStyle: balooText(
+              14,
+              FontWeight.w500,
+              color: ReceiptSheetColors.subLight.withValues(alpha: 0.6),
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: ReceiptSheetColors.gold, width: 2),
+            ),
+          ),
         ),
         if (_items.isNotEmpty) ...[
           const SizedBox(height: 18),

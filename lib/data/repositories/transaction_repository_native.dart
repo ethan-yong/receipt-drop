@@ -17,6 +17,7 @@ import '../local/app_database.dart';
 import 'demo_transactions.dart';
 import 'ingest_receipt_request.dart';
 import 'places_repository.dart';
+import 'insights_worker.dart';
 import 'sync_worker.dart';
 
 /// Signed URL lifetime for private receipt photos. Short-lived and never
@@ -156,6 +157,7 @@ class TransactionRepository {
               _hasResolvedPlace(request) ? request.pickedPlaceLng : null,
             ),
             placeStatus: Value(_placeStatusFor(request)),
+            notes: Value(request.notes),
           ),
         );
 
@@ -520,6 +522,17 @@ class TransactionRepository {
         ]);
       });
       debugPrint('hydrateFromCloudIfEmpty: batch insert succeeded');
+
+      // Seed / restore paths often have transactions but no local receipt
+      // files, so editing one cannot run SyncWorker (no artifact). Run insight
+      // detectors on the hydrated rows directly instead.
+      unawaited(InsightsWorker.noteSyncedTransaction());
+      unawaited(
+        InsightsWorker.run(
+          _db,
+          loadTransactions: _loadTransactionViewsForInsights,
+        ),
+      );
     } on Object catch (e, st) {
       // Offline / transient failure — the empty-check above means the next
       // sign-in event or app launch gets another chance.
@@ -739,6 +752,37 @@ class TransactionRepository {
     return 'none';
   }
 
+  /// Lightweight load for insight detectors — no artifact/line-item joins.
+  Future<List<TransactionView>> _loadTransactionViewsForInsights() async {
+    final rows = await (_db.select(_db.outboxTransactions)
+          ..orderBy([(t) => OrderingTerm.desc(t.occurredAt)]))
+        .get();
+    return [
+      for (final row in rows)
+        TransactionView(
+          id: row.id,
+          occurredAt: row.occurredAt,
+          amountMyr: row.amountMyr,
+          needsAmount: row.needsAmount,
+          merchantRaw: row.merchantRaw,
+          categoryGuess: row.categoryGuess,
+          categoryUser: row.categoryUser,
+          placeName: row.placeName,
+          placeGooglePlaceId: row.placeGooglePlaceId,
+          placeLat: row.placeLat,
+          placeLng: row.placeLng,
+          syncStatus: row.syncStatus,
+          pipelineStatus: row.pipelineStatus,
+          localThumbnailPath: null,
+          impactUser: row.impactUser,
+          ocrConfidence: row.ocrConfidence,
+          categoryConfidence: row.categoryConfidence,
+          shareLocationLat: row.shareLocationLat,
+          shareLocationLng: row.shareLocationLng,
+        ),
+    ];
+  }
+
   TransactionView _mapRow(
     OutboxTransaction row,
     OutboxArtifact? artifact,
@@ -764,6 +808,7 @@ class TransactionRepository {
       lineItems: lineItems,
       rawOcrText: row.rawOcrText,
       ocrConfidence: row.ocrConfidence,
+      categoryConfidence: row.categoryConfidence,
       shareLocationLat: row.shareLocationLat,
       shareLocationLng: row.shareLocationLng,
     );

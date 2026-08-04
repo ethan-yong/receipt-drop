@@ -1,10 +1,16 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+    show debugPrint, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/config/auth_redirect.dart';
+import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
 
 /// Auth (login / sign up) screen ported from the approved design
@@ -144,6 +150,84 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// Android uses the native Google Sign-In SDK (in-app account picker, no
+  /// browser/app-switch) instead of the browser-based OAuth flow. iOS stays
+  /// on the browser flow for now — native iOS sign-in needs its own Google
+  /// Cloud OAuth client, deferred (see `pending-tasks.md`).
+  bool get _useNativeGoogle =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  Future<void> _googleSignIn() {
+    return _useNativeGoogle ? _nativeGoogleSignIn() : _oauth(OAuthProvider.google);
+  }
+
+  Future<void> _nativeGoogleSignIn() async {
+    final serverClientId = Env.googleWebClientId;
+    if (serverClientId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Google sign-in is not configured (GOOGLE_OAUTH_CLIENT_ID missing)',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      // Supabase validates a nonce embedded in the ID token. google_sign_in
+      // wants the SHA-256 hex digest; Supabase wants the raw value back.
+      final rawNonce = const Uuid().v4();
+      final hashedNonce = sha256.convert(utf8.encode(rawNonce)).toString();
+
+      await GoogleSignIn.instance.initialize(
+        serverClientId: serverClientId,
+        nonce: hashedNonce,
+      );
+      final googleUser = await GoogleSignIn.instance.authenticate();
+      final idToken = googleUser.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw StateError(
+          'Google did not return an ID token — check the Web OAuth client ID '
+          'and Android OAuth client (package + SHA-1) in Google Cloud Console',
+        );
+      }
+
+      await Supabase.instance.client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        nonce: rawNonce,
+      );
+    } on GoogleSignInException catch (e) {
+      // The user closing the picker isn't an error worth surfacing.
+      if (e.code != GoogleSignInExceptionCode.canceled && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-in failed: ${e.description ?? e.code}'),
+          ),
+        );
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    } catch (e, st) {
+      debugPrint('Native Google sign-in failed: $e\n$st');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Google sign-in failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final showApple = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
@@ -169,23 +253,23 @@ class _AuthScreenState extends State<AuthScreen> {
                     width: 64,
                     height: 64,
                     decoration: BoxDecoration(
-                      color: AppColors.primaryGreen,
                       borderRadius: BorderRadius.circular(22),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.primaryGreen.withValues(
-                            alpha: 0.3,
+                          color: AppColors.insightNeutralOnDark.withValues(
+                            alpha: 0.35,
                           ),
                           blurRadius: 22,
                           offset: const Offset(0, 10),
                         ),
                       ],
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.receipt_long,
-                      size: 34,
-                      color: Colors.white,
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.asset(
+                      'assets/branding/app_icon/icon.png',
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
@@ -217,9 +301,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
                   // Social buttons
                   _SocialButton(
-                    onTap: _loading
-                        ? null
-                        : () => _oauth(OAuthProvider.google),
+                    onTap: _loading ? null : _googleSignIn,
                     label: 'Continue with Google',
                     leading: SvgPicture.asset(
                       'assets/branding/google_g.svg',

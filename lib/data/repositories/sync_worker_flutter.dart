@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,7 +9,9 @@ import '../../core/config/env.dart';
 import '../../core/utils/text_normalize.dart';
 import '../../domain/logic/misread_pattern_extractor.dart';
 import '../../domain/models/field_correction.dart';
+import '../../domain/models/transaction_view.dart';
 import '../local/app_database.dart';
+import 'insights_worker.dart';
 
 /// Maps a partial remote `transactions` row (as returned by a `select(...)`
 /// call) into an [OutboxTransactionsCompanion] patch — the fields
@@ -111,6 +114,7 @@ class SyncWorker {
         'line_items_confidence': row.lineItemsConfidence,
         'parse_failure_reason': row.parseFailureReason,
         'pipeline_status': row.pipelineStatus,
+        'notes': row.notes,
         'merchant_candidates': row.merchantCandidatesJson == null
             ? null
             : jsonDecode(row.merchantCandidatesJson!),
@@ -294,6 +298,18 @@ class SyncWorker {
           lastError: Value(null),
         ),
       );
+
+      // Insights generation is additive and non-blocking — never delay or
+      // fail the sync path above. Soft-launch uses on-device template
+      // curation (kInsightsUseTemplateFallback); flip that flag to enable
+      // the real curator Edge Function.
+      unawaited(InsightsWorker.noteSyncedTransaction());
+      unawaited(
+        InsightsWorker.run(
+          db,
+          loadTransactions: () => _loadTransactionViews(db),
+        ),
+      );
     } catch (e) {
       final nextRetry = row.retryCount + 1;
       final stuck = nextRetry >= _maxRetries;
@@ -314,6 +330,41 @@ class SyncWorker {
     if (authId != null) return authId;
     if (Env.skipAuth) return 'demo-user';
     return null;
+  }
+
+  /// Lightweight load of outbox rows as [TransactionView] for insights
+  /// detectors — skips artifact/line-item hydration (detectors only need
+  /// amount/category/place/time fields).
+  static Future<List<TransactionView>> _loadTransactionViews(
+    AppDatabase db,
+  ) async {
+    final rows = await (db.select(db.outboxTransactions)
+          ..orderBy([(t) => OrderingTerm.desc(t.occurredAt)]))
+        .get();
+    return [
+      for (final row in rows)
+        TransactionView(
+          id: row.id,
+          occurredAt: row.occurredAt,
+          amountMyr: row.amountMyr,
+          needsAmount: row.needsAmount,
+          merchantRaw: row.merchantRaw,
+          categoryGuess: row.categoryGuess,
+          categoryUser: row.categoryUser,
+          placeName: row.placeName,
+          placeGooglePlaceId: row.placeGooglePlaceId,
+          placeLat: row.placeLat,
+          placeLng: row.placeLng,
+          syncStatus: row.syncStatus,
+          pipelineStatus: row.pipelineStatus,
+          localThumbnailPath: null,
+          impactUser: row.impactUser,
+          ocrConfidence: row.ocrConfidence,
+          categoryConfidence: row.categoryConfidence,
+          shareLocationLat: row.shareLocationLat,
+          shareLocationLng: row.shareLocationLng,
+        ),
+    ];
   }
 
   /// Deletes remote `receipt_artifacts` (and their Storage objects) that are

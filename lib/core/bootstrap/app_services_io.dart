@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../data/local/app_database.dart';
+import '../../data/repositories/insights_repository.dart';
 import '../../data/repositories/pending_imports_repository.dart';
 import '../../data/repositories/transaction_repository_native.dart';
 
@@ -9,6 +10,7 @@ abstract final class AppServices {
   static AppDatabase? _database;
   static TransactionRepository? _transactions;
   static PendingImportsRepository? _pendingImports;
+  static InsightsRepository? _insights;
 
   static AppDatabase get database {
     final db = _database;
@@ -34,10 +36,19 @@ abstract final class AppServices {
     return repo;
   }
 
+  static InsightsRepository get insights {
+    final repo = _insights;
+    if (repo == null) {
+      throw StateError('AppServices.insights accessed before init');
+    }
+    return repo;
+  }
+
   static Future<void> init() async {
     _database = AppDatabase();
     _transactions = TransactionRepository(_database!);
     _pendingImports = PendingImportsRepository(_database!);
+    _insights = InsightsRepository(_database!);
     await _transactions!.seedDemoDataIfEmpty();
     if (kDebugMode) {
       await _transactions!.seedReceiptShowcaseIfEmpty();
@@ -49,6 +60,7 @@ abstract final class AppServices {
     _database = AppDatabase.memory();
     _transactions = TransactionRepository(_database!);
     _pendingImports = PendingImportsRepository(_database!);
+    _insights = InsightsRepository(_database!);
     await _transactions!.seedDemoDataIfEmpty();
     if (kDebugMode) {
       await _transactions!.seedReceiptShowcaseIfEmpty();
@@ -60,5 +72,6 @@ abstract final class AppServices {
     _database = null;
     _transactions = null;
     _pendingImports = null;
+    _insights = null;
   }
 }

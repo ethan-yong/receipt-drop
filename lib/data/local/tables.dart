@@ -112,6 +112,11 @@ class OutboxTransactions extends Table {
   /// `transactions.ocr_corrections` (jsonb).
   TextColumn get ocrCorrectionsJson => text().nullable()();
 
+  /// Freeform user note, most often attached from the post-share notification's
+  /// inline reply before the receipt is even confirmed — see
+  /// `docs/plans/2026-07-30-post-share-receipt-notification.md`.
+  TextColumn get notes => text().nullable()();
+
   @override
   Set<Column<Object>>? get primaryKey => {id};
 }
@@ -244,6 +249,19 @@ class PendingImports extends Table {
   /// 'local' | 'processing' | 'failed'
   TextColumn get status => text().withDefault(const Constant('local'))();
 
+  /// Freeform note attached via the post-share notification's inline reply
+  /// (or later, in-app) before this row becomes a confirmed transaction —
+  /// carried into `ReceiptIngestDraft.notes` when the user opens/processes
+  /// this import, then written to `outbox_transactions.notes` on save.
+  TextColumn get note => text().nullable()();
+
+  /// Best-effort nearby-venue name ("Sunway Pyramid"), resolved from a
+  /// share-time GPS fix via `places-proxy`'s `nearby_candidates` mode —
+  /// a memory aid only, never raw coordinates. Null until resolved (or
+  /// forever, if location was unavailable/denied — see
+  /// `docs/plans/2026-07-30-pending-receipt-location-context.md`).
+  TextColumn get venueLabel => text().nullable()();
+
   DateTimeColumn get createdAt =>
       dateTime().withDefault(currentDateAndTime)();
 
@@ -265,4 +283,46 @@ class CategoryConfigCache extends Table {
   TextColumn get jsonBody => text().nullable()();
 
   DateTimeColumn get updatedAt => dateTime().nullable()();
+}
+
+/// Local mirror of `public.spending_insights` — curated AI observations for
+/// offline display, dismiss-state, and the Home/detail views.
+@DataClassName('LocalSpendingInsight')
+class LocalSpendingInsights extends Table {
+  @override
+  String get tableName => 'local_spending_insights';
+
+  TextColumn get id => text()();
+
+  TextColumn get userId => text()();
+
+  /// 'spending_spike' | 'category_shift' | 'habit' | 'streak' | 'forecast'
+  TextColumn get insightType => text()();
+
+  TextColumn get factKey => text()();
+
+  TextColumn get body => text()();
+
+  IntColumn get rank => integer().withDefault(const Constant(0))();
+
+  BoolColumn get dismissed =>
+      boolean().withDefault(const Constant(false))();
+
+  TextColumn get factsJson => text().nullable()();
+
+  /// JSON-encoded visualization spec from the Visualization Story Agent
+  /// (`{type, data_source, parameters, highlight, animation}`), or null.
+  TextColumn get visualizationJson => text().nullable()();
+
+  DateTimeColumn get createdAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  DateTimeColumn get dismissedAt => dateTime().nullable()();
+
+  /// 'pending' | 'synced' — gates dismiss upload to Postgres.
+  TextColumn get syncStatus =>
+      text().withDefault(const Constant('synced'))();
+
+  @override
+  Set<Column<Object>>? get primaryKey => {id};
 }
