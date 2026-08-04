@@ -29,6 +29,16 @@ abstract final class ReceiptHistoryLayout {
   static const timelineDotSize = 10.0;
 }
 
+/// Spend-severity color for the week progress bar and day heatmap cells, from
+/// the `Receipt History Week Handoff.dc.html` handoff's `severityColor()` —
+/// grey when zero, red/gold/green by share of the peak it's compared against.
+Color receiptHistorySeverityColor(double pct, {required bool zero}) {
+  if (zero) return const Color(0xFFE6DCC5);
+  if (pct > 0.66) return const Color(0xFFC0503B);
+  if (pct > 0.33) return const Color(0xFFD9922E);
+  return const Color(0xFF7C9473);
+}
+
 /// Skips the Google Fonts runtime fetch in widget tests, which have no
 /// network — same reason `debugReceiptSheetSystemFont` exists.
 @visibleForTesting

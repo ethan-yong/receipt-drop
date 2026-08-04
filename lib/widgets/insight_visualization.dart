@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../core/theme/app_theme.dart';
 import '../domain/logic/insight_visualization.dart';
@@ -112,17 +113,50 @@ String _formatInsightRm(double value) {
   return 'RM${value.toStringAsFixed(0)}';
 }
 
-Widget _insightAxisLabel(String text, TitleMeta meta, TextStyle style) {
+/// Horizontal inset so endpoint dots and edge labels aren't clipped.
+const _forecastChartHorizontalPad = 0.2;
+
+FlDotData _forecastDot(Color color) => FlDotData(
+      show: true,
+      getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+        radius: 4,
+        color: color,
+        strokeWidth: 2,
+        strokeColor: AppColors.textPrimary,
+      ),
+    );
+
+String _forecastMonthDate(DateTime date) => DateFormat('d MMM').format(date);
+
+Widget _forecastBottomLabel({
+  required String caption,
+  required String date,
+  required TitleMeta meta,
+  required TextStyle captionStyle,
+  required TextStyle dateStyle,
+  required CrossAxisAlignment align,
+}) {
   return SideTitleWidget(
     axisSide: meta.axisSide,
-    space: 4,
-    fitInside: SideTitleFitInsideData.fromTitleMeta(meta),
-    child: Text(
-      text,
-      style: style,
-      maxLines: 1,
-      softWrap: false,
-      overflow: TextOverflow.clip,
+    space: 2,
+    fitInside: SideTitleFitInsideData.disable(),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: align,
+      children: [
+        Text(
+          caption,
+          style: captionStyle,
+          maxLines: 1,
+          softWrap: false,
+        ),
+        Text(
+          date,
+          style: dateStyle,
+          maxLines: 1,
+          softWrap: false,
+        ),
+      ],
     ),
   );
 }
@@ -246,6 +280,7 @@ class _LineTrendVisualState extends State<_LineTrendVisual> {
 const _comparisonBarPrevious = Color(0xFFF2E7D5);
 const _comparisonBarCurrent = Color(0xFF8BA9A3);
 const _comparisonBarAspectRatio = 1.35;
+const _comparisonBarWidthFactor = 0.5;
 
 class _BeforeAfterBarVisual extends StatefulWidget {
   const _BeforeAfterBarVisual({
@@ -402,7 +437,7 @@ class _ComparisonBarColumn extends StatelessWidget {
                   duration: animateDuration,
                   curve: Curves.easeOutCubic,
                   height: barHeight,
-                  width: double.infinity,
+                  width: constraints.maxWidth * _comparisonBarWidthFactor,
                   decoration: BoxDecoration(
                     color: barColor,
                     borderRadius: const BorderRadius.vertical(
@@ -604,20 +639,34 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
   @override
   Widget build(BuildContext context) {
     final maxY = math.max(widget.projected, widget.currentSoFar) * 1.2 + 1;
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month);
+    final monthEnd = DateTime(now.year, now.month + 1, 0);
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
           color: AppColors.onDarkCardSecondary,
         );
+    final dateStyle = labelStyle?.copyWith(
+      color: AppColors.onDarkCardSecondary.withValues(alpha: 0.75),
+      fontSize: (labelStyle.fontSize ?? 11) - 1,
+    );
     return SizedBox(
-      height: 110,
-      child: ClipRect(
+      height: 124,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
             final actualY = widget.currentSoFar * _actualReveal.value;
+            final forecastColor = AppColors.accentOrange.withValues(
+              alpha: _forecastFade.value,
+            );
             return LineChart(
               LineChartData(
-                minY: 0,
+                minX: -_forecastChartHorizontalPad,
+                maxX: 2 + _forecastChartHorizontalPad,
+                minY: -maxY * 0.04,
                 maxY: maxY,
+                clipData: const FlClipData.none(),
                 showingTooltipIndicators: _heldTooltips,
                 gridData: const FlGridData(show: false),
                 borderData: FlBorderData(show: false),
@@ -630,21 +679,27 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
                     sideTitles: SideTitles(
                       showTitles: true,
                       interval: 1,
-                      reservedSize: 24,
+                      reservedSize: 34,
                       getTitlesWidget: (v, meta) {
                         final i = v.round();
                         if (i == 0) {
-                          return _insightAxisLabel(
-                            'So far',
-                            meta,
-                            labelStyle ?? const TextStyle(),
+                          return _forecastBottomLabel(
+                            caption: 'So far',
+                            date: _forecastMonthDate(monthStart),
+                            meta: meta,
+                            captionStyle: labelStyle ?? const TextStyle(),
+                            dateStyle: dateStyle ?? const TextStyle(),
+                            align: CrossAxisAlignment.start,
                           );
                         }
                         if (i == 2) {
-                          return _insightAxisLabel(
-                            'Projected',
-                            meta,
-                            labelStyle ?? const TextStyle(),
+                          return _forecastBottomLabel(
+                            caption: 'Projected',
+                            date: _forecastMonthDate(monthEnd),
+                            meta: meta,
+                            captionStyle: labelStyle ?? const TextStyle(),
+                            dateStyle: dateStyle ?? const TextStyle(),
+                            align: CrossAxisAlignment.end,
                           );
                         }
                         return const SizedBox.shrink();
@@ -657,19 +712,17 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
                     spots: [const FlSpot(0, 0), FlSpot(1, actualY)],
                     color: AppColors.primaryGreenDark,
                     barWidth: 3,
-                    dotData: const FlDotData(show: true),
+                    dotData: _forecastDot(AppColors.primaryGreenDark),
                   ),
                   LineChartBarData(
                     spots: [
                       FlSpot(1, widget.currentSoFar),
                       FlSpot(2, widget.projected),
                     ],
-                    color: AppColors.accentOrange.withValues(
-                      alpha: _forecastFade.value,
-                    ),
+                    color: forecastColor,
                     barWidth: 3,
                     dashArray: const [6, 4],
-                    dotData: const FlDotData(show: true),
+                    dotData: _forecastDot(forecastColor),
                   ),
                 ],
               ),

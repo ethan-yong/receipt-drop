@@ -2,6 +2,22 @@ import 'package:intl/intl.dart';
 
 import '../models/transaction_view.dart';
 
+/// Distinct categories across [items], highest-spend first — shared by
+/// [HistoryDay.categories] and [HistoryWeek.categories].
+List<String> _categoriesBySpend(List<TransactionView> items) {
+  final totals = <String, double>{};
+  for (final t in items) {
+    totals.update(
+      t.effectiveCategory,
+      (v) => v + (t.amountMyr ?? 0),
+      ifAbsent: () => t.amountMyr ?? 0,
+    );
+  }
+  return (totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))
+      .map((e) => e.key)
+      .toList();
+}
+
 /// One calendar day's receipts inside a [HistoryWeek].
 class HistoryDay {
   const HistoryDay({required this.date, required this.label, required this.items});
@@ -11,6 +27,9 @@ class HistoryDay {
   final List<TransactionView> items;
 
   double get total => items.fold(0.0, (s, t) => s + (t.amountMyr ?? 0));
+
+  /// Distinct categories, highest-spend first — for the day row's avatar stack.
+  List<String> get categories => _categoriesBySpend(items);
 }
 
 /// One calendar week (Monday–Sunday), older than the current week, grouped
@@ -28,19 +47,7 @@ class HistoryWeek {
 
   /// Distinct categories across the week, highest-spend first — mirrors
   /// [mapCategories]'s totals-then-sort approach in `dashboard_aggregates.dart`.
-  List<String> get categories {
-    final totals = <String, double>{};
-    for (final t in items) {
-      totals.update(
-        t.effectiveCategory,
-        (v) => v + (t.amountMyr ?? 0),
-        ifAbsent: () => t.amountMyr ?? 0,
-      );
-    }
-    return (totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))
-        .map((e) => e.key)
-        .toList();
-  }
+  List<String> get categories => _categoriesBySpend(items);
 }
 
 /// Everything the Receipt History screen needs to render: today's receipts
