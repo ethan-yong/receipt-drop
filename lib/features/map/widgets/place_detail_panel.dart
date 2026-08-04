@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../domain/logic/dashboard_aggregates.dart';
+import '../../../domain/logic/map_aggregates.dart';
 import '../../../domain/models/transaction_view.dart';
 
 /// Google-Maps-style place panel: a non-modal sheet living inside the map's

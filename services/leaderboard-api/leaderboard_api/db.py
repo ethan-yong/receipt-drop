@@ -45,6 +45,7 @@ def _row_to_entry(row: Any) -> dict[str, Any]:
         "user_id": str(row["user_id"]),
         "display_name": row["display_name"],
         "avatar_config": avatar_config,
+        "avatar_url": row["avatar_url"],
         "current_mood": row["current_mood"],
         "badge_score": int(row["badge_score"]),
         "current_streak": int(row["current_streak"]),

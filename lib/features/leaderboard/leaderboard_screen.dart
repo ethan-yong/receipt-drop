@@ -154,7 +154,11 @@ Color _avatarColorFor(LeaderboardEntry entry) {
 }
 
 String _initialsFor(String name) {
-  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((p) => p.isNotEmpty)
+      .toList();
   if (parts.isEmpty) return '?';
   if (parts.length == 1) {
     final word = parts.first;
@@ -178,8 +182,9 @@ class _InitialsAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor =
-        color.computeLuminance() > 0.55 ? AppColors.textPrimary : Colors.white;
+    final textColor = color.computeLuminance() > 0.55
+        ? AppColors.textPrimary
+        : Colors.white;
     return Container(
       width: size,
       height: size,
@@ -191,6 +196,49 @@ class _InitialsAvatar extends StatelessWidget {
           fontSize: fontSize,
           fontWeight: FontWeight.w800,
           color: textColor,
+        ),
+      ),
+    );
+  }
+}
+
+/// The real profile photo (`entry.avatarUrl`) when the user has set one,
+/// falling back to the stylized initials/color avatar otherwise.
+class _EntryAvatar extends StatelessWidget {
+  const _EntryAvatar({
+    required this.entry,
+    required this.name,
+    required this.size,
+    required this.fontSize,
+  });
+
+  final LeaderboardEntry entry;
+  final String name;
+  final double size;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = entry.avatarUrl;
+    if (url == null || url.isEmpty) {
+      return _InitialsAvatar(
+        name: name,
+        color: _avatarColorFor(entry),
+        size: size,
+        fontSize: fontSize,
+      );
+    }
+    return ClipOval(
+      child: Image.network(
+        url,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _InitialsAvatar(
+          name: name,
+          color: _avatarColorFor(entry),
+          size: size,
+          fontSize: fontSize,
         ),
       ),
     );
@@ -221,7 +269,9 @@ class _ModeToggle extends StatelessWidget {
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
-                    color: mode == option ? AppColors.cardSurface : Colors.transparent,
+                    color: mode == option
+                        ? AppColors.cardSurface
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: mode == option
                         ? [
@@ -301,7 +351,11 @@ const _podiumConf = {
 /// Top-3 spotlight, displayed in 2nd / 1st / 3rd order (winner in the
 /// middle), each column elevated/sized per `_podiumConf`.
 class _Podium extends StatelessWidget {
-  const _Podium({required this.top3, required this.catalog, required this.isGlobal});
+  const _Podium({
+    required this.top3,
+    required this.catalog,
+    required this.isGlobal,
+  });
 
   final List<LeaderboardEntry> top3;
   final BadgeCatalog? catalog;
@@ -348,10 +402,12 @@ class _PodiumColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final conf = _podiumConf[rank]!;
     final ringColor = badgeTierColor(4 - rank);
-    final scoreColor =
-        rank == 1 ? leaderboardFirstPlaceScore : AppColors.textPrimary;
-    final name = entry.isMe ? 'You' : (entry.displayName ?? (isGlobal ? 'User' : 'Friend'));
-    final avatarColor = _avatarColorFor(entry);
+    final scoreColor = rank == 1
+        ? leaderboardFirstPlaceScore
+        : AppColors.textPrimary;
+    final name = entry.isMe
+        ? 'You'
+        : (entry.displayName ?? (isGlobal ? 'User' : 'Friend'));
 
     return Transform.translate(
       offset: Offset(0, conf.elevate),
@@ -363,7 +419,9 @@ class _PodiumColumn extends StatelessWidget {
             SizedBox(
               height: 24,
               child: conf.crown
-                  ? const Center(child: Text('👑', style: TextStyle(fontSize: 22)))
+                  ? const Center(
+                      child: Text('👑', style: TextStyle(fontSize: 22)),
+                    )
                   : null,
             ),
             Stack(
@@ -385,9 +443,9 @@ class _PodiumColumn extends StatelessWidget {
                     ],
                   ),
                   padding: const EdgeInsets.all(3),
-                  child: _InitialsAvatar(
+                  child: _EntryAvatar(
+                    entry: entry,
                     name: name,
-                    color: avatarColor,
                     size: conf.avatar - 6,
                     fontSize: conf.initialSize,
                   ),
@@ -428,10 +486,7 @@ class _PodiumColumn extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: leaderboardText(
-                conf.nameSize,
-                FontWeight.w800,
-              ),
+              style: leaderboardText(conf.nameSize, FontWeight.w800),
             ),
             const SizedBox(height: 2),
             Text(
@@ -483,7 +538,6 @@ class _LeaderboardRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final fallbackName = isGlobal ? 'User' : 'Friend';
     final name = entry.isMe ? 'You' : (entry.displayName ?? fallbackName);
-    final avatarColor = _avatarColorFor(entry);
     final pointsText = _pointsFormat.format(entry.rankScore);
 
     final badges = [
@@ -502,7 +556,12 @@ class _LeaderboardRow extends StatelessWidget {
             ),
     ];
 
-    final avatar = _InitialsAvatar(name: name, color: avatarColor, size: 40, fontSize: 13);
+    final avatar = _EntryAvatar(
+      entry: entry,
+      name: name,
+      size: 40,
+      fontSize: 13,
+    );
 
     if (entry.isMe) {
       return Container(
@@ -547,12 +606,19 @@ class _LeaderboardRow extends StatelessWidget {
                         child: Text(
                           name,
                           overflow: TextOverflow.ellipsis,
-                          style: leaderboardText(14, FontWeight.w800, color: Colors.white),
+                          style: leaderboardText(
+                            14,
+                            FontWeight.w800,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(6),
@@ -647,14 +713,15 @@ class _LeaderboardRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                pointsText,
-                style: leaderboardText(14, FontWeight.w800),
-              ),
+              Text(pointsText, style: leaderboardText(14, FontWeight.w800)),
               const SizedBox(height: 1),
               Text(
                 'pts',
-                style: leaderboardText(10, FontWeight.w700, color: AppColors.textMuted),
+                style: leaderboardText(
+                  10,
+                  FontWeight.w700,
+                  color: AppColors.textMuted,
+                ),
               ),
             ],
           ),
@@ -729,7 +796,11 @@ class _GlobalApiRequiredNotice extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
       child: Column(
         children: [
-          const Icon(Icons.public_outlined, size: 40, color: AppColors.textMuted),
+          const Icon(
+            Icons.public_outlined,
+            size: 40,
+            color: AppColors.textMuted,
+          ),
           const SizedBox(height: AppSpacing.sm),
           Text(
             'Global ranks unavailable',
@@ -740,7 +811,11 @@ class _GlobalApiRequiredNotice extends StatelessWidget {
           Text(
             'Set LEADERBOARD_API_URL to view global ranks.',
             textAlign: TextAlign.center,
-            style: leaderboardText(14, FontWeight.w600, color: AppColors.textMuted),
+            style: leaderboardText(
+              14,
+              FontWeight.w600,
+              color: AppColors.textMuted,
+            ),
           ),
         ],
       ),
@@ -759,7 +834,11 @@ class _EmptyNotice extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
       child: Column(
         children: [
-          const Icon(Icons.emoji_events_outlined, size: 40, color: AppColors.textMuted),
+          const Icon(
+            Icons.emoji_events_outlined,
+            size: 40,
+            color: AppColors.textMuted,
+          ),
           const SizedBox(height: AppSpacing.sm),
           Text(
             'No ranks yet',
@@ -772,7 +851,11 @@ class _EmptyNotice extends StatelessWidget {
                 ? 'Log streaks on the home screen to join the global board.'
                 : 'Add friends from Settings to start a leaderboard.',
             textAlign: TextAlign.center,
-            style: leaderboardText(14, FontWeight.w600, color: AppColors.textMuted),
+            style: leaderboardText(
+              14,
+              FontWeight.w600,
+              color: AppColors.textMuted,
+            ),
           ),
         ],
       ),

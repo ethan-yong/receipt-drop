@@ -117,8 +117,8 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   TextButton(
-                    onPressed: () => context.pushNamed('dashboard'),
-                    child: const Text('View full numbers'),
+                    onPressed: () => context.pushNamed('insights'),
+                    child: const Text('View insights'),
                   ),
                 ],
               );

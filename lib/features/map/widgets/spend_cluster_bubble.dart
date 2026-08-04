@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../domain/logic/dashboard_aggregates.dart';
+import '../../../domain/logic/map_aggregates.dart';
 import 'marker_tail_painter.dart';
 
 /// Zoomed-out cluster bubble for a geohash bucket of nearby spend places:

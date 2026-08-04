@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:receipt_drop/domain/logic/dashboard_aggregates.dart';
+import 'package:receipt_drop/domain/logic/map_aggregates.dart';
 import 'package:receipt_drop/domain/models/transaction_view.dart';
 
 TransactionView _tx({

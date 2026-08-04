@@ -14,7 +14,7 @@ import '../../data/repositories/map_transactions_repository.dart';
 import '../../data/repositories/places_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
-import '../../domain/logic/dashboard_aggregates.dart';
+import '../../domain/logic/map_aggregates.dart';
 import '../../domain/logic/map_pin_layout.dart';
 import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';

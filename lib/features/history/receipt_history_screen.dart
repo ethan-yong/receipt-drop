@@ -10,8 +10,7 @@ import '../../widgets/receipt_card.dart';
 
 /// Standalone receipts-only history view (Today, always expanded, then
 /// collapsible week → day sections) reached from Home's "VIEW HISTORY"
-/// button. Distinct from `DashboardScreen`, which pairs the same receipt
-/// list with month summary/category/trend charts.
+/// button.
 ///
 /// Design: the `Receipt History.dc.html` handoff — see
 /// `lib/core/theme/receipt_history_theme.dart` for its scoped palette.

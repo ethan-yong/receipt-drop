@@ -66,23 +66,23 @@ class ProfileRepository {
     await AppPrefs.setProfileSetupComplete();
   }
 
-  /// Name + photo shown on the Settings screen header. Best-effort; nulls on
-  /// failure (caller falls back to the auth email / a placeholder).
-  static Future<({String? displayName, String? avatarUrl})> fetchProfileHeader(
-    String userId,
-  ) async {
+  /// Name/username/photo shown on the Settings screen header. Best-effort;
+  /// nulls on failure (caller falls back to the auth email / a placeholder).
+  static Future<({String? displayName, String? username, String? avatarUrl})>
+  fetchProfileHeader(String userId) async {
     try {
       final row = await Supabase.instance.client
           .from('profiles')
-          .select('display_name, avatar_url')
+          .select('display_name, username, avatar_url')
           .eq('id', userId)
           .maybeSingle();
       return (
         displayName: row?['display_name'] as String?,
+        username: row?['username'] as String?,
         avatarUrl: row?['avatar_url'] as String?,
       );
     } on Object {
-      return (displayName: null, avatarUrl: null);
+      return (displayName: null, username: null, avatarUrl: null);
     }
   }
 

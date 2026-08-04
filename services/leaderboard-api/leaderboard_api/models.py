@@ -12,6 +12,7 @@ class LeaderboardEntry(BaseModel):
     user_id: str
     display_name: str | None = None
     avatar_config: dict[str, Any] | None = None
+    avatar_url: str | None = None
     current_mood: str | None = None
     badge_score: int = 0
     current_streak: int = 0

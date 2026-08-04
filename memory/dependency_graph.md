@@ -20,7 +20,6 @@ graph TD
     subgraph Features["Flutter features (lib/features/*)"]
         Share[Receipt Capture / Share]
         Review[Review Queue]
-        Dashboard[Dashboard]
         Map[Spend Map]
         Avatar[Avatar / Mood]
         Badges[Badges]
@@ -30,7 +29,7 @@ graph TD
 
     subgraph Domain["Domain logic (lib/domain/*) — pure, no I/O"]
         Parse[Parse pipeline:\namount / merchant / category / line-items]
-        Aggregates[dashboard_aggregates.dart]
+        Aggregates[map_aggregates.dart]
         Mood[avatar_mood.dart / impact_level.dart]
         BadgeLogic[badge_progress.dart / badge_catalog.dart]
     end
@@ -77,8 +76,7 @@ graph TD
     EF_OCR --> OcrApi
     Share -.dev direct call.-> OcrApi
     Review --> Repo
-    Dashboard --> Aggregates --> Repo
-    Map --> Aggregates
+    Map --> Aggregates --> Repo
     Map --> SocialRepo
     Map --> Carto
     Avatar --> Mood --> Repo
@@ -166,36 +164,15 @@ confirmReview() → pipeline_status = 'provisional' → normal sync/enrich resum
 
 ---
 
-### Dashboard
-
-**Purpose**: monthly totals, category breakdown, weekly trend, top places — pure read/aggregation, no writes.
-
-**Entry points**: `lib/features/dashboard/dashboard_screen.dart`
-
-**Depends on**: Receipt Capture (reads `TransactionView` stream), `dashboard_aggregates.dart`
-
-**Files**: `lib/features/dashboard/dashboard_screen.dart`, `lib/domain/logic/dashboard_aggregates.dart`, `lib/widgets/category_donut_chart.dart`, `weekly_line_chart.dart`, `top_places_list.dart`, `month_picker_header.dart`
-
-**Data flow**:
-```
-TransactionRepository.watchAll() stream
-  ↓
-dashboard_aggregates (monthSummary / categoryBreakdown / weeklyTrend / topPlaces)
-  ↓
-DashboardScreen widgets (donut chart, line chart, list)
-```
-
----
-
 ### Spend Map
 
 **Purpose**: own spend bubbles/heat map plus friends' snap-style location pins (place + time only, never amount).
 
 **Entry points**: `lib/features/map/spend_map_screen.dart`
 
-**Depends on**: `dashboard_aggregates.dart` (own data clustering), `SocialRepository` (`get_friend_map_pins()` RPC), `flutter_map` + CARTO tiles
+**Depends on**: `map_aggregates.dart` (own data clustering), `SocialRepository` (`get_friend_map_pins()` RPC), `flutter_map` + CARTO tiles
 
-**Files**: `lib/features/map/spend_map_screen.dart`, `lib/features/map/widgets/*.dart`, `lib/widgets/map_filter_chips.dart`, `lib/domain/logic/dashboard_aggregates.dart`, `lib/core/utils/place_key.dart`, `lib/data/repositories/social_repository.dart`, `supabase/migrations/20260706000000_friend_map_pins.sql`
+**Files**: `lib/features/map/spend_map_screen.dart`, `lib/features/map/widgets/*.dart`, `lib/widgets/map_filter_chips.dart`, `lib/domain/logic/map_aggregates.dart`, `lib/core/utils/place_key.dart`, `lib/data/repositories/social_repository.dart`, `supabase/migrations/20260706000000_friend_map_pins.sql`
 
 **Data flow**:
 ```
@@ -327,7 +304,7 @@ Format: Responsibility / Imports / Used by / Risk / Reason. "Used by" counts are
 ### `lib/domain/models/transaction_view.dart`
 **Responsibility**: unified UI-facing receipt row; merges outbox fields with derived getters (`effectiveCategory`, `effectiveImpactLevel`, `includeInCharts`, `needsReview`).
 **Imports**: `lib/domain/logic/impact_level.dart`, `receipt_line_item.dart`.
-**Used by** (24 files): nearly every feature screen (`tx_detail`, `map`, `review`, `home`, `dashboard`, `avatar`, `badges`, `summary`, `save_success`) plus several `widgets/*` and `domain/logic/*` files (`dashboard_aggregates.dart`, `feed_line_generator.dart`, `badge_progress.dart`, `avatar_mood.dart`, `awareness.dart`) and both repository variants.
+**Used by** (24 files): nearly every feature screen (`tx_detail`, `map`, `review`, `home`, `avatar`, `badges`, `summary`, `save_success`) plus several `widgets/*` and `domain/logic/*` files (`map_aggregates.dart`, `feed_line_generator.dart`, `badge_progress.dart`, `avatar_mood.dart`, `awareness.dart`) and both repository variants.
 **Risk**: High.
 **Reason**: single highest blast-radius file in the repo — any shape change here needs a sweep across nearly every feature.
 
@@ -404,7 +381,7 @@ Format: Responsibility / Imports / Used by / Risk / Reason. "Used by" counts are
 ### `lib/core/utils/place_key.dart`
 **Responsibility**: geohash/effective-place-key logic for aggregating map bubbles.
 **Imports**: none project-local.
-**Used by**: `dashboard_aggregates.dart` only.
+**Used by**: `map_aggregates.dart` only.
 **Risk**: Low.
 **Reason**: single importer despite conceptually underpinning map/place features — see Isolated Components. Note: mirrors related logic implemented independently in `supabase/functions/_shared/place_matching.ts` (different language, no code dependency, but a parity risk if one is tuned without the other).
 
@@ -507,7 +484,7 @@ Format: Responsibility / Imports / Used by / Risk / Reason. "Used by" counts are
 ### Isolated Components (confirmed safe-to-modify-in-place candidates)
 
 - **`lib/data/local/tables.dart`** — zero direct importers by path; wired in only through Drift's table-list annotation in `app_database.dart`.
-- **`lib/core/utils/place_key.dart`** — exactly one importer (`dashboard_aggregates.dart`).
+- **`lib/core/utils/place_key.dart`** — exactly one importer (`map_aggregates.dart`).
 - **`lib/data/repositories/badge_repository.dart`** — exactly one importer (`badges_screen.dart`), no domain-logic coupling.
 - **The four social/gamification repositories as a group** (`avatar_repository.dart`, `badge_repository.dart`, `social_repository.dart`, `places_repository.dart`) — confirmed to never import each other; changing one's internals doesn't risk breaking a sibling.
 - **`supabase/functions/ocr-proxy/index.ts`** and **`places-proxy/index.ts`** — no shared-module coupling, no DB writes; the lowest-risk edge functions.

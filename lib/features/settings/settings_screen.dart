@@ -27,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Optimistic default (matches the server column default) while loading.
   bool _shareMapLocation = true;
   String? _displayName;
+  String? _username;
   String? _avatarUrl;
   Uint8List? _pendingAvatarBytes;
 
@@ -44,6 +45,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (mounted) {
           setState(() {
             _displayName = header.displayName;
+            _username = header.username;
             _avatarUrl = header.avatarUrl;
           });
         }
@@ -296,6 +298,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           letterSpacing: -0.2,
                         ),
                       ),
+                      if (_username != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '@$_username',
+                          style: balooText(
+                            13.5,
+                            FontWeight.w700,
+                            color: ReceiptSheetColors.linkStrong,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 2),
                       Text(
                         email ?? '',
@@ -369,12 +382,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: Icons.people_outline,
                         title: 'Friends',
                         onTap: () => context.pushNamed('friends'),
-                      ),
-                      _SettingsRow(
-                        icon: Icons.dashboard_outlined,
-                        title: 'Dashboard',
-                        subtitle: 'Full numbers, charts, and receipt history',
-                        onTap: () => context.pushNamed('dashboard'),
                       ),
                     ],
                   ),

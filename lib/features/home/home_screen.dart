@@ -398,8 +398,7 @@ class _DropCountPill extends StatelessWidget {
 }
 
 /// Small boxed text link next to "TODAY'S RECEIPTS" that opens the
-/// receipts-only history view (`ReceiptHistoryScreen`), distinct from the
-/// full Dashboard (which pairs the same receipts with charts).
+/// receipts-only history view (`ReceiptHistoryScreen`).
 class _ViewHistoryButton extends StatelessWidget {
   const _ViewHistoryButton({required this.onTap});
 

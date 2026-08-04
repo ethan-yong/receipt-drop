@@ -8,7 +8,6 @@ import 'auth_refresh.dart';
 import '../../features/auth/auth_screen.dart';
 import '../../features/avatar/avatar_customizer_screen.dart';
 import '../../features/badges/badges_screen.dart';
-import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/feed/feed_screen.dart';
 import '../../features/friends/friends_screen.dart';
 import '../../features/history/receipt_history_screen.dart';
@@ -128,12 +127,6 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
             ],
           ),
         ],
-      ),
-      GoRoute(
-        parentNavigatorKey: rootNavigatorKey,
-        path: '/dashboard',
-        name: 'dashboard',
-        builder: (context, state) => const DashboardScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
