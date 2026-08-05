@@ -3,7 +3,11 @@ services:
     image: redis:7-alpine
     container_name: receipt-drop-redis
     ports:
-      - "6379:6379"
+      # Override via REDIS_HOST_PORT in .env if 6379 is already taken on
+      # your machine by an unrelated Redis — only affects host-side
+      # `redis-cli` access; leaderboard-api always reaches this container
+      # over the internal Docker network (redis://redis:6379), unaffected.
+      - "${REDIS_HOST_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     # Must match the redis Deployment's command in deploy/k8s/redis.yaml —

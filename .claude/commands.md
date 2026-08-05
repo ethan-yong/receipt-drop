@@ -92,7 +92,9 @@ docker compose up --build     # starts redis + leaderboard-api (repo-root docker
 
 Requires `SUPABASE_JWT_SECRET` (from `supabase status`) and `DATABASE_URL` in root `.env`. Flutter picks it up via `LEADERBOARD_API_URL` in `.env` — omit to fall back to the Supabase `get_friend_leaderboard()` RPC directly (Global tab has no fallback and requires this service).
 
-Verify: `curl http://localhost:8080/health`. Full manual verification steps (cache-hit behavior, RLS checks via `psql`, Redis ZSET inspection) are in `README.md`.
+The compose file publishes the service on host port **8082** (container's internal 8080), not 8080 — 8080 is already spoken for by `services/ocr-api`'s documented one-off Docker mode above. `LEADERBOARD_API_URL` must be `http://localhost:8082` accordingly. Redis's host port is similarly shifted to **6380** (`redis://localhost:6380/0`) purely for host-side `redis-cli`/inspection access — this machine already had an unrelated Redis on the default 6379; `leaderboard-api` itself reaches Redis over the internal Docker network (`redis://redis:6379`) regardless, unaffected by the host remap.
+
+Verify: `curl http://localhost:8082/health`. Full manual verification steps (cache-hit behavior, RLS checks via `psql`, Redis ZSET inspection) are in `README.md` — adjust the ports there too if you hit the same conflict.
 
 Tests: `cd services/leaderboard-api && pip install -e ".[dev]" && pytest`.
 

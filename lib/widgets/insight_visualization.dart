@@ -681,8 +681,10 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
                       interval: 1,
                       reservedSize: 34,
                       getTitlesWidget: (v, meta) {
-                        final i = v.round();
-                        if (i == 0) {
+                        // Horizontal pad extends minX/maxX past 0 and 2.
+                        // fl_chart also asks for those edge values; rounding
+                        // them would draw So far / Projected twice.
+                        if ((v - 0).abs() < 1e-6) {
                           return _forecastBottomLabel(
                             caption: 'So far',
                             date: _forecastMonthDate(monthStart),
@@ -692,7 +694,7 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
                             align: CrossAxisAlignment.start,
                           );
                         }
-                        if (i == 2) {
+                        if ((v - 2).abs() < 1e-6) {
                           return _forecastBottomLabel(
                             caption: 'Projected',
                             date: _forecastMonthDate(monthEnd),
