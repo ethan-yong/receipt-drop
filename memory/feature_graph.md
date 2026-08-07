@@ -140,6 +140,29 @@ Files:
 
 ---
 
+## Feature: Bill Split
+
+Depends on:
+- Friends & social feed (`friendships`, `SocialRepository.listFriendships()` — source of the friend roster and identity resolution; no new `security definer` friend-list function needed)
+- Receipt capture & OCR ingest (`receipt_line_items`/`ReceiptLineItem.id`, needed for by-item split — see note below)
+- `friend_groups`/`friend_group_members` tables (net-new, this feature only)
+- `bill_splits`/`bill_split_participants`/`bill_split_item_assignments` tables (net-new)
+- No push-notification system exists anywhere in this app — friend-side discovery is a Home banner + realtime Supabase stream, not a delivered notification
+
+Files:
+- `lib/features/bill_split/bill_split_sheet.dart` (payer flow, `AdaptiveSheet.showForm`, same mechanism as `receipt_confirm_sheet.dart`), `bill_split_step_who.dart`, `bill_split_step_how.dart`, `bill_split_step_review.dart`, `create_group_sheet.dart`, `person_avatar.dart`, `split_requests_screen.dart` (friend-side, real `go_router` route `/split-requests`)
+- `lib/domain/logic/bill_split_math.dart` (`splitCentsEvenly`/`splitEqual`/`splitByItems`, pure — `test/bill_split_math_test.dart`)
+- `lib/domain/models/bill_split.dart`, `friend_group.dart`
+- `lib/data/repositories/bill_split_repository.dart`
+- `lib/core/theme/bill_split_theme.dart` (reuses `ReceiptSheetColors`/`balooText()`)
+- `supabase/migrations/20260807000000_friend_groups.sql`, `20260807010000_bill_splits.sql`
+- Entry point: `lib/features/tx_detail/transaction_detail_screen.dart`'s "Split this bill" button
+- Discovery: `lib/features/home/home_screen.dart`'s `_SplitRequestsBanner` (mirrors the pre-existing `_NeedsReviewBanner`/pending-imports pattern)
+
+**Note on `ReceiptLineItem.id`**: this feature is why `receipt_line_items.id` now flows through the domain model at all (`lib/domain/models/receipt_line_item.dart`, populated in `transaction_repository_native.dart`'s `_lineItemsFor()`) — previously dropped, since nothing needed a line item's own id before `bill_split_item_assignments` needed an FK target. Any future change to `_lineItemsFor()` or `ReceiptLineItem`'s constructor should keep `id` populated or by-item split silently breaks (the UI gates on `item.id != null` per line item, so it fails soft, not with a crash — but by-item split becomes unusable).
+
+---
+
 ## Feature: Leaderboard (friends + global)
 
 Depends on:

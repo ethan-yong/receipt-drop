@@ -1,6 +1,7 @@
 /// A single extracted item + price row from receipt OCR text.
 class ReceiptLineItem {
   const ReceiptLineItem({
+    this.id,
     required this.name,
     required this.priceMyr,
     this.quantity,
@@ -8,6 +9,10 @@ class ReceiptLineItem {
     this.lineIndex,
   });
 
+  /// The row's stable id (Drift `outbox_line_items.id`, reused verbatim as
+  /// `receipt_line_items.id` on sync). Null until the row has been
+  /// persisted — parser output never has one.
+  final String? id;
   final String name;
   final double priceMyr;
   final int? quantity; // when detectable, e.g. "2 x"
@@ -16,6 +21,7 @@ class ReceiptLineItem {
 
   ReceiptLineItem copyWith({String? name, double? priceMyr, int? quantity}) =>
       ReceiptLineItem(
+        id: id,
         name: name ?? this.name,
         priceMyr: priceMyr ?? this.priceMyr,
         quantity: quantity ?? this.quantity,

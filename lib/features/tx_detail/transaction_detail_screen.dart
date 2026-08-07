@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
+import '../bill_split/bill_split_sheet.dart';
 import '../../domain/models/receipt_display_image.dart';
 import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/transaction_view.dart';
@@ -445,6 +446,14 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             ),
             const SizedBox(height: AppSpacing.xl),
             ReceiptDropPrimaryButton(label: 'Save changes', onPressed: _save),
+            const SizedBox(height: AppSpacing.md),
+            OutlinedButton.icon(
+              onPressed: parsedAmount != null
+                  ? () => BillSplitSheet.show(context, transactionId: widget.transactionId)
+                  : null,
+              icon: const Icon(Icons.call_split),
+              label: const Text('Split this bill'),
+            ),
             const SizedBox(height: AppSpacing.md),
             TextButton(
               onPressed: _delete,

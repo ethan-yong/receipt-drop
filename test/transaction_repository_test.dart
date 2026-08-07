@@ -60,6 +60,12 @@ void main() {
     expect(rowItems[1].quantity, isNull);
     expect(rowItems[1].confidence, isNull);
 
+    expect(rowItems[0].id, isNotNull);
+    final storedRows = await db.select(db.outboxLineItems).get();
+    final storedIds = storedRows.map((r) => r.id).toSet();
+    expect(storedIds, contains(rowItems[0].id));
+    expect(storedIds, contains(rowItems[1].id));
+
     await db.close();
   });
 

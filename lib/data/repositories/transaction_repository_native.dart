@@ -629,6 +629,7 @@ class TransactionRepository {
     return rows
         .map(
           (r) => ReceiptLineItem(
+            id: r.id,
             name: r.name,
             priceMyr: r.priceMyr,
             quantity: r.quantity,
