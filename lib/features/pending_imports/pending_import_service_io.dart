@@ -100,110 +100,122 @@ abstract final class PendingImportService {
     bool deferSaveSuccessNav = false,
   }) async {
     await AppServices.pendingImports.updateStatus(import.id, 'processing');
-    if (!context.mounted) {
-      return (progress: batchProgress, savedTx: null);
-    }
-    PlatformFeedback.lightTap();
+    var savedSuccessfully = false;
+    try {
+      if (!context.mounted) {
+        return (progress: batchProgress, savedTx: null);
+      }
+      PlatformFeedback.lightTap();
 
-    OcrAttemptHandle startAttempt() {
-      final notifier = OcrProgressNotifier();
-      unawaited(Future<void>(() async {
-        try {
-          await ReceiptIngestService.ingestPath(
-            path: import.localFilePath,
-            mimeType: import.mimeType,
-            notifier: notifier,
-          );
-        } catch (e) {
-          await AppServices.pendingImports.updateStatus(import.id, 'failed');
-          await notifier.emit(ProcessingFailedEvent(error: e));
-        }
-      }));
-      return (stream: notifier.stream, dispose: notifier.dispose);
-    }
+      OcrAttemptHandle startAttempt() {
+        final notifier = OcrProgressNotifier();
+        unawaited(Future<void>(() async {
+          try {
+            await ReceiptIngestService.ingestPath(
+              path: import.localFilePath,
+              mimeType: import.mimeType,
+              notifier: notifier,
+            );
+          } catch (e) {
+            await AppServices.pendingImports.updateStatus(import.id, 'failed');
+            await notifier.emit(ProcessingFailedEvent(error: e));
+          }
+        }));
+        return (stream: notifier.stream, dispose: notifier.dispose);
+      }
 
-    final draft = await Navigator.of(context, rootNavigator: true)
-        .push<ReceiptIngestDraft>(
-      MaterialPageRoute<ReceiptIngestDraft>(
-        fullscreenDialog: true,
-        builder: (_) => ReceiptScanProcessingScreen(
-          attemptFactory: startAttempt,
-          batchProgress: batchProgress,
-        ),
-      ),
-    );
-    if (draft == null) return (progress: batchProgress, savedTx: null);
-
-    // Carry through a note attached earlier via the post-share
-    // notification's inline reply — the confirm sheet prefills it so it
-    // isn't lost between the notification and the user actually opening
-    // this import.
-    final draftWithNote =
-        import.note != null ? draft.copyWith(notes: import.note) : draft;
-
-    if (!context.mounted) {
-      await AppServices.pendingImports.updateStatus(import.id, 'local');
-      await ReceiptIngestService.discardDraft(draft);
-      return (progress: batchProgress, savedTx: null);
-    }
-
-    TransactionView? savedTx;
-    var completedThisReceipt = false;
-
-    final categories = await loadBundledCategoryConfig();
-    if (!context.mounted) {
-      await AppServices.pendingImports.updateStatus(import.id, 'local');
-      await ReceiptIngestService.discardDraft(draft);
-      return (progress: batchProgress, savedTx: null);
-    }
-
-    final saved = await ReceiptConfirmSheet.show(
-      context,
-      draft: draftWithNote,
-      categories: categories,
-      onSave: (amount, editedDraft, impact) async {
-        if (amount == null) return;
-        savedTx = await AppServices.transactions.ingestReceipt(
-          editedDraft.toIngestRequest(
-            confirmedAmount: amount,
-            impactUser: impact.name,
+      final draft = await Navigator.of(context, rootNavigator: true)
+          .push<ReceiptIngestDraft>(
+        MaterialPageRoute<ReceiptIngestDraft>(
+          fullscreenDialog: true,
+          builder: (_) => ReceiptScanProcessingScreen(
+            attemptFactory: startAttempt,
+            batchProgress: batchProgress,
           ),
-        );
-        final tx = savedTx;
-        if (tx != null) {
-          SocialRepository.createFeedPost(tx);
-          completedThisReceipt = true;
-        }
-      },
-      onCancel: (cancelledDraft) async {
-        // Delete the OCR copy; keep the pending import for retry.
-        await ReceiptIngestService.discardDraft(cancelledDraft);
-        await AppServices.pendingImports.updateStatus(import.id, 'local');
-      },
-    );
+        ),
+      );
+      // Back from the OCR screen — leave the inbox row for a later retry.
+      if (draft == null) return (progress: batchProgress, savedTx: null);
 
-    final nextProgress = completedThisReceipt
-        ? batchProgress?.withCompleted(draft.merchantRaw ?? 'Receipt')
-        : batchProgress;
+      // Carry through a note attached earlier via the post-share
+      // notification's inline reply — the confirm sheet prefills it so it
+      // isn't lost between the notification and the user actually opening
+      // this import.
+      final draftWithNote =
+          import.note != null ? draft.copyWith(notes: import.note) : draft;
 
-    if (!saved || savedTx == null) {
-      return (progress: nextProgress, savedTx: null);
+      if (!context.mounted) {
+        await ReceiptIngestService.discardDraft(draft);
+        return (progress: batchProgress, savedTx: null);
+      }
+
+      TransactionView? savedTx;
+      var completedThisReceipt = false;
+
+      final categories = await loadBundledCategoryConfig();
+      if (!context.mounted) {
+        await ReceiptIngestService.discardDraft(draft);
+        return (progress: batchProgress, savedTx: null);
+      }
+
+      final saved = await ReceiptConfirmSheet.show(
+        context,
+        draft: draftWithNote,
+        categories: categories,
+        onSave: (amount, editedDraft, impact) async {
+          if (amount == null) return;
+          savedTx = await AppServices.transactions.ingestReceipt(
+            editedDraft.toIngestRequest(
+              confirmedAmount: amount,
+              impactUser: impact.name,
+            ),
+          );
+          final tx = savedTx;
+          if (tx != null) {
+            SocialRepository.createFeedPost(tx);
+            completedThisReceipt = true;
+          }
+        },
+        onCancel: (cancelledDraft) async {
+          // Delete the OCR copy; keep the pending import for retry.
+          await ReceiptIngestService.discardDraft(cancelledDraft);
+          await AppServices.pendingImports.updateStatus(import.id, 'local');
+        },
+      );
+
+      final nextProgress = completedThisReceipt
+          ? batchProgress?.withCompleted(draft.merchantRaw ?? 'Receipt')
+          : batchProgress;
+
+      if (!saved || savedTx == null) {
+        // Cancel already discarded + reset. System-back / barrier dismiss
+        // skips onCancel — clean up the OCR copy and unlock the card here.
+        await ReceiptIngestService.discardDraft(draftWithNote);
+        return (progress: nextProgress, savedTx: null);
+      }
+
+      // Delete the pending import now that a full transaction exists.
+      await AppServices.pendingImports.delete(import.id);
+      savedSuccessfully = true;
+
+      // Best-effort: mark the Supabase pending_receipts row completed.
+      final tx = savedTx!;
+      unawaited(
+        AppServices.pendingImports.markSupabaseCompleted(import.id, tx.id),
+      );
+
+      await AppPrefs.setShareCoachMarkPending();
+
+      if (context.mounted && !deferSaveSuccessNav) {
+        context.pushNamed('save-success', extra: [tx]);
+      }
+      return (progress: nextProgress, savedTx: tx);
+    } finally {
+      // Unlock any row still marked `processing`. Does not clobber `failed`
+      // (OCR error) or a row already deleted after a successful save.
+      if (!savedSuccessfully) {
+        await AppServices.pendingImports.resetToLocalIfProcessing(import.id);
+      }
     }
-
-    // Delete the pending import now that a full transaction exists.
-    await AppServices.pendingImports.delete(import.id);
-
-    // Best-effort: mark the Supabase pending_receipts row completed.
-    final tx = savedTx!;
-    unawaited(
-      AppServices.pendingImports.markSupabaseCompleted(import.id, tx.id),
-    );
-
-    await AppPrefs.setShareCoachMarkPending();
-
-    if (context.mounted && !deferSaveSuccessNav) {
-      context.pushNamed('save-success', extra: [tx]);
-    }
-    return (progress: nextProgress, savedTx: tx);
   }
 }

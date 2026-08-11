@@ -26,7 +26,6 @@ import '../../features/review/receipt_review_screen.dart';
 import '../../features/save_success/save_success_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/share/share_hint_screen.dart';
-import '../../features/summary/summary_screen.dart';
 import '../../features/tx_detail/transaction_detail_screen.dart';
 import '../../widgets/main_shell.dart';
 
@@ -166,12 +165,6 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
           final txs = state.extra as List<TransactionView>?;
           return SaveSuccessScreen(savedTxs: txs ?? const []);
         },
-      ),
-      GoRoute(
-        parentNavigatorKey: rootNavigatorKey,
-        path: '/summary',
-        name: 'summary',
-        builder: (context, state) => const SummaryScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

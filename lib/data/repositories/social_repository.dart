@@ -57,6 +57,7 @@ class FriendMapPin {
     required this.userId,
     required this.displayName,
     required this.avatarConfigJson,
+    required this.avatarUrl,
     required this.currentMood,
     required this.placeName,
     required this.lat,
@@ -67,6 +68,9 @@ class FriendMapPin {
   final String userId;
   final String? displayName;
   final Map<String, dynamic>? avatarConfigJson;
+
+  /// Real profile photo URL from `profiles.avatar_url` (Settings / setup).
+  final String? avatarUrl;
   final String? currentMood;
   final String? placeName;
   final double lat;
@@ -277,6 +281,7 @@ class SocialRepository {
           userId: row['user_id'] as String,
           displayName: row['display_name'] as String?,
           avatarConfigJson: row['avatar_config'] as Map<String, dynamic>?,
+          avatarUrl: row['avatar_url'] as String?,
           currentMood: row['current_mood'] as String?,
           placeName: row['place_name'] as String?,
           lat: (row['lat'] as num).toDouble(),

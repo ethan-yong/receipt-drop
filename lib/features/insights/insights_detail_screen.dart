@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
@@ -16,7 +17,19 @@ class InsightsDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.scaffold,
-      appBar: AppBar(title: const Text('Insights')),
+      appBar: AppBar(
+        title: const Text('Insights'),
+        // After save-success we `goNamed` here (no stack to pop) — land home.
+        leading: BackButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.goNamed('home');
+            }
+          },
+        ),
+      ),
       body: StreamBuilder<List<CuratedInsight>>(
         stream: AppServices.insights.watchActive(),
         builder: (context, snapshot) {

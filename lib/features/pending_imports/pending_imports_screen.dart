@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -32,8 +34,21 @@ abstract final class _PendingWaitingColors {
   static const cardShadow = Color(0x143C3214);
 }
 
-class PendingImportsScreen extends StatelessWidget {
+class PendingImportsScreen extends StatefulWidget {
   const PendingImportsScreen({super.key});
+
+  @override
+  State<PendingImportsScreen> createState() => _PendingImportsScreenState();
+}
+
+class _PendingImportsScreenState extends State<PendingImportsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Heal cards stuck on the spinner after system-back / process kill —
+    // `processing` is only valid while processImport owns the UI.
+    unawaited(AppServices.pendingImports.resetAbandonedProcessing());
+  }
 
   @override
   Widget build(BuildContext context) {

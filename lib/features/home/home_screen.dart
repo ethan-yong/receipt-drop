@@ -125,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         ReceiptCardCarousel(transactions: today),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(

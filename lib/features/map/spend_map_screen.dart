@@ -4,22 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/current_location.dart';
 import '../../core/utils/place_key.dart';
-import '../../data/repositories/avatar_repository.dart';
 import '../../data/repositories/map_transactions_repository.dart';
 import '../../data/repositories/places_repository.dart';
+import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
-import '../../domain/logic/avatar_mood.dart';
 import '../../domain/logic/map_aggregates.dart';
 import '../../domain/logic/map_pin_layout.dart';
-import '../../domain/models/avatar_config.dart';
 import '../../domain/models/transaction_view.dart';
-import '../../widgets/blob_avatar.dart';
 import '../../widgets/map_filter_chips.dart';
+import '../../widgets/profile_photo.dart';
 import 'widgets/friend_map_marker.dart';
 import 'widgets/friend_pin_sheet.dart';
 import 'widgets/overlap_stack_marker.dart';
@@ -89,7 +88,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
 
   List<FriendMapPin> _friendPins = const [];
   Position? _myPosition;
-  AvatarConfig? _myAvatarConfig;
+  String? _myAvatarUrl;
+  String? _myDisplayName;
   MapPlaceCluster? _selectedCluster;
 
   /// Place keys of the overlap group currently expanded via spiderfy.
@@ -144,9 +144,16 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       }
       _tryAutoFit();
     });
-    AvatarRepository.getAvatarConfig().then((config) {
-      if (mounted) setState(() => _myAvatarConfig = config);
-    });
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId != null) {
+      ProfileRepository.fetchProfileHeader(userId).then((header) {
+        if (!mounted) return;
+        setState(() {
+          _myAvatarUrl = header.avatarUrl;
+          _myDisplayName = header.displayName;
+        });
+      });
+    }
     getCurrentPositionOrNull().then((pos) {
       if (mounted && pos != null) {
         setState(() => _myPosition = pos);
@@ -731,11 +738,9 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     return widgets;
   }
 
-  Widget? _myLocationOverlay(List<TransactionView> allRows, Offset? pos) {
-    final config = _myAvatarConfig;
-    if (pos == null || config == null) return null;
-    final mood =
-        deriveAvatarMood(todaysTransactions(allRows, DateTime.now()));
+  Widget? _myLocationOverlay(Offset? pos) {
+    if (pos == null) return null;
+    final userId = Supabase.instance.client.auth.currentUser?.id;
     return Positioned(
       left: pos.dx - 28,
       top: pos.dy - 28,
@@ -752,13 +757,11 @@ class _SpendMapScreenState extends State<SpendMapScreen>
             ),
           ],
         ),
-        child: RepaintBoundary(
-          child: BlobAvatar(
-            mood: mood,
-            config: config,
-            size: 44,
-            animate: false,
-          ),
+        child: ProfilePhoto(
+          size: 44,
+          avatarUrl: _myAvatarUrl,
+          displayName: _myDisplayName,
+          userId: userId,
         ),
       ),
     );
@@ -881,7 +884,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                         ),
                       ),
                     ..._friendOverlays(_overlayPositions.friendPos),
-                    ?_myLocationOverlay(all, _overlayPositions.mePos),
+                    ?_myLocationOverlay(_overlayPositions.mePos),
                   ],
                 ),
               ),

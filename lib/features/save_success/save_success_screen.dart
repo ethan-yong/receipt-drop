@@ -27,8 +27,7 @@ String savedLabelForReceiptCount(int n) =>
     n <= 1 ? 'Saved' : '$n receipts saved';
 
 /// 3-second pigeon + mailbox micro-interaction played after receipt(s) are
-/// saved. Navigates to the summary screen when the animation completes (or
-/// on Skip).
+/// saved. Navigates to Insights when the animation completes (or on Skip).
 class SaveSuccessScreen extends StatefulWidget {
   const SaveSuccessScreen({super.key, required this.savedTxs});
 
@@ -174,7 +173,7 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
 
   void _navigateAway() {
     if (!mounted) return;
-    context.goNamed('summary');
+    context.goNamed('insights');
   }
 
   void _skip() {

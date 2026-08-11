@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../data/repositories/social_repository.dart';
-import '../../../domain/logic/avatar_mood.dart';
 import '../../../domain/models/avatar_config.dart';
-import '../../../widgets/blob_avatar.dart';
+import '../../../widgets/profile_photo.dart';
 
-/// Snapchat-style friend pin: the friend's BlobAvatar in a white ring with a
-/// first-name chip beneath. `animate: false` is load-bearing — every
-/// BlobAvatar owns an AnimationController, and dozens of repeating tickers on
-/// a pannable map would tank frame rate.
+/// Snapchat-style friend pin: the friend's profile photo in a white ring with
+/// a first-name chip beneath.
 class FriendMapMarker extends StatelessWidget {
   const FriendMapMarker({
     super.key,
@@ -26,12 +23,14 @@ class FriendMapMarker extends StatelessWidget {
     return name.split(RegExp(r'\s+')).first;
   }
 
+  Color? get _fallbackColor {
+    final json = pin.avatarConfigJson;
+    if (json == null) return null;
+    return AvatarConfig.fromJson(json).color.swatch;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final config = pin.avatarConfigJson != null
-        ? AvatarConfig.fromJson(pin.avatarConfigJson!)
-        : AvatarConfig.defaultConfig();
-
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -50,13 +49,12 @@ class FriendMapMarker extends StatelessWidget {
                 ),
               ],
             ),
-            child: RepaintBoundary(
-              child: BlobAvatar(
-                mood: moodFromName(pin.currentMood),
-                config: config,
-                size: 44,
-                animate: false,
-              ),
+            child: ProfilePhoto(
+              size: 44,
+              avatarUrl: pin.avatarUrl,
+              displayName: pin.displayName,
+              fallbackColor: _fallbackColor,
+              userId: pin.userId,
             ),
           ),
           const SizedBox(height: 2),
