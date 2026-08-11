@@ -417,18 +417,25 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
     setState(() {
       _editingNameIndex = index;
       _nameController.text = _names[index];
+    });
+    _scrollItemIntoView(index);
+    _ensureFieldVisible(_nameFieldKey);
+    // Autofocus can collapse selection after mount — re-select the whole
+    // name so the next keystroke replaces it immediately.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _editingNameIndex != index) return;
+      _nameFocus.requestFocus();
       _nameController.selection = TextSelection(
         baseOffset: 0,
         extentOffset: _nameController.text.length,
       );
     });
-    _scrollItemIntoView(index);
-    _ensureFieldVisible(_nameFieldKey);
   }
 
   /// Scrolls the internal items list so [index] is near the top of that box.
-  /// Expanded name-edit height is handled by [_ensureFieldVisible] once the
-  /// indented field mounts — row-start offsets still use the default estimate.
+  /// Name edits stay single-row (inline), so the default row estimate is enough
+  /// for the initial scroll; [_ensureFieldVisible] then parks the field above
+  /// the keyboard.
   void _scrollItemIntoView(int index) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_itemsScrollController.hasClients) return;
@@ -1190,7 +1197,7 @@ class _CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Ties this bubble's color into the same per-category coding used
-    // app-wide (CategoryChip, transaction_list_tile.dart/summary_screen.dart)
+    // app-wide (CategoryChip, transaction_list_tile.dart)
     // instead of a flat sheet-local color, so a receipt's category reads
     // consistently wherever it's shown.
     final color = AppColors.categoryColor(category);
@@ -1312,96 +1319,77 @@ class _ItemRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return _FieldConfidenceWrap(
       lowConfidence: lowConfidence,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          Row(
-            children: [
-              GestureDetector(
-                key: Key('receipt-item-checkbox-$index'),
-                onTap: onToggle,
-                behavior: HitTestBehavior.opaque,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: checked ? ReceiptSheetColors.gold : Colors.white,
-                    borderRadius: BorderRadius.circular(7),
-                    border: Border.all(
-                      color: checked
-                          ? ReceiptSheetColors.gold
-                          : ReceiptSheetColors.checkboxBorder,
-                      width: 2,
-                    ),
-                  ),
-                  child: checked
-                      ? const Icon(
-                          Icons.check_rounded,
-                          size: 15,
-                          color: Colors.white,
-                        )
-                      : null,
+          GestureDetector(
+            key: Key('receipt-item-checkbox-$index'),
+            onTap: onToggle,
+            behavior: HitTestBehavior.opaque,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: checked ? ReceiptSheetColors.gold : Colors.white,
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: checked
+                      ? ReceiptSheetColors.gold
+                      : ReceiptSheetColors.checkboxBorder,
+                  width: 2,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
+              child: checked
+                  ? const Icon(
+                      Icons.check_rounded,
+                      size: 15,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Opacity(
+              opacity: checked ? 1 : 0.4,
+              // Inline swap — never stack a second name field under the label.
+              child: editingName ? _nameField() : _nameLabel(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Fixed-width column so ×1 / ×10 stay vertically aligned
+          // across rows regardless of name length. 40×40 also meets
+          // the minimum tap target for the quantity picker.
+          GestureDetector(
+            key: Key('receipt-item-quantity-$index'),
+            onTap: onEditQuantity,
+            behavior: HitTestBehavior.opaque,
+            child: SizedBox(
+              width: 40,
+              height: 28,
+              child: Align(
+                alignment: Alignment.centerRight,
                 child: Opacity(
                   opacity: checked ? 1 : 0.4,
-                  child: _nameLabel(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Fixed-width column so ×1 / ×10 stay vertically aligned
-              // across rows regardless of name length. 40×40 also meets
-              // the minimum tap target for the quantity picker.
-              GestureDetector(
-                key: Key('receipt-item-quantity-$index'),
-                onTap: onEditQuantity,
-                behavior: HitTestBehavior.opaque,
-                child: SizedBox(
-                  width: 40,
-                  height: 28,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Opacity(
-                      opacity: checked ? 1 : 0.4,
-                      child: Text(
-                        '×$quantity',
-                        style: balooText(
-                          13,
-                          FontWeight.w600,
-                          color: ReceiptSheetColors.subLight,
-                        ),
-                      ),
+                  child: Text(
+                    '×$quantity',
+                    style: balooText(
+                      13,
+                      FontWeight.w600,
+                      color: ReceiptSheetColors.subLight,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 78,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: editingPrice ? _priceField() : _priceLabel(),
-                ),
-              ),
-            ],
+            ),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            alignment: Alignment.topCenter,
-            child: editingName
-                ? Padding(
-                    // Align with the name column (checkbox 22 + gap 12).
-                    padding: const EdgeInsets.only(left: 34, top: 6),
-                    child: Opacity(
-                      opacity: checked ? 1 : 0.4,
-                      child: _nameField(),
-                    ),
-                  )
-                : const SizedBox.shrink(),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 78,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: editingPrice ? _priceField() : _priceLabel(),
+            ),
           ),
         ],
       ),
@@ -1409,22 +1397,19 @@ class _ItemRow extends StatelessWidget {
   }
 
   Widget _nameLabel() {
-    final label = Text(
-      displayName,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: balooText(
-        15,
-        FontWeight.w700,
-        decoration: checked ? null : TextDecoration.lineThrough,
-      ),
-    );
-    // While editing, keep the label read-only so re-taps don't restart edit.
-    if (editingName) return label;
     return GestureDetector(
       onTap: onEditName,
       behavior: HitTestBehavior.opaque,
-      child: label,
+      child: Text(
+        displayName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: balooText(
+          15,
+          FontWeight.w700,
+          decoration: checked ? null : TextDecoration.lineThrough,
+        ),
+      ),
     );
   }
 
@@ -1446,13 +1431,25 @@ class _ItemRow extends StatelessWidget {
         FontWeight.w700,
         decoration: checked ? null : TextDecoration.lineThrough,
       ),
-      decoration: const InputDecoration(
+      // Soft cream fill + gold edge so the whole name reads as selected
+      // and ready to overwrite the moment the keyboard opens.
+      decoration: InputDecoration(
         isDense: true,
-        filled: false,
-        contentPadding: EdgeInsets.zero,
-        border: InputBorder.none,
-        enabledBorder: InputBorder.none,
-        focusedBorder: InputBorder.none,
+        filled: true,
+        fillColor: ReceiptSheetColors.tile,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: ReceiptSheetColors.gold, width: 1.5),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: ReceiptSheetColors.gold, width: 1.5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: ReceiptSheetColors.gold, width: 1.5),
+        ),
       ),
     );
     if (nameFieldKey == null) return field;

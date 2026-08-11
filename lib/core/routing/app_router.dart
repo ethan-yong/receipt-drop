@@ -8,7 +8,6 @@ import 'auth_refresh.dart';
 import '../../features/auth/auth_screen.dart';
 import '../../features/avatar/avatar_customizer_screen.dart';
 import '../../features/badges/badges_screen.dart';
-import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/feed/feed_screen.dart';
 import '../../features/friends/friends_screen.dart';
 import '../../features/history/receipt_history_screen.dart';
@@ -19,6 +18,7 @@ import '../../features/map/spend_map_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/places/place_picker_screen.dart';
 import '../../features/places/places_search_screen.dart';
+import '../../features/profile_setup/profile_setup_screen.dart';
 import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../features/pending_imports/pending_imports_screen.dart';
@@ -26,12 +26,12 @@ import '../../features/review/receipt_review_screen.dart';
 import '../../features/save_success/save_success_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/share/share_hint_screen.dart';
-import '../../features/summary/summary_screen.dart';
 import '../../features/tx_detail/transaction_detail_screen.dart';
 import '../../widgets/main_shell.dart';
 
-final GlobalKey<NavigatorState> rootNavigatorKey =
-    GlobalKey<NavigatorState>(debugLabel: 'root');
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>(
+  debugLabel: 'root',
+);
 
 /// Builds the router with auth + onboarding redirects.
 GoRouter createAppRouter(AuthRefreshNotifier refresh) {
@@ -43,13 +43,17 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
       final path = state.uri.path;
 
       if (Env.skipAuth) {
-        if (path == '/auth' || path == '/onboarding') return '/home';
+        if (path == '/auth' ||
+            path == '/onboarding' ||
+            path == '/profile-setup') {
+          return '/home';
+        }
         return null;
       }
 
-      final loggedIn =
-          Supabase.instance.client.auth.currentSession != null;
+      final loggedIn = Supabase.instance.client.auth.currentSession != null;
       final onboardingDone = AppPrefs.onboardingComplete;
+      final profileSetupDone = AppPrefs.profileSetupComplete;
 
       if (!onboardingDone && path != '/onboarding') {
         return '/onboarding';
@@ -63,7 +67,14 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
           path != '/onboarding') {
         return '/auth';
       }
-      if (loggedIn && (path == '/auth' || path == '/onboarding')) {
+      if (loggedIn && !profileSetupDone && path != '/profile-setup') {
+        return '/profile-setup';
+      }
+      if (loggedIn &&
+          profileSetupDone &&
+          (path == '/auth' ||
+              path == '/onboarding' ||
+              path == '/profile-setup')) {
         return '/home';
       }
       return null;
@@ -118,12 +129,6 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
-        path: '/dashboard',
-        name: 'dashboard',
-        builder: (context, state) => const DashboardScreen(),
-      ),
-      GoRoute(
-        parentNavigatorKey: rootNavigatorKey,
         path: '/insights',
         name: 'insights',
         builder: (context, state) => const InsightsDetailScreen(),
@@ -163,12 +168,6 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
-        path: '/summary',
-        name: 'summary',
-        builder: (context, state) => const SummaryScreen(),
-      ),
-      GoRoute(
-        parentNavigatorKey: rootNavigatorKey,
         path: '/share-hint',
         name: 'share-hint',
         builder: (context, state) => const ShareHintScreen(),
@@ -184,6 +183,12 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/auth',
         name: 'auth',
         builder: (context, state) => const AuthScreen(),
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/profile-setup',
+        name: 'profile-setup',
+        builder: (context, state) => const ProfileSetupScreen(),
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

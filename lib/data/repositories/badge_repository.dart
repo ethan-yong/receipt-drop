@@ -13,7 +13,7 @@ class BadgeState {
 
 /// Reads/writes per-user badge progress in `user_badges`. Progress itself is
 /// computed client-side from the transaction stream (see
-/// `domain/logic/badge_progress.dart`, mirroring `dashboard_aggregates.dart`'s
+/// `domain/logic/badge_progress.dart`, mirroring `map_aggregates.dart`'s
 /// pure-function pattern) and synced here on view, both for cross-device
 /// continuity and so the leaderboard's security-definer function can read
 /// badge counts without touching raw transactions.

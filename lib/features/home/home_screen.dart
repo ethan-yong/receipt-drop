@@ -125,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: AppSpacing.sm),
                         ReceiptCardCarousel(transactions: today),
-                        const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.sm),
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
@@ -398,8 +398,7 @@ class _DropCountPill extends StatelessWidget {
 }
 
 /// Small boxed text link next to "TODAY'S RECEIPTS" that opens the
-/// receipts-only history view (`ReceiptHistoryScreen`), distinct from the
-/// full Dashboard (which pairs the same receipts with charts).
+/// receipts-only history view (`ReceiptHistoryScreen`).
 class _ViewHistoryButton extends StatelessWidget {
   const _ViewHistoryButton({required this.onTap});
 

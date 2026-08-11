@@ -46,7 +46,7 @@ class HistoryWeek {
   double get total => items.fold(0.0, (s, t) => s + (t.amountMyr ?? 0));
 
   /// Distinct categories across the week, highest-spend first — mirrors
-  /// [mapCategories]'s totals-then-sort approach in `dashboard_aggregates.dart`.
+  /// [mapCategories]'s totals-then-sort approach in `map_aggregates.dart`.
   List<String> get categories => _categoriesBySpend(items);
 }
 

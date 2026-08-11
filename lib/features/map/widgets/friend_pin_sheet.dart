@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/repositories/social_repository.dart';
-import '../../../domain/logic/avatar_mood.dart';
 import '../../../domain/models/avatar_config.dart';
-import '../../../widgets/blob_avatar.dart';
+import '../../../widgets/profile_photo.dart';
 
 /// Small modal shown when tapping a friend's map pin: who, where, when.
 /// Deliberately amount-free, matching the feed's privacy stance.
@@ -31,21 +30,22 @@ class FriendPinSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final config = pin.avatarConfigJson != null
-        ? AvatarConfig.fromJson(pin.avatarConfigJson!)
-        : AvatarConfig.defaultConfig();
     final place = pin.placeName?.trim();
+    final fallbackColor = pin.avatarConfigJson != null
+        ? AvatarConfig.fromJson(pin.avatarConfigJson!).color.swatch
+        : null;
 
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
         child: Row(
           children: [
-            BlobAvatar(
-              mood: moodFromName(pin.currentMood),
-              config: config,
+            ProfilePhoto(
               size: 64,
-              animate: false,
+              avatarUrl: pin.avatarUrl,
+              displayName: pin.displayName,
+              fallbackColor: fallbackColor,
+              userId: pin.userId,
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(

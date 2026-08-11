@@ -57,6 +57,7 @@ class FriendMapPin {
     required this.userId,
     required this.displayName,
     required this.avatarConfigJson,
+    required this.avatarUrl,
     required this.currentMood,
     required this.placeName,
     required this.lat,
@@ -67,6 +68,9 @@ class FriendMapPin {
   final String userId;
   final String? displayName;
   final Map<String, dynamic>? avatarConfigJson;
+
+  /// Real profile photo URL from `profiles.avatar_url` (Settings / setup).
+  final String? avatarUrl;
   final String? currentMood;
   final String? placeName;
   final double lat;
@@ -119,6 +123,7 @@ class LeaderboardEntry {
     required this.userId,
     required this.displayName,
     required this.avatarConfigJson,
+    required this.avatarUrl,
     required this.currentMood,
     required this.badgeScore,
     required this.currentStreak,
@@ -129,6 +134,7 @@ class LeaderboardEntry {
   final String userId;
   final String? displayName;
   final Map<String, dynamic>? avatarConfigJson;
+  final String? avatarUrl;
   final String? currentMood;
   final int badgeScore;
   final int currentStreak;
@@ -147,8 +153,9 @@ class SocialRepository {
 
   static const _uuid = Uuid();
 
-  static String? get _userId =>
-      Env.hasSupabaseConfig ? Supabase.instance.client.auth.currentUser?.id : null;
+  static String? get _userId => Env.hasSupabaseConfig
+      ? Supabase.instance.client.auth.currentUser?.id
+      : null;
 
   /// Looks up a user by email and sends a friend request. Returns a
   /// human-readable error on failure, or null on success.
@@ -173,13 +180,18 @@ class SocialRepository {
       });
       return null;
     } on PostgrestException catch (e) {
-      return e.code == '23505' ? 'Already requested.' : 'Could not send request.';
+      return e.code == '23505'
+          ? 'Already requested.'
+          : 'Could not send request.';
     } on Object {
       return 'Could not send request.';
     }
   }
 
-  static Future<void> respondToFriendRequest(String friendshipId, bool accept) async {
+  static Future<void> respondToFriendRequest(
+    String friendshipId,
+    bool accept,
+  ) async {
     try {
       await Supabase.instance.client
           .from('friendships')
@@ -196,7 +208,8 @@ class SocialRepository {
   static Future<List<FriendshipView>> listFriendships() async {
     if (_userId == null) return const [];
     try {
-      final rows = await Supabase.instance.client.rpc('list_friendships') as List;
+      final rows =
+          await Supabase.instance.client.rpc('list_friendships') as List;
       return rows
           .map((r) => _friendshipFromRow(r as Map<String, dynamic>))
           .toList();
@@ -214,7 +227,8 @@ class SocialRepository {
       createdAt: DateTime.parse(row['created_at'] as String),
       otherUserId: row['other_user_id'] as String,
       otherDisplayName: row['other_display_name'] as String?,
-      otherAvatarConfigJson: row['other_avatar_config'] as Map<String, dynamic>?,
+      otherAvatarConfigJson:
+          row['other_avatar_config'] as Map<String, dynamic>?,
     );
   }
 
@@ -234,7 +248,8 @@ class SocialRepository {
   static Future<List<FeedPost>> getFriendFeed() async {
     if (_userId == null) return const [];
     try {
-      final rows = await Supabase.instance.client.rpc('get_friend_feed') as List;
+      final rows =
+          await Supabase.instance.client.rpc('get_friend_feed') as List;
       return rows.map((r) {
         final row = r as Map<String, dynamic>;
         return FeedPost(
@@ -266,6 +281,7 @@ class SocialRepository {
           userId: row['user_id'] as String,
           displayName: row['display_name'] as String?,
           avatarConfigJson: row['avatar_config'] as Map<String, dynamic>?,
+          avatarUrl: row['avatar_url'] as String?,
           currentMood: row['current_mood'] as String?,
           placeName: row['place_name'] as String?,
           lat: (row['lat'] as num).toDouble(),
@@ -356,10 +372,7 @@ class SocialRepository {
 
       final base = Env.leaderboardApiUrl.replaceAll(RegExp(r'/+$'), '');
       final uri = Uri.parse('$base/leaderboard/score');
-      await http.post(
-        uri,
-        headers: {'Authorization': 'Bearer $token'},
-      );
+      await http.post(uri, headers: {'Authorization': 'Bearer $token'});
     } on Object {
       // Best-effort.
     }
@@ -374,9 +387,9 @@ class SocialRepository {
       if (token == null) return null;
 
       final base = Env.leaderboardApiUrl.replaceAll(RegExp(r'/+$'), '');
-      final uri = Uri.parse('$base/friends-leaderboard').replace(
-        queryParameters: {'fresh': fresh.toString()},
-      );
+      final uri = Uri.parse(
+        '$base/friends-leaderboard',
+      ).replace(queryParameters: {'fresh': fresh.toString()});
       final response = await http.get(
         uri,
         headers: {'Authorization': 'Bearer $token'},
@@ -412,13 +425,17 @@ class SocialRepository {
     final rawBadges = row['top_badges'];
     final topBadges = rawBadges is List
         ? rawBadges
-            .map((b) => AchievementBadgeSummary.fromJson(b as Map<String, dynamic>))
-            .toList()
+              .map(
+                (b) =>
+                    AchievementBadgeSummary.fromJson(b as Map<String, dynamic>),
+              )
+              .toList()
         : const <AchievementBadgeSummary>[];
     return LeaderboardEntry(
       userId: row['user_id'] as String,
       displayName: row['display_name'] as String?,
       avatarConfigJson: row['avatar_config'] as Map<String, dynamic>?,
+      avatarUrl: row['avatar_url'] as String?,
       currentMood: row['current_mood'] as String?,
       badgeScore: (row['badge_score'] as num?)?.toInt() ?? 0,
       currentStreak: (row['current_streak'] as num).toInt(),

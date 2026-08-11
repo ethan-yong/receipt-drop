@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../domain/logic/badge_catalog.dart';
+import 'badge_icon.dart';
 
 // Tier ring colors from design: Bronze / Silver / Gold
 const _kTierColors = [
@@ -117,13 +117,13 @@ class BadgeHex extends StatelessWidget {
                           0.2126, 0.7152, 0.0722, 0, 0,
                           0,      0,      0,      0.6, 0,
                         ]),
-                        child: SvgPicture.asset(
+                        child: badgeIconAsset(
                           badge.svgAsset,
                           width: iconSize,
                           height: iconSize,
                         ),
                       )
-                    : SvgPicture.asset(
+                    : badgeIconAsset(
                         badge.svgAsset,
                         width: iconSize,
                         height: iconSize,

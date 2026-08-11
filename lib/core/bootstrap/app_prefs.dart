@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _kOnboardingComplete = 'onboarding_complete';
+const _kProfileSetupComplete = 'profile_setup_complete';
 const _kShareCoachMarkSeen = 'share_coach_mark_seen';
 const _kShareCoachMarkPending = 'share_coach_mark_pending';
 const _kInsightsLastGeneratedAt = 'insights_last_generated_at';
@@ -21,6 +22,13 @@ class AppPrefs {
 
   static Future<void> setOnboardingComplete() async {
     await _prefs?.setBool(_kOnboardingComplete, true);
+  }
+
+  static bool get profileSetupComplete =>
+      _prefs?.getBool(_kProfileSetupComplete) ?? false;
+
+  static Future<void> setProfileSetupComplete() async {
+    await _prefs?.setBool(_kProfileSetupComplete, true);
   }
 
   static bool get shareCoachMarkSeen =>
@@ -58,6 +66,7 @@ class AppPrefs {
   /// Clears onboarding flag and other local prefs (not cloud data).
   static Future<void> clearLocalCache() async {
     await _prefs?.remove(_kOnboardingComplete);
+    await _prefs?.remove(_kProfileSetupComplete);
   }
 
   /// Test helper: reset stored prefs (widget tests).

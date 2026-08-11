@@ -361,8 +361,16 @@ void main() {
 
     final nameField = find.byKey(const Key('receipt-item-name-field'));
     expect(nameField, findsOneWidget);
-    // Expanded layout keeps the read-only label visible above the field.
-    expect(find.text('Rsb Biasa'), findsWidgets);
+    // Inline edit replaces the label in-place (no duplicate row below).
+    expect(find.text('Rsb Biasa'), findsOneWidget);
+    final editable = tester.widget<EditableText>(
+      find.descendant(of: nameField, matching: find.byType(EditableText)),
+    );
+    expect(editable.controller.selection.isCollapsed, isFalse);
+    expect(
+      editable.controller.selection.end - editable.controller.selection.start,
+      'Rsb Biasa'.length,
+    );
     await tester.enterText(nameField, 'Nasi Lemak Biasa');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();

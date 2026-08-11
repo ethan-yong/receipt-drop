@@ -33,21 +33,47 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   List<LeaderboardEntry>? _entries;
   BadgeCatalog? _catalog;
 
+  // Sticky "me" row: tracks whether the real row (identified by _meRowKey,
+  // measured against the scroll viewport identified by _viewportKey) is
+  // currently fully on-screen. Purely additive — doesn't touch the existing
+  // list's layout, only measures it.
+  final _scrollController = ScrollController();
+  final _viewportKey = GlobalKey();
+  final _meRowKey = GlobalKey();
+  bool _pinnedVisible = false;
+
   @override
   void initState() {
     super.initState();
     BadgeCatalog.loadBundled().then((c) {
-      if (mounted) setState(() => _catalog = c);
+      if (mounted) {
+        setState(() => _catalog = c);
+        _schedulePinnedCheck();
+      }
     });
+    _scrollController.addListener(_updatePinnedVisibility);
     _load();
   }
 
+  @override
+  void dispose() {
+    _scrollController.removeListener(_updatePinnedVisibility);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load({bool fresh = false}) async {
-    setState(() => _entries = null);
+    setState(() {
+      _entries = null;
+      _pinnedVisible = false;
+    });
     final entries = _mode == _LeaderboardMode.friends
         ? await SocialRepository.getFriendLeaderboard(fresh: fresh)
         : await SocialRepository.getGlobalLeaderboard();
-    if (mounted) setState(() => _entries = entries);
+    if (mounted) {
+      setState(() => _entries = entries);
+      _schedulePinnedCheck();
+    }
   }
 
   void _setMode(_LeaderboardMode mode) {
@@ -56,84 +82,206 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     _load();
   }
 
+  void _schedulePinnedCheck() {
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _updatePinnedVisibility(),
+    );
+  }
+
+  /// Compares the real "me" row's position (via [_meRowKey]) against the
+  /// scrollable viewport's bounds (via [_viewportKey]) to decide whether the
+  /// floating pinned copy should be shown. No-ops (and hides the pin) when
+  /// there's no matching row currently built — e.g. while loading, or when
+  /// the current user is only shown in the podium.
+  void _updatePinnedVisibility() {
+    if (!mounted) return;
+    final rowContext = _meRowKey.currentContext;
+    final viewportContext = _viewportKey.currentContext;
+    if (rowContext == null || viewportContext == null) {
+      if (_pinnedVisible) setState(() => _pinnedVisible = false);
+      return;
+    }
+    final rowBox = rowContext.findRenderObject() as RenderBox?;
+    final viewportBox = viewportContext.findRenderObject() as RenderBox?;
+    if (rowBox == null ||
+        viewportBox == null ||
+        !rowBox.attached ||
+        !viewportBox.attached) {
+      return;
+    }
+    final rowTop = rowBox.localToGlobal(Offset.zero, ancestor: viewportBox).dy;
+    final rowBottom = rowTop + rowBox.size.height;
+    final fullyVisible = rowTop >= 0 && rowBottom <= viewportBox.size.height;
+    final shouldPin = !fullyVisible;
+    if (shouldPin != _pinnedVisible) {
+      setState(() => _pinnedVisible = shouldPin);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final entries = _entries;
     final isGlobal = _mode == _LeaderboardMode.global;
+
+    final meIndex = entries?.indexWhere((e) => e.isMe) ?? -1;
+    final meHasFlatRow = meIndex >= 0 && (entries!.length < 3 || meIndex >= 3);
+    final pinnedEntry = meHasFlatRow ? entries[meIndex] : null;
+    final pinnedRank = meHasFlatRow ? meIndex + 1 : null;
+
     return Scaffold(
       backgroundColor: AppColors.scaffold,
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: () => _load(fresh: _mode == _LeaderboardMode.friends),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.md,
-              AppSpacing.lg,
-              AppSpacing.md,
-              AppSpacing.xl,
-            ),
-            children: [
-              SizedBox(
-                width: double.infinity,
-                child: Column(
-                  children: [
-                    const Text('🏆', style: TextStyle(fontSize: 26)),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Leaderboard',
-                      textAlign: TextAlign.center,
-                      style: leaderboardText(
-                        26,
-                        FontWeight.w800,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      isGlobal
-                          ? 'See how you stack up worldwide.'
-                          : 'See how you stack up against friends.',
-                      textAlign: TextAlign.center,
-                      style: leaderboardText(
-                        14,
-                        FontWeight.w600,
-                        color: AppColors.textMuted,
-                        height: 1.35,
-                      ),
-                    ),
-                  ],
+      body: Stack(
+        children: [
+          SafeArea(
+            child: RefreshIndicator(
+              onRefresh: () => _load(fresh: _mode == _LeaderboardMode.friends),
+              child: ListView(
+                key: _viewportKey,
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.md,
+                  AppSpacing.lg,
+                  AppSpacing.md,
+                  AppSpacing.xl,
                 ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              _ModeToggle(mode: _mode, onChanged: _setMode),
-              const SizedBox(height: AppSpacing.lg),
-              if (entries == null)
-                const _LeaderboardSkeleton()
-              else if (isGlobal && !Env.hasLeaderboardApiConfig)
-                const _GlobalApiRequiredNotice()
-              else if (entries.isEmpty)
-                _EmptyNotice(isGlobal: isGlobal)
-              else ...[
-                if (entries.length >= 3) ...[
-                  _Podium(
-                    top3: entries.take(3).toList(),
-                    catalog: _catalog,
-                    isGlobal: isGlobal,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      children: [
+                        const Text('🏆', style: TextStyle(fontSize: 26)),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Leaderboard',
+                          textAlign: TextAlign.center,
+                          style: leaderboardText(
+                            26,
+                            FontWeight.w800,
+                            letterSpacing: -0.4,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isGlobal
+                              ? 'See how you stack up worldwide.'
+                              : 'See how you stack up against friends.',
+                          textAlign: TextAlign.center,
+                          style: leaderboardText(
+                            14,
+                            FontWeight.w600,
+                            color: AppColors.textMuted,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.lg),
+                  _ModeToggle(mode: _mode, onChanged: _setMode),
+                  const SizedBox(height: AppSpacing.lg),
+                  if (entries == null)
+                    const _LeaderboardSkeleton()
+                  else if (isGlobal && !Env.hasLeaderboardApiConfig)
+                    const _GlobalApiRequiredNotice()
+                  else if (entries.isEmpty)
+                    _EmptyNotice(isGlobal: isGlobal)
+                  else ...[
+                    if (entries.length >= 3) ...[
+                      _Podium(
+                        top3: entries.take(3).toList(),
+                        catalog: _catalog,
+                        isGlobal: isGlobal,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                    ],
+                    for (final (i, entry) in entries.indexed)
+                      if (entries.length < 3 || i >= 3)
+                        _LeaderboardRow(
+                          key: entry.isMe ? _meRowKey : null,
+                          rank: i + 1,
+                          entry: entry,
+                          catalog: _catalog,
+                          isGlobal: isGlobal,
+                        ),
+                    if (_mode == _LeaderboardMode.friends &&
+                        entries.length <= 1)
+                      const _EmptyLeaderboardNotice(),
+                  ],
                 ],
-                for (final (i, entry) in entries.indexed)
-                  if (entries.length < 3 || i >= 3)
-                    _LeaderboardRow(
-                      rank: i + 1,
-                      entry: entry,
-                      catalog: _catalog,
-                      isGlobal: isGlobal,
-                    ),
-                if (_mode == _LeaderboardMode.friends && entries.length <= 1)
-                  const _EmptyLeaderboardNotice(),
+              ),
+            ),
+          ),
+          if (pinnedEntry != null)
+            Positioned(
+              left: AppSpacing.md,
+              right: AppSpacing.md,
+              bottom: AppSpacing.md,
+              child: _PinnedMeRow(
+                visible: _pinnedVisible,
+                rank: pinnedRank!,
+                entry: pinnedEntry,
+                catalog: _catalog,
+                isGlobal: isGlobal,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Floating copy of the current user's row, shown once the real row
+/// (tracked by `_meRowKey`) scrolls out of the viewport. Reuses
+/// [_LeaderboardRow] verbatim for content/styling — only adds the
+/// highlight ring, elevation, and enter/exit animation around it.
+class _PinnedMeRow extends StatelessWidget {
+  const _PinnedMeRow({
+    required this.visible,
+    required this.rank,
+    required this.entry,
+    required this.catalog,
+    required this.isGlobal,
+  });
+
+  final bool visible;
+  final int rank;
+  final LeaderboardEntry entry;
+  final BadgeCatalog? catalog;
+  final bool isGlobal;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        offset: visible ? Offset.zero : const Offset(0, 0.3),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          opacity: visible ? 1 : 0,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: AppSpacing.cardBorderRadius,
+              border: Border.all(color: AppColors.primaryGreen, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.32),
+                  blurRadius: 26,
+                  offset: const Offset(0, 12),
+                ),
               ],
-            ],
+            ),
+            child: ClipRRect(
+              borderRadius: AppSpacing.cardBorderRadius,
+              child: _LeaderboardRow(
+                rank: rank,
+                entry: entry,
+                catalog: catalog,
+                isGlobal: isGlobal,
+              ),
+            ),
           ),
         ),
       ),
@@ -154,7 +302,11 @@ Color _avatarColorFor(LeaderboardEntry entry) {
 }
 
 String _initialsFor(String name) {
-  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((p) => p.isNotEmpty)
+      .toList();
   if (parts.isEmpty) return '?';
   if (parts.length == 1) {
     final word = parts.first;
@@ -178,8 +330,9 @@ class _InitialsAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor =
-        color.computeLuminance() > 0.55 ? AppColors.textPrimary : Colors.white;
+    final textColor = color.computeLuminance() > 0.55
+        ? AppColors.textPrimary
+        : Colors.white;
     return Container(
       width: size,
       height: size,
@@ -191,6 +344,49 @@ class _InitialsAvatar extends StatelessWidget {
           fontSize: fontSize,
           fontWeight: FontWeight.w800,
           color: textColor,
+        ),
+      ),
+    );
+  }
+}
+
+/// The real profile photo (`entry.avatarUrl`) when the user has set one,
+/// falling back to the stylized initials/color avatar otherwise.
+class _EntryAvatar extends StatelessWidget {
+  const _EntryAvatar({
+    required this.entry,
+    required this.name,
+    required this.size,
+    required this.fontSize,
+  });
+
+  final LeaderboardEntry entry;
+  final String name;
+  final double size;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = entry.avatarUrl;
+    if (url == null || url.isEmpty) {
+      return _InitialsAvatar(
+        name: name,
+        color: _avatarColorFor(entry),
+        size: size,
+        fontSize: fontSize,
+      );
+    }
+    return ClipOval(
+      child: Image.network(
+        url,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _InitialsAvatar(
+          name: name,
+          color: _avatarColorFor(entry),
+          size: size,
+          fontSize: fontSize,
         ),
       ),
     );
@@ -221,7 +417,9 @@ class _ModeToggle extends StatelessWidget {
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   decoration: BoxDecoration(
-                    color: mode == option ? AppColors.cardSurface : Colors.transparent,
+                    color: mode == option
+                        ? AppColors.cardSurface
+                        : Colors.transparent,
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: mode == option
                         ? [
@@ -301,7 +499,11 @@ const _podiumConf = {
 /// Top-3 spotlight, displayed in 2nd / 1st / 3rd order (winner in the
 /// middle), each column elevated/sized per `_podiumConf`.
 class _Podium extends StatelessWidget {
-  const _Podium({required this.top3, required this.catalog, required this.isGlobal});
+  const _Podium({
+    required this.top3,
+    required this.catalog,
+    required this.isGlobal,
+  });
 
   final List<LeaderboardEntry> top3;
   final BadgeCatalog? catalog;
@@ -348,10 +550,12 @@ class _PodiumColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     final conf = _podiumConf[rank]!;
     final ringColor = badgeTierColor(4 - rank);
-    final scoreColor =
-        rank == 1 ? leaderboardFirstPlaceScore : AppColors.textPrimary;
-    final name = entry.isMe ? 'You' : (entry.displayName ?? (isGlobal ? 'User' : 'Friend'));
-    final avatarColor = _avatarColorFor(entry);
+    final scoreColor = rank == 1
+        ? leaderboardFirstPlaceScore
+        : AppColors.textPrimary;
+    final name = entry.isMe
+        ? 'You'
+        : (entry.displayName ?? (isGlobal ? 'User' : 'Friend'));
 
     return Transform.translate(
       offset: Offset(0, conf.elevate),
@@ -363,7 +567,9 @@ class _PodiumColumn extends StatelessWidget {
             SizedBox(
               height: 24,
               child: conf.crown
-                  ? const Center(child: Text('👑', style: TextStyle(fontSize: 22)))
+                  ? const Center(
+                      child: Text('👑', style: TextStyle(fontSize: 22)),
+                    )
                   : null,
             ),
             Stack(
@@ -385,9 +591,9 @@ class _PodiumColumn extends StatelessWidget {
                     ],
                   ),
                   padding: const EdgeInsets.all(3),
-                  child: _InitialsAvatar(
+                  child: _EntryAvatar(
+                    entry: entry,
                     name: name,
-                    color: avatarColor,
                     size: conf.avatar - 6,
                     fontSize: conf.initialSize,
                   ),
@@ -428,10 +634,7 @@ class _PodiumColumn extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: leaderboardText(
-                conf.nameSize,
-                FontWeight.w800,
-              ),
+              style: leaderboardText(conf.nameSize, FontWeight.w800),
             ),
             const SizedBox(height: 2),
             Text(
@@ -468,6 +671,7 @@ class _PodiumColumn extends StatelessWidget {
 
 class _LeaderboardRow extends StatelessWidget {
   const _LeaderboardRow({
+    super.key,
     required this.rank,
     required this.entry,
     required this.catalog,
@@ -483,7 +687,6 @@ class _LeaderboardRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final fallbackName = isGlobal ? 'User' : 'Friend';
     final name = entry.isMe ? 'You' : (entry.displayName ?? fallbackName);
-    final avatarColor = _avatarColorFor(entry);
     final pointsText = _pointsFormat.format(entry.rankScore);
 
     final badges = [
@@ -502,7 +705,12 @@ class _LeaderboardRow extends StatelessWidget {
             ),
     ];
 
-    final avatar = _InitialsAvatar(name: name, color: avatarColor, size: 40, fontSize: 13);
+    final avatar = _EntryAvatar(
+      entry: entry,
+      name: name,
+      size: 40,
+      fontSize: 13,
+    );
 
     if (entry.isMe) {
       return Container(
@@ -547,12 +755,19 @@ class _LeaderboardRow extends StatelessWidget {
                         child: Text(
                           name,
                           overflow: TextOverflow.ellipsis,
-                          style: leaderboardText(14, FontWeight.w800, color: Colors.white),
+                          style: leaderboardText(
+                            14,
+                            FontWeight.w800,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.14),
                           borderRadius: BorderRadius.circular(6),
@@ -647,14 +862,15 @@ class _LeaderboardRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                pointsText,
-                style: leaderboardText(14, FontWeight.w800),
-              ),
+              Text(pointsText, style: leaderboardText(14, FontWeight.w800)),
               const SizedBox(height: 1),
               Text(
                 'pts',
-                style: leaderboardText(10, FontWeight.w700, color: AppColors.textMuted),
+                style: leaderboardText(
+                  10,
+                  FontWeight.w700,
+                  color: AppColors.textMuted,
+                ),
               ),
             ],
           ),
@@ -729,7 +945,11 @@ class _GlobalApiRequiredNotice extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
       child: Column(
         children: [
-          const Icon(Icons.public_outlined, size: 40, color: AppColors.textMuted),
+          const Icon(
+            Icons.public_outlined,
+            size: 40,
+            color: AppColors.textMuted,
+          ),
           const SizedBox(height: AppSpacing.sm),
           Text(
             'Global ranks unavailable',
@@ -740,7 +960,11 @@ class _GlobalApiRequiredNotice extends StatelessWidget {
           Text(
             'Set LEADERBOARD_API_URL to view global ranks.',
             textAlign: TextAlign.center,
-            style: leaderboardText(14, FontWeight.w600, color: AppColors.textMuted),
+            style: leaderboardText(
+              14,
+              FontWeight.w600,
+              color: AppColors.textMuted,
+            ),
           ),
         ],
       ),
@@ -759,7 +983,11 @@ class _EmptyNotice extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xl),
       child: Column(
         children: [
-          const Icon(Icons.emoji_events_outlined, size: 40, color: AppColors.textMuted),
+          const Icon(
+            Icons.emoji_events_outlined,
+            size: 40,
+            color: AppColors.textMuted,
+          ),
           const SizedBox(height: AppSpacing.sm),
           Text(
             'No ranks yet',
@@ -772,7 +1000,11 @@ class _EmptyNotice extends StatelessWidget {
                 ? 'Log streaks on the home screen to join the global board.'
                 : 'Add friends from Settings to start a leaderboard.',
             textAlign: TextAlign.center,
-            style: leaderboardText(14, FontWeight.w600, color: AppColors.textMuted),
+            style: leaderboardText(
+              14,
+              FontWeight.w600,
+              color: AppColors.textMuted,
+            ),
           ),
         ],
       ),

@@ -3,9 +3,9 @@
   "badges": [
     { "id": "food_explorer", "label": "Food Explorer", "description": "Discover Malaysian food culture, one restaurant receipt at a time.", "svgAsset": "assets/badges/food_explorer.svg", "tierGoals": [3, 10, 50], "tierUnit": "restaurant receipts" },
     { "id": "cafe_hopper", "label": "Cafe Hopper", "description": "Hop between cafes and log every cup.", "svgAsset": "assets/badges/cafe_hopper.svg", "tierGoals": [3, 10, 30], "tierUnit": "cafe receipts" },
-    { "id": "grocery_planner", "label": "Grocery Planner", "description": "Keep tabs on every supermarket run.", "svgAsset": "assets/badges/grocery_planner.svg", "tierGoals": [3, 10, 50], "tierUnit": "grocery receipts" },
+    { "id": "grocery_planner", "label": "Grocery Planner", "description": "Keep tabs on every supermarket run.", "svgAsset": "assets/badges/grocery_planner.png", "tierGoals": [3, 10, 50], "tierUnit": "grocery receipts" },
     { "id": "digital_tracker", "label": "Digital Tracker", "description": "Share receipts with friends and track together.", "svgAsset": "assets/badges/digital_tracker.svg", "tierGoals": [3, 10, 50], "tierUnit": "shared receipts", "comingSoon": true },
-    { "id": "receipt_collector", "label": "Receipt Collector", "description": "Build up your receipt collection — every one counts.", "svgAsset": "assets/badges/receipt_collector.svg", "tierGoals": [5, 25, 100], "tierUnit": "total receipts" },
+    { "id": "receipt_collector", "label": "Receipt Collector", "description": "Build up your receipt collection — every one counts.", "svgAsset": "assets/badges/receipt_collector.png", "tierGoals": [5, 25, 100], "tierUnit": "total receipts" },
     { "id": "category_explorer", "label": "Category Explorer", "description": "Spend across more categories and unlock your habits.", "svgAsset": "assets/badges/category_explorer.svg", "tierGoals": [3, 5, 8], "tierUnit": "categories" }
   ]
 }

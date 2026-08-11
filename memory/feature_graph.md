@@ -31,7 +31,7 @@ Files:
 - `services/ocr-api/ocr_api/*.py`
 - Downstream consumer: `lib/domain/models/transaction_view.dart` (every other feature reads through this)
 
-**Fan-out**: nearly everything else (dashboard, map, feed, badges, save-success) consumes `TransactionView` rows produced here. Changing `TransactionView`'s shape or `ingestReceipt`'s side effects (feed post creation, sync trigger) has wide blast radius.
+**Fan-out**: nearly everything else (map, feed, badges, save-success, history, insights) consumes `TransactionView` rows produced here. Changing `TransactionView`'s shape or `ingestReceipt`'s side effects (feed post creation, sync trigger) has wide blast radius.
 
 ---
 
@@ -47,21 +47,6 @@ Files:
 - `lib/data/repositories/transaction_repository.dart` (`confirmReview()`)
 - `supabase/migrations/20260705000000_receipt_review_and_raw_ocr.sql`
 - `lib/data/repositories/sync_worker_flutter.dart` (the `needs_review` skip check)
-
----
-
-## Feature: Dashboard & aggregations
-
-Depends on:
-- Receipt capture & OCR ingest (reads `TransactionView` stream)
-- `dashboard_aggregates.dart` pure functions (month summary, category breakdown, weekly trend, top places, map clusters/heat cells)
-
-Files:
-- `lib/features/dashboard/dashboard_screen.dart`
-- `lib/domain/logic/dashboard_aggregates.dart`
-- `lib/widgets/category_donut_chart.dart`, `weekly_line_chart.dart`, `top_places_list.dart`, `month_picker_header.dart`
-
-No writes — purely a read/aggregation layer. Safe to extend without touching capture/sync.
 
 ---
 
@@ -91,7 +76,7 @@ Files:
 ## Feature: Spend map (own + friends)
 
 Depends on:
-- Dashboard aggregations (`mapClusters`, `heatCells`, `mapCategories`)
+- Map aggregations (`mapClusters`, `heatCells`, `mapCategories` in `map_aggregates.dart`)
 - `flutter_map` + CARTO tiles (own spend bubbles/heat)
 - Social repository → `get_friend_map_pins()` RPC (friend pins, place+time only, never amount)
 - `profiles.share_map_location` opt-out
@@ -99,7 +84,7 @@ Depends on:
 Files:
 - `lib/features/map/spend_map_screen.dart`, `lib/features/map/widgets/*.dart`
 - `lib/widgets/map_filter_chips.dart`
-- `lib/domain/logic/dashboard_aggregates.dart` (shared with Dashboard)
+- `lib/domain/logic/map_aggregates.dart`
 - `lib/data/repositories/social_repository.dart`
 - `supabase/migrations/20260706000000_friend_map_pins.sql`
 

@@ -386,10 +386,11 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     final n = txs.length;
     final current = _current < n ? _current : n - 1;
     final activeTx = txs[current];
-    // Only the newest receipt (index 0) carries the hanging badge.
-    final viewportHeight = kReceiptCardHeight +
-        10 +
-        (current == 0 ? _latestSpendingBadgeOverflow : 0);
+    // Newest receipt (index 0) needs room for the gold frame (+10) and the
+    // hanging "Latest Spending" badge; other cards are plain card height.
+    final viewportHeight = current == 0
+        ? kReceiptCardHeight + 10 + _latestSpendingBadgeOverflow
+        : kReceiptCardHeight;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -428,7 +429,7 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
           ),
         ),
         if (n > 1) ...[
-          const SizedBox(height: 14),
+          const SizedBox(height: 4),
           _DotIndicator(
             key: _dotsKey,
             count: n,
@@ -694,7 +695,7 @@ class _DotIndicator extends StatelessWidget {
           children: List.generate(count, (i) {
             final isActive = i == current;
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeInOut,

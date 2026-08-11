@@ -17,6 +17,8 @@ class _PendingImportsStub {
       throw UnsupportedError('Pending imports not supported on web');
 
   Future<void> updateStatus(String id, String status) async {}
+  Future<void> resetToLocalIfProcessing(String id) async {}
+  Future<int> resetAbandonedProcessing() async => 0;
   Future<void> delete(String id) async {}
   Future<void> syncToSupabase(PendingImportModel import) async {}
   Future<void> markSupabaseCompleted(String id, String transactionId) async {}

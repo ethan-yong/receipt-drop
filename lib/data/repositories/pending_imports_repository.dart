@@ -58,6 +58,35 @@ class PendingImportsRepository {
         .write(PendingImportsCompanion(status: Value(status)));
   }
 
+  /// Returns a single row to `local` only if it is still `processing`.
+  ///
+  /// Used when [PendingImportService.processImport] exits without a save —
+  /// e.g. system-back / barrier dismiss of the confirm sheet, which skips
+  /// the Cancel callback. Does not clobber `failed`.
+  Future<void> resetToLocalIfProcessing(String id) async {
+    await (_db.update(_db.pendingImports)
+          ..where((t) => t.id.equals(id) & t.status.equals('processing')))
+        .write(const PendingImportsCompanion(status: Value('local')));
+  }
+
+  /// Heals every row left in `processing`. That status is only valid while
+  /// an in-flight [PendingImportService.processImport] owns the UI; after a
+  /// process kill or a dismiss that skipped Cancel, cards would otherwise
+  /// stay spinner-locked forever. Returns the number of rows cleared.
+  ///
+  /// Snapshots ids first so a Process tap that lands mid-heal cannot have
+  /// its freshly-marked `processing` row wiped by a blanket status update.
+  Future<int> resetAbandonedProcessing() async {
+    final stuck = await (_db.select(_db.pendingImports)
+          ..where((t) => t.status.equals('processing')))
+        .get();
+    if (stuck.isEmpty) return 0;
+    final ids = stuck.map((r) => r.id).toList();
+    return (_db.update(_db.pendingImports)
+          ..where((t) => t.id.isIn(ids) & t.status.equals('processing')))
+        .write(const PendingImportsCompanion(status: Value('local')));
+  }
+
   /// Attaches a freeform note to a pending import — the write path used by
   /// the post-share notification's inline reply (both the foreground
   /// handler and the Android background-isolate callback) as well as any
