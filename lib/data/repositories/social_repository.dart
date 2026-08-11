@@ -90,6 +90,7 @@ class FriendshipView {
     required this.otherUserId,
     required this.otherDisplayName,
     required this.otherAvatarConfigJson,
+    required this.otherAvatarUrl,
   });
 
   final String id;
@@ -100,6 +101,9 @@ class FriendshipView {
   final String otherUserId;
   final String? otherDisplayName;
   final Map<String, dynamic>? otherAvatarConfigJson;
+
+  /// Real profile photo URL from `profiles.avatar_url` (Settings / setup).
+  final String? otherAvatarUrl;
 
   bool isIncomingRequestFor(String myUserId) =>
       status == FriendshipStatus.pending && addresseeId == myUserId;
@@ -229,6 +233,7 @@ class SocialRepository {
       otherDisplayName: row['other_display_name'] as String?,
       otherAvatarConfigJson:
           row['other_avatar_config'] as Map<String, dynamic>?,
+      otherAvatarUrl: row['other_avatar_url'] as String?,
     );
   }
 

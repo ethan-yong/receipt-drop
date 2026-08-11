@@ -83,7 +83,7 @@ Repositories that only talk to Supabase over HTTP (`avatar_repository.dart`, `ba
 
 ## Navigation / app shell
 
-`go_router` (`lib/core/routing/app_router.dart`) with a `StatefulShellRoute.indexedStack` of 4 tab branches (**Home, Feed, Map, Ranks** — rendered in `lib/widgets/main_shell.dart`, which also owns the centered capture FAB and a platform-adaptive bottom bar, Cupertino-blurred on iOS vs. Material notch on Android) plus ~14 root-navigator modal/detail routes (insights, history, settings, avatar, badges, save-success, summary, share-hint, onboarding, auth, friends, tx detail, places search, review). Redirect logic gates on `AppPrefs.onboardingComplete` + Supabase session, unless `Env.skipAuth` (defaults **true** in debug builds) bypasses straight to `/home` — a dev convenience, not a security control.
+`go_router` (`lib/core/routing/app_router.dart`) with a `StatefulShellRoute.indexedStack` of 4 tab branches (**Home, Feed, Map, Ranks** — rendered in `lib/widgets/main_shell.dart`, which also owns the centered capture FAB and a platform-adaptive bottom bar, Cupertino-blurred on iOS vs. Material notch on Android) plus ~17 root-navigator modal/detail routes (insights, history, settings, avatar, badges, save-success, share-hint, onboarding, auth, profile-setup, friends, tx detail, places search, place-picker, review, pending-imports, split-requests). Bill Split's payer-side flow (`BillSplitSheet`) is a bottom sheet launched from `TransactionDetailScreen`, not a router route — see [decisions.md](decisions.md). Redirect logic gates on `AppPrefs.onboardingComplete` + Supabase session, unless `Env.skipAuth` (defaults **true** in debug builds) bypasses straight to `/home` — a dev convenience, not a security control.
 
 ## External services
 

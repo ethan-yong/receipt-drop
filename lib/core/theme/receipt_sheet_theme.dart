@@ -10,6 +10,9 @@ import 'package:google_fonts/google_fonts.dart';
 /// Plus Jakarta Sans theme in `app_typography.dart`.
 abstract final class ReceiptSheetColors {
   static const background = Color(0xFFFAF3E7);
+
+  /// Post-save screen background (`#FCF6EA`) — also used by SaveSuccessScreen.
+  static const screenBackground = Color(0xFFFCF6EA);
   static const surface = Color(0xFFFFFDF8);
   static const ink = Color(0xFF4F2D23);
   static const error = Color(0xFFB4483B);

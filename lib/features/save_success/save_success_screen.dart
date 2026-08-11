@@ -173,7 +173,11 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
 
   void _navigateAway() {
     if (!mounted) return;
-    context.goNamed('insights');
+    if (widget.savedTxs.length == 1) {
+      context.goNamed('receipt-saved', extra: widget.savedTxs.first);
+    } else {
+      context.goNamed('insights');
+    }
   }
 
   void _skip() {
@@ -280,7 +284,7 @@ class _SaveSuccessScreenState extends State<SaveSuccessScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFFCF6EA),
+      backgroundColor: ReceiptSheetColors.screenBackground,
       body: SafeArea(
         child: AnimatedBuilder(
           animation: Listenable.merge([_mainCtrl, _wingCtrl, _bobCtrl]),
@@ -554,7 +558,7 @@ class _TodayStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFFCF6EA),
+      color: ReceiptSheetColors.screenBackground,
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -8,6 +8,7 @@ import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/repositories/avatar_repository.dart';
 import '../../data/repositories/badge_repository.dart';
+import '../../data/repositories/bill_split_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/avatar_mood.dart';
 import '../../domain/logic/badge_catalog.dart';
@@ -34,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
       AppPrefs.shareCoachMarkPending && !AppPrefs.shareCoachMarkSeen;
   BadgeCatalog? _badgeCatalog;
   final _badgeStream = BadgeRepository.streamAll();
+  final _splitRequestsStream = BillSplitRepository.streamMyPendingSplitParticipants();
   double _topOverlayHeight = 0;
 
   @override
@@ -205,14 +207,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   top: 0,
                   left: 0,
                   right: 0,
-                  child: _HomeTopOverlay(
-                    showCoachMark: _showCoachMark,
-                    onDismissCoachMark: () =>
-                        setState(() => _showCoachMark = false),
-                    stuckCount: stuck,
-                    onRetrySync: _retrySync,
-                    needsReview: needsReview,
-                    onHeightChanged: _onTopOverlayHeightChanged,
+                  child: StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: _splitRequestsStream,
+                    builder: (context, splitSnapshot) {
+                      final pendingSplitRequests = (splitSnapshot.data ?? const [])
+                          .where((row) => row['paid'] != true)
+                          .length;
+                      return _HomeTopOverlay(
+                        showCoachMark: _showCoachMark,
+                        onDismissCoachMark: () =>
+                            setState(() => _showCoachMark = false),
+                        stuckCount: stuck,
+                        onRetrySync: _retrySync,
+                        needsReview: needsReview,
+                        pendingSplitRequests: pendingSplitRequests,
+                        onHeightChanged: _onTopOverlayHeightChanged,
+                      );
+                    },
                   ),
                 ),
               ],
@@ -232,6 +243,7 @@ class _HomeTopOverlay extends StatefulWidget {
     required this.stuckCount,
     required this.onRetrySync,
     required this.needsReview,
+    required this.pendingSplitRequests,
     required this.onHeightChanged,
   });
 
@@ -240,6 +252,7 @@ class _HomeTopOverlay extends StatefulWidget {
   final int stuckCount;
   final VoidCallback onRetrySync;
   final int needsReview;
+  final int pendingSplitRequests;
   final ValueChanged<double> onHeightChanged;
 
   @override
@@ -305,6 +318,11 @@ class _HomeTopOverlayState extends State<_HomeTopOverlay> {
                   count: widget.needsReview,
                   onTap: () => context.pushNamed('review'),
                 ),
+              if (widget.pendingSplitRequests > 0)
+                _SplitRequestsBanner(
+                  count: widget.pendingSplitRequests,
+                  onTap: () => context.pushNamed('split-requests'),
+                ),
             ],
           ),
         ),
@@ -362,6 +380,67 @@ class _NeedsReviewBanner extends StatelessWidget {
                 Icons.chevron_right,
                 size: 18,
                 color: AppColors.badgePendingText,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Discovery surface for Bill Split requests — there's no push-notification
+/// system in this app, so this banner (and `SplitRequestsScreen` it links
+/// to) is the only way a friend learns someone split a receipt with them.
+class _SplitRequestsBanner extends StatelessWidget {
+  const _SplitRequestsBanner({required this.count, required this.onTap});
+
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.xs,
+        AppSpacing.md,
+        0,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppSpacing.chipBorderRadius,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.badgeNeedsAmountBg,
+            borderRadius: AppSpacing.chipBorderRadius,
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.call_split,
+                size: 18,
+                color: AppColors.badgeNeedsAmountText,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  count == 1
+                      ? 'A friend split a bill with you'
+                      : '$count split requests waiting',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.badgeNeedsAmountText,
+                      ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                size: 18,
+                color: AppColors.badgeNeedsAmountText,
               ),
             ],
           ),

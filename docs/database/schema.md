@@ -122,6 +122,17 @@ Added `20260723030000_ocr_misread_patterns.sql`. `id`, `from_char text`, `to_cha
 
 Global and anonymous by construction — rows are abstracted single-character substitution counts only (e.g. "a predicted `O` was corrected to a confirmed `0`"); the amount/receipt content that produced them never reaches this table at all (the abstraction — `lib/domain/logic/misread_pattern_extractor.dart` — runs client-side before the record is ever constructed, and only proceeds when the predicted/confirmed strings align as a small, localized fix). Locked down exactly like `merchant_aliases`: zero RLS policies, access only via `lookup_misread_patterns()`/`upsert_misread_pattern()`, execute revoked from `public` then granted to `authenticated`. Not yet consumed server-side (`services/ocr-api` has no Postgres connectivity today — see `docs/system/decisions.md`); aggregation only for v1.
 
+### `friend_groups` / `friend_group_members`
+Added `20260807000000_friend_groups.sql`. `friend_groups`: `id`, `owner_id` FK → `profiles` (cascade), `name`, `created_at`. `friend_group_members`: `group_id` FK → `friend_groups` (cascade), `friend_user_id` FK → `profiles` (cascade), `added_at`, `primary key (group_id, friend_user_id)`. Owner-only RLS on both; a member row's insert additionally requires `friend_user_id` be an accepted friend of the caller (checked declaratively against `friendships`, no trigger). Named, persisted subsets of a user's friends for one-tap selection in the Bill Split flow — not a general-purpose social feature.
+
+### `bill_splits` / `bill_split_participants` / `bill_split_item_assignments`
+Added `20260807010000_bill_splits.sql`. A receipt's payer splits it with a subset of their friends; v1 is payer-created bookkeeping, but **friends can see and self-report their own share as paid** (see below) — there is no push-notification system in this app, so discovery is via `SplitRequestsScreen`/a Home banner, both driven by realtime reads, not a delivered notification.
+
+- `bill_splits`: `id`, `transaction_id` FK → `transactions` (cascade, **unique** — one split per receipt), `owner_id` FK → `profiles` (cascade), `mode text` (`equal|by_item`), `total_myr` snapshotted at creation (not re-derived from `transactions.amount_myr`, so a later amount edit can't invalidate already-collected shares), `created_at`. RLS: select/insert/delete owner-only; **no update policy** — immutable once created, like `receipt_line_items`. No in-place edit UI in v1.
+- `bill_split_participants`: `id`, `split_id` FK → `bill_splits` (cascade), `friend_user_id` FK → `profiles` (cascade), `share_myr`, `paid boolean default false`, `paid_at`, `last_reminded_at`, `created_at`, `unique(split_id, friend_user_id)`. RLS is where friend-visibility lives: the payer has full select/insert/update/delete on their split's rows, **and a participant can additionally select/update their own row** (`friend_user_id = auth.uid()`) — two separate permissive update policies, Postgres ORs them. No column-level restriction (no precedent for that anywhere else in this schema); the friend-side client codepath only ever sends `{paid, paid_at}`.
+- `bill_split_item_assignments`: `id`, `split_id` FK → `bill_splits` (cascade), `line_item_id` FK → `receipt_line_items` (cascade), `assigned_user_id` FK → `profiles` (cascade), `created_at`, `unique(split_id, line_item_id, assigned_user_id)`. Only populated for `mode='by_item'`; owner-only RLS (never edited by a friend). `assigned_user_id` can be the owner or any friend — no fake `'you'` sentinel row.
+- `get_my_split_requests()` — `security definer`, joins `bill_split_participants` (`where friend_user_id = auth.uid()`) → `bill_splits` → `transactions` (for `merchant_raw`) → `profiles` (payer's name/`avatar_config`/`avatar_url`). The only cross-user read in this feature — `transactions`/`profiles` are otherwise owner-only-readable, same reasoning as `get_friend_feed()`. `avatar_url` added in `20260811120000` so Split Requests can show the real profile photo.
+
 ## Storage buckets (`20260511000001_storage.sql`)
 
 | Bucket | Public | Policy |
@@ -135,7 +146,9 @@ Global and anonymous by construction — rows are abstracted single-character su
 |---|---|---|---|---|
 | `handle_new_user()` (+ trigger `on_auth_user_created`) | `security definer` | Seeds `profiles` row on signup | `20260511000000` | Postgres trigger only |
 | `find_user_by_email(lookup_email)` | `security definer` | Resolve email → profile id/name without exposing `auth.users` | `20260626000002` | `social_repository.dart` (add friend) |
-| `list_friendships()` | `security definer` | Friendship rows joined with the other party's public profile fields | `20260626000002` | `social_repository.dart` |
+| `list_friendships()` | `security definer` | Friendship rows joined with the other party's public profile fields (`other_avatar_config` + `other_avatar_url`) | `20260626000002`, `avatar_url` in `20260811120000` | `social_repository.dart` |
+| `list_friend_groups()` | `security definer` | Owner's friend groups + member display name/`avatar_config`/`avatar_url` | `20260807000000`, `avatar_url` in `20260811120000` | `bill_split_repository.dart` |
+| `get_my_split_requests()` | `security definer` | Splits the caller is a participant in, with payer name/`avatar_url` + merchant | `20260807010000`, `avatar_url` in `20260811120000` | `bill_split_repository.dart` |
 | `get_friend_feed()` | `security definer` | Accepted friends' feed posts + per-post reaction counts, limit 100 | `20260626000002` | `social_repository.dart` |
 | `get_friend_leaderboard()` | **`security invoker`** (redefined from definer in `20260630000000`) | Ranks self + accepted friends by `current_streak desc, badge_count desc` — explicitly a placeholder ranking pending product sign-off | `20260626000003`, redefined `20260630000000` | `services/leaderboard-api/app/db.py` (JWT-impersonated) and Flutter's direct RPC fallback when `LEADERBOARD_API_URL` unset |
 | `get_leaderboard_profiles_by_ids(uuid[])` | `security definer` | Narrow batch profile hydration for global leaderboard display | `20260630100000` | `leaderboard-api/app/db.py` |
@@ -166,6 +179,13 @@ feed_posts 1─N feed_reactions (post_id, cascade)
 profiles 1─N feed_reactions (user_id, cascade)
 profiles 1─N pending_receipts (user_id, cascade)
 pending_receipts 0..1─0..1 transactions (transaction_id, set null on delete)
+profiles 1─N friend_groups (owner_id, cascade)
+friend_groups 1─N friend_group_members (group_id, cascade)
+profiles 1─N friend_group_members as friend_user_id (cascade)
+transactions 1─0..1 bill_splits (transaction_id, cascade, unique)
+bill_splits 1─N bill_split_participants (split_id, cascade)
+bill_splits 1─N bill_split_item_assignments (split_id, cascade)
+receipt_line_items 1─N bill_split_item_assignments (line_item_id, cascade)
 ```
 
 `merchant_aliases` has no FK to any other table — it's a standalone global cache keyed by `(alias_text_normalized, geohash_bucket)`, not by user or transaction. `ocr_misread_patterns` likewise has no FK — it's a standalone global, anonymized aggregate keyed by `(from_char, to_char)`. `user_field_corrections` FKs to both `profiles` and `transactions` (cascade both ways); `user_category_preferences` FKs only to `profiles`, keyed by `(user_id, merchant_normalized)`.
