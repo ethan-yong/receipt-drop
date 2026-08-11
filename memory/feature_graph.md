@@ -150,12 +150,13 @@ Depends on:
 - No push-notification system exists anywhere in this app — friend-side discovery is a Home banner + realtime Supabase stream, not a delivered notification
 
 Files:
-- `lib/features/bill_split/bill_split_sheet.dart` (payer flow, `AdaptiveSheet.showForm`, same mechanism as `receipt_confirm_sheet.dart`), `bill_split_step_who.dart`, `bill_split_step_how.dart`, `bill_split_step_review.dart`, `create_group_sheet.dart`, `person_avatar.dart`, `split_requests_screen.dart` (friend-side, real `go_router` route `/split-requests`)
+- `lib/features/bill_split/bill_split_sheet.dart` (payer flow, `AdaptiveSheet.showForm`, same mechanism as `receipt_confirm_sheet.dart`), `bill_split_step_who.dart`, `bill_split_step_how.dart`, `bill_split_step_review.dart`, `create_group_sheet.dart`, `person_avatar.dart` (wraps `ProfilePhoto` / `avatar_url` — not `BlobAvatar`), `split_requests_screen.dart` (friend-side, real `go_router` route `/split-requests`)
 - `lib/domain/logic/bill_split_math.dart` (`splitCentsEvenly`/`splitEqual`/`splitByItems`, pure — `test/bill_split_math_test.dart`)
 - `lib/domain/models/bill_split.dart`, `friend_group.dart`
 - `lib/data/repositories/bill_split_repository.dart`
 - `lib/core/theme/bill_split_theme.dart` (reuses `ReceiptSheetColors`/`balooText()`)
-- `supabase/migrations/20260807000000_friend_groups.sql`, `20260807010000_bill_splits.sql`
+- `lib/widgets/profile_photo.dart` (shared real-photo widget)
+- `supabase/migrations/20260807000000_friend_groups.sql`, `20260807010000_bill_splits.sql`, `20260811120000_bill_split_avatar_url.sql`
 - Entry point: `lib/features/tx_detail/transaction_detail_screen.dart`'s "Split this bill" button
 - Discovery: `lib/features/home/home_screen.dart`'s `_SplitRequestsBanner` (mirrors the pre-existing `_NeedsReviewBanner`/pending-imports pattern)
 

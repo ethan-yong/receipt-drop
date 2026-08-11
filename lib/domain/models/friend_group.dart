@@ -3,12 +3,14 @@ class FriendGroupMember {
   const FriendGroupMember({
     required this.userId,
     required this.displayName,
-    required this.avatarConfigJson,
+    required this.avatarUrl,
   });
 
   final String userId;
   final String? displayName;
-  final Map<String, dynamic>? avatarConfigJson;
+
+  /// Real profile photo URL from `profiles.avatar_url`.
+  final String? avatarUrl;
 }
 
 /// A named, persisted subset of the caller's accepted friends

@@ -17,6 +17,7 @@ class BillSplitStepHow extends StatelessWidget {
     required this.transaction,
     required this.friends,
     required this.ownerId,
+    this.ownerAvatarUrl,
     required this.includedPersonIds,
     required this.mode,
     required this.canUseByItem,
@@ -30,6 +31,7 @@ class BillSplitStepHow extends StatelessWidget {
   final TransactionView transaction;
   final List<FriendshipView> friends;
   final String? ownerId;
+  final String? ownerAvatarUrl;
   final List<String> includedPersonIds;
   final BillSplitMode mode;
   final bool canUseByItem;
@@ -45,13 +47,11 @@ class BillSplitStepHow extends StatelessWidget {
     return f?.otherDisplayName ?? 'Friend';
   }
 
-  Map<String, dynamic>? _avatarFor(String personId) {
-    if (personId == ownerId) return null;
+  String? _avatarFor(String personId) {
+    if (personId == ownerId) return ownerAvatarUrl;
     final f = friends.where((f) => f.otherUserId == personId).firstOrNull;
-    return f?.otherAvatarConfigJson;
+    return f?.otherAvatarUrl;
   }
-
-  bool _isYou(String personId) => personId == ownerId;
 
   @override
   Widget build(BuildContext context) {
@@ -82,7 +82,6 @@ class BillSplitStepHow extends StatelessWidget {
                   personIds: includedPersonIds,
                   nameFor: _nameFor,
                   avatarFor: _avatarFor,
-                  isYouFor: _isYou,
                 )
               : _ByItemList(
                   lineItems: lineItems,
@@ -90,7 +89,6 @@ class BillSplitStepHow extends StatelessWidget {
                   itemAssignments: itemAssignments,
                   nameFor: _nameFor,
                   avatarFor: _avatarFor,
-                  isYouFor: _isYou,
                   onToggle: onToggleItemPerson,
                 ),
         ),
@@ -101,7 +99,6 @@ class BillSplitStepHow extends StatelessWidget {
             personIds: includedPersonIds,
             nameFor: _nameFor,
             avatarFor: _avatarFor,
-            isYouFor: _isYou,
           ),
         Container(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 22),
@@ -234,14 +231,12 @@ class _EqualSplitList extends StatelessWidget {
     required this.personIds,
     required this.nameFor,
     required this.avatarFor,
-    required this.isYouFor,
   });
 
   final double totalMyr;
   final List<String> personIds;
   final String Function(String) nameFor;
-  final Map<String, dynamic>? Function(String) avatarFor;
-  final bool Function(String) isYouFor;
+  final String? Function(String) avatarFor;
 
   @override
   Widget build(BuildContext context) {
@@ -271,9 +266,9 @@ class _EqualSplitList extends StatelessWidget {
             child: Row(
               children: [
                 PersonAvatar(
-                  isYou: isYouFor(id),
+                  avatarUrl: avatarFor(id),
                   displayName: nameFor(id),
-                  avatarConfigJson: avatarFor(id),
+                  userId: id,
                   size: 36,
                 ),
                 const SizedBox(width: 12),
@@ -302,7 +297,6 @@ class _ByItemList extends StatelessWidget {
     required this.itemAssignments,
     required this.nameFor,
     required this.avatarFor,
-    required this.isYouFor,
     required this.onToggle,
   });
 
@@ -310,8 +304,7 @@ class _ByItemList extends StatelessWidget {
   final List<String> personIds;
   final Map<String, Set<String>> itemAssignments;
   final String Function(String) nameFor;
-  final Map<String, dynamic>? Function(String) avatarFor;
-  final bool Function(String) isYouFor;
+  final String? Function(String) avatarFor;
   final void Function(String lineItemId, String personId) onToggle;
 
   @override
@@ -332,7 +325,6 @@ class _ByItemList extends StatelessWidget {
               assigned: itemAssignments[item.id] ?? const {},
               nameFor: nameFor,
               avatarFor: avatarFor,
-              isYouFor: isYouFor,
               onToggle: (personId) => onToggle(item.id!, personId),
             ),
             const SizedBox(height: 16),
@@ -349,7 +341,6 @@ class _ItemRow extends StatelessWidget {
     required this.assigned,
     required this.nameFor,
     required this.avatarFor,
-    required this.isYouFor,
     required this.onToggle,
   });
 
@@ -357,8 +348,7 @@ class _ItemRow extends StatelessWidget {
   final List<String> personIds;
   final Set<String> assigned;
   final String Function(String) nameFor;
-  final Map<String, dynamic>? Function(String) avatarFor;
-  final bool Function(String) isYouFor;
+  final String? Function(String) avatarFor;
   final void Function(String personId) onToggle;
 
   @override
@@ -385,9 +375,9 @@ class _ItemRow extends StatelessWidget {
           children: [
             for (final personId in personIds) ...[
               _ItemAvatarToggle(
-                isYou: isYouFor(personId),
+                personId: personId,
                 displayName: nameFor(personId),
-                avatarConfigJson: avatarFor(personId),
+                avatarUrl: avatarFor(personId),
                 on: assigned.contains(personId),
                 onTap: () => onToggle(personId),
               ),
@@ -402,16 +392,16 @@ class _ItemRow extends StatelessWidget {
 
 class _ItemAvatarToggle extends StatelessWidget {
   const _ItemAvatarToggle({
-    required this.isYou,
+    required this.personId,
     required this.displayName,
-    required this.avatarConfigJson,
+    required this.avatarUrl,
     required this.on,
     required this.onTap,
   });
 
-  final bool isYou;
+  final String personId;
   final String? displayName;
-  final Map<String, dynamic>? avatarConfigJson;
+  final String? avatarUrl;
   final bool on;
   final VoidCallback onTap;
 
@@ -432,9 +422,9 @@ class _ItemAvatarToggle extends StatelessWidget {
             ),
           ),
           child: PersonAvatar(
-            isYou: isYou,
+            avatarUrl: avatarUrl,
             displayName: displayName,
-            avatarConfigJson: avatarConfigJson,
+            userId: personId,
             size: 26,
           ),
         ),
@@ -450,15 +440,13 @@ class _LiveTotalsStrip extends StatelessWidget {
     required this.personIds,
     required this.nameFor,
     required this.avatarFor,
-    required this.isYouFor,
   });
 
   final List<ReceiptLineItem> lineItems;
   final Map<String, Set<String>> itemAssignments;
   final List<String> personIds;
   final String Function(String) nameFor;
-  final Map<String, dynamic>? Function(String) avatarFor;
-  final bool Function(String) isYouFor;
+  final String? Function(String) avatarFor;
 
   @override
   Widget build(BuildContext context) {
@@ -493,9 +481,9 @@ class _LiveTotalsStrip extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     PersonAvatar(
-                      isYou: isYouFor(id),
+                      avatarUrl: avatarFor(id),
                       displayName: nameFor(id),
-                      avatarConfigJson: avatarFor(id),
+                      userId: id,
                       size: 20,
                     ),
                     const SizedBox(width: 6),

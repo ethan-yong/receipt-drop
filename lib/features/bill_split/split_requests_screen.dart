@@ -4,10 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/bill_split_theme.dart';
 import '../../data/repositories/bill_split_repository.dart';
-import '../../domain/logic/avatar_mood.dart';
-import '../../domain/models/avatar_config.dart';
 import '../../domain/models/bill_split.dart';
-import '../../widgets/blob_avatar.dart';
+import '../../widgets/profile_photo.dart';
 import '../../widgets/skeleton.dart';
 
 /// A friend's view of every split they're a participant in — the only
@@ -52,7 +50,7 @@ class _SplitRequestsScreenState extends State<SplitRequestsScreen> {
               merchantRaw: req.merchantRaw,
               payerUserId: req.payerUserId,
               payerDisplayName: req.payerDisplayName,
-              payerAvatarConfigJson: req.payerAvatarConfigJson,
+              payerAvatarUrl: req.payerAvatarUrl,
               mode: req.mode,
               totalMyr: req.totalMyr,
               shareMyr: req.shareMyr,
@@ -99,7 +97,8 @@ class _SplitRequestsScreenState extends State<SplitRequestsScreen> {
                 : ListView(
                     padding: const EdgeInsets.all(AppSpacing.md),
                     children: [
-                      for (final r in requests) _SplitRequestTile(request: r, onToggle: () => _togglePaid(r)),
+                      for (final r in requests)
+                        _SplitRequestTile(request: r, onToggle: () => _togglePaid(r)),
                     ],
                   ),
       ),
@@ -140,9 +139,6 @@ class _SplitRequestTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final config = request.payerAvatarConfigJson != null
-        ? AvatarConfig.fromJson(request.payerAvatarConfigJson!)
-        : AvatarConfig.defaultConfig();
     final merchant = request.merchantRaw?.trim();
     final paid = request.paid;
 
@@ -150,7 +146,12 @@ class _SplitRequestTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
         children: [
-          BlobAvatar(mood: AvatarMood.balanced, config: config, size: 40, animate: false),
+          ProfilePhoto(
+            size: 40,
+            avatarUrl: request.payerAvatarUrl,
+            displayName: request.payerDisplayName,
+            userId: request.payerUserId,
+          ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(

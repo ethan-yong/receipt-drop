@@ -112,7 +112,7 @@ class MySplitRequestView {
     required this.merchantRaw,
     required this.payerUserId,
     required this.payerDisplayName,
-    required this.payerAvatarConfigJson,
+    required this.payerAvatarUrl,
     required this.mode,
     required this.totalMyr,
     required this.shareMyr,
@@ -127,7 +127,9 @@ class MySplitRequestView {
   final String? merchantRaw;
   final String payerUserId;
   final String? payerDisplayName;
-  final Map<String, dynamic>? payerAvatarConfigJson;
+
+  /// Real profile photo URL from the payer's `profiles.avatar_url`.
+  final String? payerAvatarUrl;
   final BillSplitMode mode;
   final double totalMyr;
   final double shareMyr;

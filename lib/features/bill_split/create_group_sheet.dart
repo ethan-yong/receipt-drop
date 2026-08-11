@@ -165,9 +165,9 @@ class _MemberRow extends StatelessWidget {
         child: Row(
           children: [
             PersonAvatar(
-              isYou: false,
+              avatarUrl: friendship.otherAvatarUrl,
               displayName: friendship.otherDisplayName,
-              avatarConfigJson: friendship.otherAvatarConfigJson,
+              userId: friendship.otherUserId,
               size: 36,
             ),
             const SizedBox(width: 12),

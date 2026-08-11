@@ -44,8 +44,7 @@ class BillSplitRepository {
                 (row) => FriendGroupMember(
                   userId: row['member_user_id'] as String,
                   displayName: row['member_display_name'] as String?,
-                  avatarConfigJson:
-                      row['member_avatar_config'] as Map<String, dynamic>?,
+                  avatarUrl: row['member_avatar_url'] as String?,
                 ),
               )
               .toList(),
@@ -278,7 +277,7 @@ class BillSplitRepository {
           merchantRaw: row['merchant_raw'] as String?,
           payerUserId: row['payer_user_id'] as String,
           payerDisplayName: row['payer_display_name'] as String?,
-          payerAvatarConfigJson: row['payer_avatar_config'] as Map<String, dynamic>?,
+          payerAvatarUrl: row['payer_avatar_url'] as String?,
           mode: billSplitModeFromString(row['mode'] as String),
           totalMyr: (row['total_myr'] as num).toDouble(),
           shareMyr: (row['share_myr'] as num).toDouble(),

@@ -7,6 +7,7 @@ import '../../core/bootstrap/app_services.dart';
 import '../../core/platform/adaptive_sheet.dart';
 import '../../core/theme/bill_split_theme.dart';
 import '../../data/repositories/bill_split_repository.dart';
+import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/bill_split_math.dart';
 import '../../domain/models/bill_split.dart';
@@ -49,6 +50,8 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   List<FriendshipView> _friends = const [];
   List<FriendGroupView> _groups = const [];
   BillSplitView? _existingSplit;
+  String? _ownerAvatarUrl;
+  String? _ownerDisplayName;
 
   int _step = 0;
   final Set<String> _selectedFriendIds = {};
@@ -73,23 +76,30 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   }
 
   Future<void> _load() async {
+    final ownerId = _ownerId;
     final results = await Future.wait([
       AppServices.transactions.getById(widget.transactionId),
       SocialRepository.listFriendships(),
       BillSplitRepository.listFriendGroups(),
       BillSplitRepository.getSplitForTransaction(widget.transactionId),
+      if (ownerId != null) ProfileRepository.fetchProfileHeader(ownerId),
     ]);
     if (!mounted) return;
     final tx = results[0] as TransactionView?;
     final friendships = results[1] as List<FriendshipView>;
     final groups = results[2] as List<FriendGroupView>;
     final existingSplit = results[3] as BillSplitView?;
+    final ownerHeader = ownerId != null
+        ? results[4] as ({String? displayName, String? username, String? avatarUrl})
+        : null;
     setState(() {
       _tx = tx;
       _friends =
           friendships.where((f) => f.status == FriendshipStatus.accepted).toList();
       _groups = groups;
       _existingSplit = existingSplit;
+      _ownerAvatarUrl = ownerHeader?.avatarUrl;
+      _ownerDisplayName = ownerHeader?.displayName;
       _loading = false;
       if (existingSplit != null) {
         // A split already exists for this receipt — open straight at
@@ -311,12 +321,16 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
           onSelectGroup: _selectGroup,
           onCreateGroup: _createGroupAndRefresh,
           onContinue: _selectedFriendIds.isNotEmpty ? _goToStep1 : null,
+          ownerAvatarUrl: _ownerAvatarUrl,
+          ownerDisplayName: _ownerDisplayName,
+          ownerUserId: _ownerId,
         );
       case 1:
         return BillSplitStepHow(
           transaction: tx,
           friends: _friends,
           ownerId: _ownerId,
+          ownerAvatarUrl: _ownerAvatarUrl,
           includedPersonIds: _includedPersonIds(),
           mode: _mode,
           canUseByItem: _canUseByItem,

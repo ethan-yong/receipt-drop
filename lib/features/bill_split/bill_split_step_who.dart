@@ -20,6 +20,9 @@ class BillSplitStepWho extends StatelessWidget {
     required this.onSelectGroup,
     required this.onCreateGroup,
     required this.onContinue,
+    this.ownerAvatarUrl,
+    this.ownerDisplayName,
+    this.ownerUserId,
   });
 
   final TransactionView transaction;
@@ -30,6 +33,9 @@ class BillSplitStepWho extends StatelessWidget {
   final ValueChanged<FriendGroupView> onSelectGroup;
   final VoidCallback onCreateGroup;
   final VoidCallback? onContinue;
+  final String? ownerAvatarUrl;
+  final String? ownerDisplayName;
+  final String? ownerUserId;
 
   bool _isGroupActive(FriendGroupView g) {
     final memberIds = g.members.map((m) => m.userId).toSet();
@@ -114,7 +120,11 @@ class BillSplitStepWho extends StatelessWidget {
               const SizedBox(height: 20),
               const _SectionLabel('Or pick people'),
               const SizedBox(height: 6),
-              const _YouRow(),
+              _YouRow(
+                avatarUrl: ownerAvatarUrl,
+                displayName: ownerDisplayName,
+                userId: ownerUserId,
+              ),
               if (friends.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -169,7 +179,11 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _YouRow extends StatelessWidget {
-  const _YouRow();
+  const _YouRow({this.avatarUrl, this.displayName, this.userId});
+
+  final String? avatarUrl;
+  final String? displayName;
+  final String? userId;
 
   @override
   Widget build(BuildContext context) {
@@ -177,7 +191,12 @@ class _YouRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 11),
       child: Row(
         children: [
-          const PersonAvatar(isYou: true, size: 40),
+          PersonAvatar(
+            avatarUrl: avatarUrl,
+            displayName: displayName ?? 'You',
+            userId: userId,
+            size: 40,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -221,9 +240,9 @@ class _FriendRow extends StatelessWidget {
         child: Row(
           children: [
             PersonAvatar(
-              isYou: false,
+              avatarUrl: friendship.otherAvatarUrl,
               displayName: friendship.otherDisplayName,
-              avatarConfigJson: friendship.otherAvatarConfigJson,
+              userId: friendship.otherUserId,
               size: 40,
             ),
             const SizedBox(width: 12),
@@ -292,9 +311,9 @@ class _GroupChip extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.only(left: -8),
                       child: PersonAvatar(
-                        isYou: false,
+                        avatarUrl: m.avatarUrl,
                         displayName: m.displayName,
-                        avatarConfigJson: m.avatarConfigJson,
+                        userId: m.userId,
                         size: 24,
                       ),
                     ),

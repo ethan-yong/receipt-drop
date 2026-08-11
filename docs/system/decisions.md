@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Bill Split people use real profile photos, not BlobAvatar (2026-08-11)
+
+**Decision**: Bill Split's `PersonAvatar` and `SplitRequestsScreen` render `profiles.avatar_url` via the shared `ProfilePhoto` widget (same as map friend pins), with initials fallback when no photo is set. Dropped `BlobAvatar`/`avatar_config` from this flow. Surfaced `avatar_url` through `list_friendships()`, `list_friend_groups()`, and `get_my_split_requests()` in `20260811120000_bill_split_avatar_url.sql` (DROP + recreate, same Postgres return-type pattern as the leaderboard/map pin migrations).
+
+**Reason**: profile setup/Settings already collect a real photo; the stylized dart/blob avatar was a leftover from before that existed and looked wrong next to the rest of the product.
+
+**Alternatives considered**: keeping blob as a fallback when `avatar_url` is null (rejected — initials match Settings/map and avoid two competing "avatar" systems in one sheet); also swapping Friends screen / customizer blob tiles in the same pass (deferred — out of scope for the Bill Split bug report).
+
+**Tradeoffs**: `FriendshipView.otherAvatarConfigJson` remains for Friends/feed callers that still use `BlobAvatar`; Bill Split only reads `otherAvatarUrl`. Local/dev DBs need the new migration applied or friend/group/split-request lists come back empty (RPC signature mismatch).
+
+---
+
 ## Bill Split flow: friend groups + payer/friend split bookkeeping (2026-08-07)
 
 **Decision**: A new `lib/features/bill_split/` flow, entered via a "Split this bill" button on `TransactionDetailScreen`, lets a receipt's payer split it with friends (individually or via a saved, persisted **friend group** — `friend_groups`/`friend_group_members`, `20260807000000_friend_groups.sql`) using either an equal split or a per-line-item split (`bill_split_math.dart`, ported from the source design prototype's cents-remainder algorithm so shares always sum exactly to the total). The resulting split (`bill_splits`/`bill_split_participants`/`bill_split_item_assignments`, `20260807010000_bill_splits.sql`) is **not payer-only bookkeeping**: a friend can see splits they're part of (`get_my_split_requests()` RPC, `SplitRequestsScreen`) and self-report their own share as paid, in addition to the payer marking it. Presented as a bottom sheet (`BillSplitSheet`, via `AdaptiveSheet.showForm`) — the same mechanism as `ReceiptConfirmSheet` — rather than a routed screen, since it's a modal flow launched from an already-open receipt; the friend-facing `SplitRequestsScreen` is a real route (`/split-requests`) since it's reached independently from a Home banner.
