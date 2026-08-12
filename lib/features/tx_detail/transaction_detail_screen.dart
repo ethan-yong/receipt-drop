@@ -316,6 +316,16 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }
   }
 
+  /// Pop when opened from history/map; otherwise land Home (e.g. after
+  /// post-save View receipt used `goNamed` and left no stack).
+  void _leave() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.goNamed('home');
+    }
+  }
+
   Future<void> _save() async {
     _commitAllPendingEdits();
     final tx = await AppServices.transactions.getById(widget.transactionId);
@@ -340,7 +350,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Saved')),
       );
-      context.pop();
+      _leave();
     }
   }
 
@@ -367,7 +377,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     );
     if (ok == true) {
       await AppServices.transactions.deleteTransaction(widget.transactionId);
-      if (mounted) context.pop();
+      if (mounted) _leave();
     }
   }
 
@@ -526,7 +536,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+          // From receipt-saved we `goNamed` here (no stack to pop) — land home.
+          onPressed: _leave,
         ),
         title: const Text('Transaction'),
       ),

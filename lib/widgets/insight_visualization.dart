@@ -114,7 +114,7 @@ String _formatInsightRm(double value) {
 }
 
 /// Horizontal inset so endpoint dots and edge labels aren't clipped.
-const _forecastChartHorizontalPad = 0.2;
+const _insightChartHorizontalPad = 0.2;
 
 FlDotData _forecastDot(Color color) => FlDotData(
       show: true,
@@ -229,6 +229,10 @@ class _LineTrendVisualState extends State<_LineTrendVisual> {
               widget.baseline + (widget.todayTotal - widget.baseline) * t;
           return LineChart(
             LineChartData(
+              // Keep endpoints inset so centered title text isn't half-clipped
+              // by the parent insight card (e.g. "Usual Thursday").
+              minX: -_insightChartHorizontalPad,
+              maxX: 1 + _insightChartHorizontalPad,
               minY: 0,
               maxY: maxY,
               showingTooltipIndicators: _heldTooltips,
@@ -243,10 +247,32 @@ class _LineTrendVisualState extends State<_LineTrendVisual> {
                   sideTitles: SideTitles(
                     showTitles: true,
                     interval: 1,
-                    getTitlesWidget: (v, _) => Text(
-                      v.round() == 0 ? 'Usual ${widget.weekday}' : 'Today',
-                      style: labelStyle,
-                    ),
+                    reservedSize: 22,
+                    getTitlesWidget: (v, meta) {
+                      // Pad extends minX/maxX past 0 and 1; ignore those edges.
+                      final String label;
+                      if ((v - 0).abs() < 1e-6) {
+                        label = 'Usual ${widget.weekday}';
+                      } else if ((v - 1).abs() < 1e-6) {
+                        label = 'Today';
+                      } else {
+                        return const SizedBox.shrink();
+                      }
+                      return SideTitleWidget(
+                        axisSide: meta.axisSide,
+                        space: 4,
+                        fitInside: SideTitleFitInsideData.fromTitleMeta(
+                          meta,
+                          distanceFromEdge: 0,
+                        ),
+                        child: Text(
+                          label,
+                          style: labelStyle,
+                          maxLines: 1,
+                          softWrap: false,
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -662,8 +688,8 @@ class _ForecastProjectionVisualState extends State<_ForecastProjectionVisual>
             );
             return LineChart(
               LineChartData(
-                minX: -_forecastChartHorizontalPad,
-                maxX: 2 + _forecastChartHorizontalPad,
+                minX: -_insightChartHorizontalPad,
+                maxX: 2 + _insightChartHorizontalPad,
                 minY: -maxY * 0.04,
                 maxY: maxY,
                 clipData: const FlClipData.none(),
