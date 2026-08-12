@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -13,6 +12,7 @@ import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/impact_level.dart';
 import '../../domain/models/field_correction.dart';
 import '../../domain/models/receipt_line_item.dart';
+import '../../widgets/quantity_picker_sheet.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
 import '../places/place_picker_screen.dart';
 import '../places/places_search_screen.dart';
@@ -492,7 +492,7 @@ class _ReceiptConfirmSheetState extends State<ReceiptConfirmSheet> {
       backgroundColor: ReceiptSheetColors.surface,
       topRadius: kReceiptSheetRadius,
       showDragHandle: false,
-      child: _QuantityPickerSheet(
+      child: QuantityPickerSheet(
         itemName: _names[index],
         initialQuantity: _quantities[index],
       ),
@@ -1781,122 +1781,6 @@ class _DashedLinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DashedLinePainter oldDelegate) => false;
-}
-
-/// Bottom-sheet wheel picker for correcting an OCR-extracted item quantity.
-/// Returns the selected int via [Navigator.pop] on Done; dismiss/scrim returns
-/// null so the caller leaves the original quantity unchanged.
-class _QuantityPickerSheet extends StatefulWidget {
-  const _QuantityPickerSheet({
-    required this.itemName,
-    required this.initialQuantity,
-  });
-
-  final String itemName;
-  final int initialQuantity;
-
-  @override
-  State<_QuantityPickerSheet> createState() => _QuantityPickerSheetState();
-}
-
-class _QuantityPickerSheetState extends State<_QuantityPickerSheet> {
-  /// Dynamic upper bound: enough headroom above the current value for normal
-  /// receipt quantities, with a floor so tiny starting values still feel
-  /// scrollable (e.g. qty=1 still reaches at least 30).
-  late final int _upperBound =
-      widget.initialQuantity + 20 < 30 ? 30 : widget.initialQuantity + 20;
-  late int _selected;
-  late final FixedExtentScrollController _scrollController;
-
-  @override
-  void initState() {
-    super.initState();
-    final clamped = widget.initialQuantity.clamp(1, _upperBound);
-    _selected = clamped;
-    _scrollController = FixedExtentScrollController(initialItem: clamped - 1);
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 12, 22, 26),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const ReceiptSheetHandle(),
-            const SizedBox(height: 18),
-            Text(
-              widget.itemName,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: balooText(
-                20,
-                FontWeight.w800,
-                color: ReceiptSheetColors.ink,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Quantity',
-              textAlign: TextAlign.center,
-              style: balooText(
-                14,
-                FontWeight.w600,
-                color: ReceiptSheetColors.subLight,
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 200,
-              child: CupertinoPicker(
-                key: const Key('receipt-quantity-picker'),
-                scrollController: _scrollController,
-                itemExtent: 48,
-                selectionOverlay: CupertinoPickerDefaultSelectionOverlay(
-                  // selectedTint is fully opaque — dial it down so the
-                  // centered number stays readable through the highlight.
-                  background: ReceiptSheetColors.selectedTint.withValues(
-                    alpha: 0.35,
-                  ),
-                ),
-                onSelectedItemChanged: (i) {
-                  setState(() => _selected = i + 1);
-                },
-                children: [
-                  for (var q = 1; q <= _upperBound; q++)
-                    Center(
-                      child: Text(
-                        '$q',
-                        style: balooText(
-                          34,
-                          FontWeight.w800,
-                          color: ReceiptSheetColors.ink,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            ReceiptSheetCta(
-              label: 'Done',
-              onPressed: () => Navigator.pop(context, _selected),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Banking-style numeric keypad for the receipt total. Digits append from the

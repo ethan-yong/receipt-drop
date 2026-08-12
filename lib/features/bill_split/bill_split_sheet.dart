@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
@@ -24,6 +25,10 @@ import 'create_group_sheet.dart';
 /// Split Flow.dc.html", presented as a bottom sheet the same way
 /// `ReceiptConfirmSheet` is — the closest existing precedent for "a modal
 /// flow launched from a saved receipt."
+///
+/// Creation uses a swipeable Who → How → Review wizard; the split is only
+/// persisted on Remind / Done / paid. Reopening an existing split locks on
+/// Review so paid state cannot be recomposed away.
 class BillSplitSheet extends StatefulWidget {
   const BillSplitSheet({super.key, required this.transactionId});
 
@@ -49,19 +54,35 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   TransactionView? _tx;
   List<FriendshipView> _friends = const [];
   List<FriendGroupView> _groups = const [];
-  BillSplitView? _existingSplit;
+  BillSplitView? _split;
   String? _ownerAvatarUrl;
   String? _ownerDisplayName;
 
+  /// True when this sheet opened on an already-saved split (Review-only).
+  bool _wizardLocked = false;
+
+  /// True once [_split] has been written to Supabase this session (or was
+  /// loaded as an existing split).
+  bool _persisted = false;
+
+  bool _persisting = false;
   int _step = 0;
   final Set<String> _selectedFriendIds = {};
   BillSplitMode _mode = BillSplitMode.equal;
   final Map<String, Set<String>> _itemAssignments = {};
-  bool _creatingSplit = false;
   bool _remindersJustSent = false;
+  bool _exiting = false;
   Timer? _reminderTimer;
 
+  late final PageController _pageController = PageController();
+
+  /// Success CTA dwell before auto-navigating to Insights (within 500–800ms).
+  static const _remindersSentDwell = Duration(milliseconds: 650);
+
   String? get _ownerId => Supabase.instance.client.auth.currentUser?.id;
+
+  /// Composition can no longer change via swipe / back.
+  bool get _compositionLocked => _wizardLocked || _persisted;
 
   @override
   void initState() {
@@ -72,6 +93,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   @override
   void dispose() {
     _reminderTimer?.cancel();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -97,7 +119,6 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
       _friends =
           friendships.where((f) => f.status == FriendshipStatus.accepted).toList();
       _groups = groups;
-      _existingSplit = existingSplit;
       _ownerAvatarUrl = ownerHeader?.avatarUrl;
       _ownerDisplayName = ownerHeader?.displayName;
       _loading = false;
@@ -110,9 +131,18 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
           ..clear()
           ..addAll(existingSplit.participants.map((p) => p.friendUserId));
         _mode = existingSplit.mode;
+        _split = existingSplit;
+        _persisted = true;
+        _wizardLocked = true;
         _step = 2;
       }
     });
+    if (existingSplit != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_pageController.hasClients) return;
+        _pageController.jumpToPage(2);
+      });
+    }
   }
 
   List<String> _includedPersonIds() {
@@ -120,6 +150,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   }
 
   void _toggleFriend(String friendId) {
+    if (_compositionLocked) return;
     setState(() {
       if (!_selectedFriendIds.remove(friendId)) {
         _selectedFriendIds.add(friendId);
@@ -129,6 +160,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   }
 
   void _selectGroup(FriendGroupView group) {
+    if (_compositionLocked) return;
     setState(() {
       _selectedFriendIds
         ..clear()
@@ -156,6 +188,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   }
 
   void _toggleItemPerson(String lineItemId, String personId) {
+    if (_compositionLocked) return;
     setState(() {
       final set =
           _itemAssignments.putIfAbsent(lineItemId, () => {..._includedPersonIds()});
@@ -168,15 +201,6 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     });
   }
 
-  void _goToStep1() {
-    setState(() {
-      _ensureItemDefaults();
-      _step = 1;
-    });
-  }
-
-  void _goBackToStep0() => setState(() => _step = 0);
-
   /// True once the receipt has synced (item assignments FK to
   /// `receipt_line_items.id`, which must exist server-side first) and every
   /// line item has a real id.
@@ -188,13 +212,10 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     return items.every((i) => i.id != null);
   }
 
-  Future<void> _goToReview() async {
-    final tx = _tx;
-    final ownerId = _ownerId;
-    if (tx == null || ownerId == null || tx.amountMyr == null) return;
-
-    setState(() => _creatingSplit = true);
-
+  ({Map<String, double> friendShares, List<ItemAssignmentInput> assignments})
+      _computeShares() {
+    final tx = _tx!;
+    final ownerId = _ownerId!;
     final friendShares = <String, double>{};
     var assignmentInputs = const <ItemAssignmentInput>[];
 
@@ -221,50 +242,193 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
         friendShares[friendId] = shares[friendId] ?? 0;
       }
     }
+    return (friendShares: friendShares, assignments: assignmentInputs);
+  }
 
-    final created = await BillSplitRepository.createSplit(
+  BillSplitView? _buildDraftSplit() {
+    final tx = _tx;
+    final ownerId = _ownerId;
+    if (tx == null ||
+        ownerId == null ||
+        tx.amountMyr == null ||
+        _selectedFriendIds.isEmpty) {
+      return null;
+    }
+    final computed = _computeShares();
+    return BillSplitView(
+      id: 'draft',
       transactionId: widget.transactionId,
-      totalMyr: tx.amountMyr!,
+      ownerId: ownerId,
       mode: _mode,
-      friendShareMyr: friendShares,
-      itemAssignments: assignmentInputs,
+      totalMyr: tx.amountMyr!,
+      createdAt: DateTime.now(),
+      participants: [
+        for (final e in computed.friendShares.entries)
+          BillSplitParticipant(
+            id: 'draft-${e.key}',
+            friendUserId: e.key,
+            shareMyr: e.value,
+            paid: false,
+            paidAt: null,
+            lastRemindedAt: null,
+          ),
+      ],
+      itemAssignments: [
+        for (final a in computed.assignments)
+          for (final personId in a.assignedPersonIds)
+            BillSplitItemAssignment(
+              lineItemId: a.lineItemId,
+              assignedUserId: personId,
+            ),
+      ],
     );
-    if (!mounted) return;
+  }
+
+  void _goToPage(int page) {
+    if (_compositionLocked && page != 2) return;
+    if (page < 0 || page > 2) return;
+    if (page == 2 && _selectedFriendIds.isEmpty) return;
+    if (page == 1) _ensureItemDefaults();
+    if (page == 2 && !_persisted) {
+      final draft = _buildDraftSplit();
+      if (draft == null) return;
+      setState(() => _split = draft);
+    }
+    _pageController.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _goToStep1() => _goToPage(1);
+
+  void _goToReview() => _goToPage(2);
+
+  void _goBack() {
+    if (_compositionLocked || _step <= 0) return;
+    _goToPage(_step - 1);
+  }
+
+  void _onPageChanged(int page) {
+    if (_compositionLocked) {
+      if (page != 2 && _pageController.hasClients) {
+        _pageController.jumpToPage(2);
+      }
+      setState(() => _step = 2);
+      return;
+    }
+
+    if (page == 2 && _selectedFriendIds.isEmpty) {
+      _pageController.animateToPage(
+        1,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+      return;
+    }
+
     setState(() {
-      _creatingSplit = false;
-      if (created != null) {
-        _existingSplit = created;
-        _step = 2;
+      _step = page;
+      if (page == 1) _ensureItemDefaults();
+      if (page == 2 && !_persisted) {
+        _split = _buildDraftSplit();
       }
     });
   }
 
-  Future<void> _setParticipantPaid(String participantId, bool paid) async {
-    final split = _existingSplit;
-    if (split == null) return;
+  Future<bool> _ensurePersisted() async {
+    if (_persisted && _split != null) return true;
+    if (_persisting) return false;
+    final tx = _tx;
+    final ownerId = _ownerId;
+    if (tx == null ||
+        ownerId == null ||
+        tx.amountMyr == null ||
+        _selectedFriendIds.isEmpty) {
+      return false;
+    }
+
+    setState(() => _persisting = true);
+    final computed = _computeShares();
+    final created = await BillSplitRepository.createSplit(
+      transactionId: widget.transactionId,
+      totalMyr: tx.amountMyr!,
+      mode: _mode,
+      friendShareMyr: computed.friendShares,
+      itemAssignments: computed.assignments,
+    );
+    if (!mounted) return false;
     setState(() {
-      _existingSplit = split.copyWith(
+      _persisting = false;
+      if (created != null) {
+        _split = created;
+        _persisted = true;
+      }
+    });
+    return created != null;
+  }
+
+  Future<void> _setParticipantPaid(String participantId, bool paid) async {
+    final before = _split;
+    if (before == null) return;
+    final friendUserId = before.participants
+        .where((p) => p.id == participantId)
+        .firstOrNull
+        ?.friendUserId;
+
+    final ok = await _ensurePersisted();
+    if (!ok || !mounted) return;
+
+    final split = _split!;
+    final realId = friendUserId != null
+        ? split.participants
+            .where((p) => p.friendUserId == friendUserId)
+            .firstOrNull
+            ?.id
+        : participantId;
+    if (realId == null) return;
+
+    setState(() {
+      _split = split.copyWith(
         participants: [
           for (final p in split.participants)
-            p.id == participantId
+            p.id == realId
                 ? p.copyWith(paid: paid, paidAt: paid ? DateTime.now() : null)
                 : p,
         ],
       );
     });
-    await BillSplitRepository.setParticipantPaid(participantId, paid);
+    await BillSplitRepository.setParticipantPaid(realId, paid);
+  }
+
+  void _exitToInsights() {
+    if (_exiting || !mounted) return;
+    _exiting = true;
+    _reminderTimer?.cancel();
+    final router = GoRouter.of(context);
+    Navigator.of(context).pop();
+    router.goNamed('insights');
+  }
+
+  Future<void> _onDone() async {
+    if (_exiting) return;
+    final ok = await _ensurePersisted();
+    if (!ok || !mounted) return;
+    _exitToInsights();
   }
 
   Future<void> _sendReminders() async {
-    final split = _existingSplit;
+    if (_remindersJustSent || _exiting) return;
+    final ok = await _ensurePersisted();
+    if (!ok || !mounted) return;
+    final split = _split;
     if (split == null) return;
     final pending = split.participants.where((p) => !p.paid).toList();
     if (pending.isEmpty) return;
     setState(() => _remindersJustSent = true);
     _reminderTimer?.cancel();
-    _reminderTimer = Timer(const Duration(milliseconds: 2500), () {
-      if (mounted) setState(() => _remindersJustSent = false);
-    });
+    _reminderTimer = Timer(_remindersSentDwell, _exitToInsights);
     await Future.wait(pending.map((p) => BillSplitRepository.sendReminder(p.id)));
   }
 
@@ -278,41 +442,56 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.86,
-        child: Column(
-          children: [
-            _Header(
-              title: switch (_step) {
-                0 => "Who's splitting?",
-                1 => 'How to split',
-                _ => 'Review & send',
-              },
-              step: _step,
-              showBack: _step > 0 && _existingSplit == null,
-              onBack: _goBackToStep0,
-            ),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _buildStep(),
-            ),
-          ],
+    // System back: step back through Who/How/Review while the wizard is
+    // editable; once locked (or on Who), allow the modal sheet to dismiss.
+    return PopScope(
+      canPop: _compositionLocked || _step == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goBack();
+      },
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * 0.86,
+          child: Column(
+            children: [
+              _Header(
+                title: switch (_step) {
+                  0 => "Who's splitting?",
+                  1 => 'How to split',
+                  _ => 'Review & send',
+                },
+                step: _step,
+                showBack: _step > 0 && !_compositionLocked,
+                onBack: _goBack,
+              ),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _buildPager(),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildStep() {
+  Widget _buildPager() {
     final tx = _tx;
     if (tx == null) {
       return const Center(child: Text('Receipt not found.'));
     }
-    switch (_step) {
-      case 0:
-        return BillSplitStepWho(
+    final split = _split;
+
+    return PageView(
+      controller: _pageController,
+      physics: _compositionLocked
+          ? const NeverScrollableScrollPhysics()
+          : const PageScrollPhysics(),
+      onPageChanged: _onPageChanged,
+      children: [
+        BillSplitStepWho(
           transaction: tx,
           friends: _friends,
           groups: _groups,
@@ -324,9 +503,8 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
           ownerAvatarUrl: _ownerAvatarUrl,
           ownerDisplayName: _ownerDisplayName,
           ownerUserId: _ownerId,
-        );
-      case 1:
-        return BillSplitStepHow(
+        ),
+        BillSplitStepHow(
           transaction: tx,
           friends: _friends,
           ownerId: _ownerId,
@@ -335,27 +513,28 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
           mode: _mode,
           canUseByItem: _canUseByItem,
           itemAssignments: _itemAssignments,
-          onModeChanged: (m) => setState(() => _mode = m),
+          onModeChanged: (m) {
+            if (_compositionLocked) return;
+            setState(() => _mode = m);
+          },
           onToggleItemPerson: _toggleItemPerson,
-          creating: _creatingSplit,
-          onReview: _creatingSplit ? null : _goToReview,
-        );
-      default:
-        final split = _existingSplit;
-        if (split == null) {
-          return const Center(child: Text('No split yet.'));
-        }
-        return BillSplitStepReview(
-          transaction: tx,
-          split: split,
-          friends: _friends,
-          ownerId: _ownerId,
-          remindersJustSent: _remindersJustSent,
-          onSetParticipantPaid: _setParticipantPaid,
-          onSendReminders: _sendReminders,
-          onDone: () => Navigator.of(context).pop(),
-        );
-    }
+          creating: _persisting,
+          onReview: _persisting ? null : _goToReview,
+        ),
+        split == null
+            ? const Center(child: Text('No split yet.'))
+            : BillSplitStepReview(
+                transaction: tx,
+                split: split,
+                friends: _friends,
+                ownerId: _ownerId,
+                remindersJustSent: _remindersJustSent,
+                onSetParticipantPaid: _setParticipantPaid,
+                onSendReminders: _sendReminders,
+                onDone: _onDone,
+              ),
+      ],
+    );
   }
 }
 

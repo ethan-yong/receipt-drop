@@ -9,8 +9,8 @@ import '../bill_split/bill_split_sheet.dart';
 
 /// Full-screen route shown right after a single receipt is saved — sits
 /// between the pigeon `SaveSuccessScreen` and Home, making "Split this bill"
-/// one tap away instead of buried in a reopened receipt. From the Claude
-/// Design handoff "Receipt Saved Screen.dc.html".
+/// one tap away instead of buried in a reopened receipt. Close returns to
+/// Home. From the Claude Design handoff "Receipt Saved Screen.dc.html".
 class ReceiptSavedScreen extends StatefulWidget {
   const ReceiptSavedScreen({super.key, required this.receipt});
 
@@ -57,7 +57,7 @@ class _ReceiptSavedScreenState extends State<ReceiptSavedScreen>
     super.dispose();
   }
 
-  void _close() => context.goNamed('insights');
+  void _close() => context.goNamed('home');
 
   void _split() {
     PlatformFeedback.lightTap();
@@ -65,7 +65,9 @@ class _ReceiptSavedScreenState extends State<ReceiptSavedScreen>
   }
 
   void _viewReceipt() {
-    context.pushNamed('tx-detail', pathParameters: {'id': widget.receipt.id});
+    // Replace this screen so system/app-bar back from detail lands on Home,
+    // not back on the post-save celebration.
+    context.goNamed('tx-detail', pathParameters: {'id': widget.receipt.id});
   }
 
   String get _merchant => widget.receipt.displayPlace;

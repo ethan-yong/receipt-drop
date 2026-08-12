@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Map sheet venue photos via Places Photo Media + shared Storage cache (2026-08-11)
+
+**Decision**: The spend-map pin sheet (`ReceiptMapSheet`) shows a horizontal photo carousel of Google Places venue photos for the pin's `place_google_place_id`, plus the active receipt's own photo. Photos are fetched through a new `places-proxy` mode (`place_photos`): Places Details (`fields=photos`) → Photo Media (`maxWidthPx=800`) → re-host into a public `place-photos` Storage bucket → cache the **bucket-relative paths** (not absolute URLs) in `place_photos_cache` for 30 days (max 3 photos/place). Flutter's `PlacesRepository.fetchPlacePhotos` rebuilds public URLs against the client's own Supabase origin via `storage.from('place-photos').getPublicUrl(...)`. Same migration pass also extends `get_map_transactions_in_bounds` with `line_items` + `receipt_storage_path` so the sheet can render items/receipt photo for pins captured on another device.
+
+**Reason**: Google Maps–style venue imagery makes the map sheet feel like a real place card, but Place Photo Media is billed per request — without a shared cross-user cache every sheet open would re-hit Google. Caching absolute URLs from the edge runtime is wrong locally (and brittle across devices): the edge `SUPABASE_URL` is the Docker-internal gateway (`http://kong:8000`), which the phone/desktop client cannot resolve, and even a rewritten `127.0.0.1` URL breaks Android emulator (`10.0.2.2`) / physical-device port-forward setups. Storage paths + client-side `getPublicUrl` keep one cache row valid for every client origin.
+
+**Alternatives considered**: (1) returning `getPublicUrl()` absolute URLs from the edge function (rejected — Docker-internal host leak; confirmed in local smoke test); (2) rewriting `kong:8000` → `127.0.0.1` inside the edge function (rejected — still wrong for non-localhost client origins); (3) no re-host / signed Google photo URIs passed straight to the client (rejected — short-lived, still billed on every view, exposes the Places key path less cleanly); (4) SECURITY DEFINER RPCs for the cache table like `merchant_locations` (rejected — this table is only ever touched by one edge function, so an explicit `GRANT … TO service_role` is simpler than inventing RPCs).
+
+**Tradeoffs**: `place_photos_cache` is a global, non-RLS-readable table (zero client policies; `anon`/`authenticated` revoked; `service_role` has explicit DML). Stale venue photos can linger up to the 30-day TTL. The sheet degrades gracefully to receipt-only / placeholder when a place has no photos or the edge call fails. `photo_urls` column name is historical — values are storage paths, not absolute URLs.
+
+---
+
 ## Bill Split people use real profile photos, not BlobAvatar (2026-08-11)
 
 **Decision**: Bill Split's `PersonAvatar` and `SplitRequestsScreen` render `profiles.avatar_url` via the shared `ProfilePhoto` widget (same as map friend pins), with initials fallback when no photo is set. Dropped `BlobAvatar`/`avatar_config` from this flow. Surfaced `avatar_url` through `list_friendships()`, `list_friend_groups()`, and `get_my_split_requests()` in `20260811120000_bill_split_avatar_url.sql` (DROP + recreate, same Postgres return-type pattern as the leaderboard/map pin migrations).
@@ -34,7 +46,19 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 **Alternatives considered**: payer-only bookkeeping with no friend visibility (rejected — see reason above); ad-hoc/derived friend groups instead of a persisted table (rejected per explicit product decision — groups should be reusable, not recomputed); a full-screen `go_router` route for the payer flow instead of a bottom sheet (rejected — `ReceiptConfirmSheet`'s sheet-from-an-open-receipt pattern is the closer precedent, and `receipt_sheet_theme.dart`'s palette already matches the source design's gold/ink/cream almost hex-for-hex).
 
-**Tradeoffs**: a split is immutable once created (`bill_splits` has no update policy, `unique(transaction_id)`) — there is no "edit a split's composition" UI in v1; redoing one requires a manual delete. By-item split is gated on the receipt having finished syncing (`transaction.syncStatus == 'synced'`) since item assignments FK to server-side `receipt_line_items.id`, so a just-captured receipt briefly can't use by-item mode. "Remind" is best-effort only — it stamps `bill_split_participants.last_reminded_at` and flips the payer's own button label optimistically; there is no real notification delivery to the friend, by design (matches the rest of the app's lack of a push infrastructure).
+**Tradeoffs**: a split is immutable once created (`bill_splits` has no update policy, `unique(transaction_id)`) — there is no "edit a split's composition" UI after persist; redoing one requires a manual delete. By-item split is gated on the receipt having finished syncing (`transaction.syncStatus == 'synced'`) since item assignments FK to server-side `receipt_line_items.id`, so a just-captured receipt briefly can't use by-item mode. "Remind" is best-effort only — it stamps `bill_split_participants.last_reminded_at` and flips the payer's own button label optimistically; there is no real notification delivery to the friend, by design (matches the rest of the app's lack of a push infrastructure).
+
+---
+
+## Bill Split wizard: swipeable steps + deferred create (2026-08-12)
+
+**Decision**: `BillSplitSheet` uses a `PageView` for Who → How → Review so the payer can swipe (or use back/Continue) to change friends / split method before commit. Review shows a **local draft** `BillSplitView`; `createSplit` runs only on the first Remind, Done, or paid toggle (`_ensurePersisted`). Reopening a receipt that already has a split still locks on Review (`NeverScrollableScrollPhysics`, no back) so paid history is not recomposed away.
+
+**Reason**: create-on-enter-Review made swipe-back editing impossible without delete/recreate; deferring insert keeps the wizard editable and avoids friends briefly seeing a half-edited split.
+
+**Alternatives considered**: create on enter Review then delete on swipe-back (rejected — racey for friend discovery and wipeable paid state); swipe only before first Review visit (rejected — does not meet “edit from Review”).
+
+**Tradeoffs**: first Review action pays a create latency hop; after persist in-session, composition locks (same as reopen) because `bill_splits` remains insert-only.
 
 ---
 

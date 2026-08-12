@@ -16,6 +16,8 @@ class ReceiptThumbnail extends StatelessWidget {
     this.thumbnailBytes,
     this.size = 48,
     this.radius = 10,
+    this.width,
+    this.height,
   });
 
   final String? imageUrl;
@@ -24,13 +26,18 @@ class ReceiptThumbnail extends StatelessWidget {
   final double size;
   final double radius;
 
+  /// Overrides [size] independently per axis, for non-square tiles (e.g. a
+  /// photo carousel). Both default to [size] when unset.
+  final double? width;
+  final double? height;
+
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: SizedBox(
-        width: size,
-        height: size,
+        width: width ?? size,
+        height: height ?? size,
         child: _buildImage(),
       ),
     );

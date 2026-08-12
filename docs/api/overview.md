@@ -32,7 +32,7 @@ Invoked by `lib/features/share/ocr_pipeline_io.dart` in production, so the OCR s
 - In debug/dev, Flutter can instead call the OCR API **directly** (skipping this proxy) via `Env.ocrApiUrl` + `Env.ocrSharedSecret` (dart-define/`.env` only — never bundled in release).
 
 ### `places-proxy`
-Invoked by `lib/data/repositories/places_repository.dart` for both the manual text-search flow and the nearby-candidate picker.
+Invoked by `lib/data/repositories/places_repository.dart` for the manual text-search flow, the nearby-candidate picker, and the map sheet's venue-photo carousel.
 
 **Mode: text search (default)** — `{ query, lat?, lng? }`. Calls Google Places `searchText` (optional 250m `locationBias`), returns the raw response pass-through. Does not write to the DB.
 
@@ -41,6 +41,14 @@ Invoked by `lib/data/repositories/places_repository.dart` for both the manual te
 { "candidates": [{ "id", "name", "address", "lat", "lng", "distanceMeters", "confidence" }] }
 ```
 `lat` and `lng` are required; `candidates` / `query` / `category` are optional. Used by `PlacePickerScreen` when the user taps the pencil icon next to the merchant name.
+
+**Mode: place photos** — `{ mode: 'place_photos', placeId }`. Returns Google Places venue photos for the map sheet carousel, re-hosted and cached so repeat sheet-opens don't re-bill Photo Media:
+1. Cache hit on `place_photos_cache` within 30 days → return stored paths immediately.
+2. Otherwise Places Details (`fields=photos`) → up to 3 Photo Media downloads (`maxWidthPx=800`) → upload into the public `place-photos` bucket → upsert `place_photos_cache`.
+```json
+{ "photoUrls": ["<google_place_id>/0.jpg", "..."] }
+```
+`photoUrls` are **bucket-relative Storage paths**, not absolute URLs (the edge runtime's `SUPABASE_URL` is Docker-internal `kong:8000` locally — absolute URLs from `getPublicUrl` would be unreachable from the device). `PlacesRepository.fetchPlacePhotos` rebuilds public URLs against the client's origin. Failures degrade to `[]` / stale cache rather than erroring the sheet. Requires `SUPABASE_SERVICE_ROLE_KEY` in addition to `GOOGLE_PLACES_API_KEY`.
 
 In both modes: client updates the transaction after the user confirms, calling `TransactionRepository.updateTransactionPlace()` which writes `place_status='user_locked'` and re-queues sync.
 
@@ -111,9 +119,9 @@ Optional. When `LEADERBOARD_API_URL` is unset in Flutter's `.env`, the Friends t
 
 | External service | Called from | Purpose |
 |---|---|---|
-| Google Places API v1 | `enrich-transaction`, `places-proxy` (edge functions only — key never in client) | Merchant → place resolution, manual place search |
+| Google Places API v1 | `enrich-transaction`, `places-proxy` (edge functions only — key never in client) | Merchant → place resolution, manual place search, map-sheet venue photos (Photo Media) |
 | Tesseract (self-hosted) | `ocr-proxy` → `services/ocr-api`, or direct dev call | Receipt text extraction |
 | LLM gateway (self-hosted, OpenAI-compatible) | `services/ocr-api` (synchronously inside `POST /ocr`, the primary path; `POST /understand` remains as `enrich-transaction`'s fallback) | Structures raw OCR text into merchant name/queries/address/category/line-items before Places matching. No fallback within the LLM call itself — a failure degrades `/ocr` to raw-text-only (never fails it) but fails `enrich-transaction`'s own fallback call outright. |
 | Redis | `services/leaderboard-api` | Global leaderboard ZSET + friends-leaderboard cache-aside |
 | Supabase Auth | Flutter (PKCE), all server surfaces (JWT verification) | Identity |
-| Supabase Storage | Flutter sync worker | `receipts` (private, per-user folder) and `config` (public) buckets |
+| Supabase Storage | Flutter sync worker + `places-proxy` | `receipts` (private, per-user folder), `config` (public), `place-photos` (public, service-role writes only — venue photo cache) |

@@ -6,10 +6,11 @@ import 'platform_utils.dart';
 
 /// Presents action menus and forms using platform-native surfaces.
 abstract final class AdaptiveSheet {
-  /// Depth of currently-open adaptive sheets. [MainShell] hides its capture
-  /// FAB while this is > 0 — the FAB lives on the shell Scaffold and would
-  /// otherwise paint above nested or root-presented sheets.
-  @visibleForTesting
+  /// Depth of currently-open adaptive sheets / immersive overlays.
+  /// [MainShell] hides its capture FAB and bottom tab bar while this is > 0
+  /// — both live on the shell Scaffold and would otherwise paint above
+  /// nested sheets and the map pin detail sheet. Also bumped by the spend
+  /// map while a pin detail sheet is open.
   static final ValueNotifier<int> openCount = ValueNotifier<int>(0);
 
   static Future<T?> _trackOpen<T>(Future<T?> future) async {

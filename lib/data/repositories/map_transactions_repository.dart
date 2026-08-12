@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/config/env.dart';
+import '../../domain/models/receipt_line_item.dart';
 import '../../domain/models/transaction_view.dart';
 
 /// Viewport-bounded spend transactions for the map, backed by the
@@ -53,10 +54,30 @@ class MapTransactionsRepository {
           placeLng: (row['lng'] as num?)?.toDouble(),
           syncStatus: 'synced',
           pipelineStatus: 'enriched',
+          lineItems: _parseLineItems(row['line_items']),
+          remoteStoragePath: row['receipt_storage_path'] as String?,
         );
       }).toList();
     } on Object {
       return null;
     }
+  }
+
+  /// Parses the RPC's `line_items` jsonb array (`[]` when the receipt has
+  /// none) into domain models. Returns `null`, not an empty list, when the
+  /// column itself is absent so `TransactionView.lineItems == null` still
+  /// distinguishes "not fetched" from "fetched, genuinely empty" elsewhere.
+  static List<ReceiptLineItem>? _parseLineItems(Object? raw) {
+    if (raw is! List) return null;
+    return raw
+        .cast<Map<String, dynamic>>()
+        .map((r) => ReceiptLineItem(
+              // Present after 20260812140000; null on older RPC payloads.
+              id: r['id'] as String?,
+              name: r['name'] as String,
+              priceMyr: (r['price_myr'] as num).toDouble(),
+              quantity: (r['quantity'] as num?)?.toInt(),
+            ))
+        .toList();
   }
 }

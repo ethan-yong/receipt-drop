@@ -77,7 +77,7 @@ void main() {
       await pump(tester, {
         'type': 'line_trend',
         'parameters': {
-          'weekday': 'Tuesday',
+          'weekday': 'Thursday',
           'baseline': 20.0,
           'today_total': 80.0,
         },
@@ -85,6 +85,8 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(find.byType(LineChart), findsOneWidget);
+      expect(find.text('Usual Thursday'), findsOneWidget);
+      expect(find.text('Today'), findsOneWidget);
     });
 
     testWidgets('renders comparison bars for before_after_bar', (tester) async {

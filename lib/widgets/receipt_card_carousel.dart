@@ -147,11 +147,12 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     _resumeTimer = Timer(_resumeDelay, _startAutoRotate);
   }
 
-  void _commit(int dir) {
+  void _commit(int dir, {bool haptic = false}) {
     final n = widget.transactions.length;
     if (_busy || n <= 1) return;
     final from = _current;
     final to = ((_current + dir) % n + n) % n;
+    if (haptic) PlatformFeedback.selectionTap();
     setState(() {
       _previous = from;
       _current = to;
@@ -201,6 +202,9 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
   void _setScrubIndex(int idx) {
     if (idx == _current) return;
     _transitionController.stop();
+    // Subtle tick each time the scrubber lands on a new card — matches
+    // iOS-style picker feedback; not a continuous buzz.
+    PlatformFeedback.selectionTap();
     setState(() {
       _previous = null;
       _current = idx;
@@ -228,8 +232,8 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     if (!_dotDragMoved &&
         (d.globalPosition.dx - start).abs() > _dragTapTolerance) {
       _dotDragMoved = true;
-      // One-shot enter: medium haptic + pill chrome. No continuous buzz
-      // while the finger stays down.
+      // One-shot enter: medium haptic + pill chrome. Per-card ticks fire
+      // from [_setScrubIndex] as the finger crosses dots.
       if (!_scrubbing) {
         setState(() => _scrubbing = true);
         PlatformFeedback.mediumTap();
@@ -308,7 +312,7 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     _dragStartX = null;
 
     if (_dragMoved && _dragRawDx.abs() > _dragCommitThreshold) {
-      _commit(_dragRawDx < 0 ? 1 : -1);
+      _commit(_dragRawDx < 0 ? 1 : -1, haptic: true);
     } else {
       setState(() {
         _liveDuration = const Duration(milliseconds: 300);

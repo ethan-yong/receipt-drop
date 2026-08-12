@@ -134,6 +134,7 @@ class TransactionView {
     List<ReceiptLineItem>? lineItems,
     double? shareLocationLat,
     double? shareLocationLng,
+    String? remoteStoragePath,
   }) {
     return TransactionView(
       id: id,
@@ -150,7 +151,7 @@ class TransactionView {
       syncStatus: syncStatus,
       pipelineStatus: pipelineStatus,
       localThumbnailPath: null,
-      remoteStoragePath: null,
+      remoteStoragePath: remoteStoragePath,
       impactUser: impactUser,
       lineItems: lineItems,
       shareLocationLat: shareLocationLat,

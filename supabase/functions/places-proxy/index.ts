@@ -28,6 +28,135 @@ function stripPlacesPrefix(id: string): string {
   return id.replace(/^places\//, "");
 }
 
+// Google Places photos for a venue, cached in `place_photos_cache` +
+// re-hosted in the `place-photos` Storage bucket so repeat sheet-opens for
+// the same place (by any user) never re-hit Google's billed Photo Media
+// endpoint. See 20260811180001_place_photos_cache.sql.
+const PLACE_PHOTO_LIMIT = 3;
+const PLACE_PHOTO_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+async function handlePlacePhotosMode(
+  body: Record<string, unknown>,
+  apiKey: string,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+): Promise<Response> {
+  const placeId = body["placeId"];
+  if (typeof placeId !== "string" || placeId.trim().length === 0) {
+    return new Response(JSON.stringify({ error: "bad_request" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Service-role client: place_photos_cache has zero client policies (global,
+  // not per-user) and only this Edge Function ever writes to the
+  // place-photos bucket.
+  const admin = createClient(supabaseUrl, serviceRoleKey);
+
+  const { data: cached } = await admin
+    .from("place_photos_cache")
+    .select("photo_urls, fetched_at")
+    .eq("google_place_id", placeId)
+    .maybeSingle();
+
+  const cachedUrls = (cached?.photo_urls as string[] | undefined) ?? [];
+  if (
+    cached &&
+    Date.now() - new Date(cached.fetched_at as string).getTime() <
+      PLACE_PHOTO_CACHE_TTL_MS
+  ) {
+    return new Response(JSON.stringify({ photoUrls: cachedUrls }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  // Any failure below falls back to whatever's cached (possibly stale, or
+  // empty on a first-ever fetch) rather than surfacing an error — a photo
+  // carousel with fewer/no place photos degrades gracefully in the UI.
+  try {
+    const detailsResp = await fetch(
+      `https://places.googleapis.com/v1/places/${placeId}?fields=photos`,
+      { headers: { "X-Goog-Api-Key": apiKey } },
+    );
+    if (!detailsResp.ok) {
+      console.error(
+        `places-proxy place details failed: ${detailsResp.status} ${await detailsResp.text()}`,
+      );
+      return new Response(JSON.stringify({ photoUrls: cachedUrls }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const detailsJson = (await detailsResp.json()) as {
+      photos?: { name?: string }[];
+    };
+    const photoNames = (detailsJson.photos ?? [])
+      .map((p) => p.name)
+      .filter((n): n is string => typeof n === "string")
+      .slice(0, PLACE_PHOTO_LIMIT);
+
+    // Store/return Storage paths (e.g. "<placeId>/0.jpg"), NOT absolute
+    // public URLs. The edge runtime's SUPABASE_URL is the Docker-internal
+    // gateway (`http://kong:8000`), so getPublicUrl() would emit hostnames
+    // the Flutter client can't resolve. The client rebuilds public URLs
+    // against its own origin (127.0.0.1 / 10.0.2.2 / production).
+    const photoPaths: string[] = [];
+    for (let i = 0; i < photoNames.length; i++) {
+      const mediaResp = await fetch(
+        `https://places.googleapis.com/v1/${photoNames[i]}/media?maxWidthPx=800&skipHttpRedirect=true`,
+        { headers: { "X-Goog-Api-Key": apiKey } },
+      );
+      if (!mediaResp.ok) continue;
+      const mediaJson = (await mediaResp.json()) as { photoUri?: string };
+      if (!mediaJson.photoUri) continue;
+
+      const imgResp = await fetch(mediaJson.photoUri);
+      if (!imgResp.ok) continue;
+      const bytes = new Uint8Array(await imgResp.arrayBuffer());
+      const storagePath = `${placeId}/${i}.jpg`;
+      const { error: uploadError } = await admin.storage
+        .from("place-photos")
+        .upload(storagePath, bytes, {
+          contentType: imgResp.headers.get("content-type") ?? "image/jpeg",
+          upsert: true,
+        });
+      if (uploadError) {
+        console.error(`places-proxy photo upload failed: ${uploadError.message}`);
+        continue;
+      }
+      photoPaths.push(storagePath);
+    }
+
+    if (photoPaths.length > 0) {
+      const { error: upsertError } = await admin.from("place_photos_cache").upsert({
+        google_place_id: placeId,
+        photo_urls: photoPaths,
+        fetched_at: new Date().toISOString(),
+      });
+      if (upsertError) {
+        console.error(
+          `places-proxy place_photos cache upsert failed: ${upsertError.message}`,
+        );
+      }
+    }
+
+    return new Response(
+      JSON.stringify({
+        photoUrls: photoPaths.length > 0 ? photoPaths : cachedUrls,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  } catch (err) {
+    console.error(`places-proxy place_photos threw: ${err}`);
+    return new Response(JSON.stringify({ photoUrls: cachedUrls }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+}
+
 function placeDisplayName(p: RawGooglePlace): string | null {
   const d = p.displayName;
   if (d == null) return null;
@@ -285,6 +414,17 @@ Deno.serve(async (req) => {
 
   if (bodyJson["mode"] === "nearby_candidates") {
     return handleNearbyMode(bodyJson, apiKey);
+  }
+
+  if (bodyJson["mode"] === "place_photos") {
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceRoleKey) {
+      return new Response(JSON.stringify({ error: "server_misconfigured" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    return handlePlacePhotosMode(bodyJson, apiKey, supabaseUrl, serviceRoleKey);
   }
 
   // Default: text search (existing behaviour).
