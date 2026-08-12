@@ -39,9 +39,11 @@ class MainShell extends StatelessWidget {
     return ValueListenableBuilder<int>(
       valueListenable: AdaptiveSheet.openCount,
       builder: (context, openSheets, _) {
-        // Hide while any adaptive sheet is up — the FAB is a Scaffold child
-        // and otherwise paints above receipt confirm / quantity pickers.
-        final showFab = tabWantsFab && openSheets == 0;
+        // Hide while any adaptive sheet / immersive overlay is up — the FAB
+        // and tab bar are Scaffold children and otherwise paint above
+        // receipt confirm, quantity pickers, and the map pin detail sheet.
+        final showChrome = openSheets == 0;
+        final showFab = tabWantsFab && showChrome;
 
         return Scaffold(
           backgroundColor: AppColors.scaffold,
@@ -64,9 +66,11 @@ class MainShell extends StatelessWidget {
               : null,
           floatingActionButtonLocation:
               FloatingActionButtonLocation.centerDocked,
-          bottomNavigationBar: PlatformUtils.isCupertino
-              ? _IosTabBar(index: index, onTap: _goBranch)
-              : _AndroidTabBar(index: index, onTap: _goBranch),
+          bottomNavigationBar: showChrome
+              ? (PlatformUtils.isCupertino
+                  ? _IosTabBar(index: index, onTap: _goBranch)
+                  : _AndroidTabBar(index: index, onTap: _goBranch))
+              : null,
         );
       },
     );

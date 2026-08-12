@@ -139,4 +139,35 @@ void main() {
       expect(place.lng, 101.6789);
     });
   });
+
+  group('PlacesRepository.placePhotoStoragePath', () {
+    test('passes through bare storage paths', () {
+      expect(
+        PlacesRepository.placePhotoStoragePath('ChIJabc/0.jpg'),
+        'ChIJabc/0.jpg',
+      );
+    });
+
+    test('strips a place-photos/ bucket prefix', () {
+      expect(
+        PlacesRepository.placePhotoStoragePath('place-photos/ChIJabc/1.jpg'),
+        'ChIJabc/1.jpg',
+      );
+    });
+
+    test('extracts the path from an absolute public URL (incl. kong host)', () {
+      expect(
+        PlacesRepository.placePhotoStoragePath(
+          'http://kong:8000/storage/v1/object/public/place-photos/ChIJabc/2.jpg',
+        ),
+        'ChIJabc/2.jpg',
+      );
+      expect(
+        PlacesRepository.placePhotoStoragePath(
+          'http://127.0.0.1:54321/storage/v1/object/public/place-photos/ChIJabc/2.jpg',
+        ),
+        'ChIJabc/2.jpg',
+      );
+    });
+  });
 }

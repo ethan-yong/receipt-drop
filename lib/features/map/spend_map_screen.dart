@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
+import '../../core/platform/adaptive_sheet.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/current_location.dart';
 import '../../core/utils/place_key.dart';
@@ -91,6 +92,11 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   String? _myAvatarUrl;
   String? _myDisplayName;
   MapPlaceCluster? _selectedCluster;
+
+  /// Whether we've bumped [AdaptiveSheet.openCount] for the open pin sheet
+  /// so MainShell hides the capture FAB + bottom tab bar. Tracked separately
+  /// so select/close/dispose never double-increment or leak the count.
+  bool _shellChromeHidden = false;
 
   /// Place keys of the overlap group currently expanded via spiderfy.
   /// `null` means nothing is expanded. Cleared on bare-map tap, when the
@@ -189,9 +195,22 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   void dispose() {
     _localSub?.cancel();
     _refetchDebounce?.cancel();
+    _restoreShellChrome();
     _panelController.dispose();
     _overlayPositions.dispose();
     super.dispose();
+  }
+
+  void _hideShellChrome() {
+    if (_shellChromeHidden) return;
+    _shellChromeHidden = true;
+    AdaptiveSheet.openCount.value++;
+  }
+
+  void _restoreShellChrome() {
+    if (!_shellChromeHidden) return;
+    _shellChromeHidden = false;
+    AdaptiveSheet.openCount.value--;
   }
 
   List<TransactionView> _timeFiltered(List<TransactionView> rows) {
@@ -240,6 +259,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   /// Open the place-detail panel and zoom so the pin is centered on screen.
   void _selectPlace(MapPlaceCluster cluster) {
     setState(() => _selectedCluster = cluster);
+    _hideShellChrome();
     const zoom = 16.5;
     final pin = LatLng(cluster.lat, cluster.lng);
     _controller?.animateCamera(CameraUpdate.newLatLngZoom(pin, zoom));
@@ -304,6 +324,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   void _closePanel() {
     if (_selectedCluster == null) return;
     setState(() => _selectedCluster = null);
+    _restoreShellChrome();
   }
 
   void _clearSpiderfy() {

@@ -9,14 +9,22 @@ create table public.place_photos_cache (
   google_place_id text primary key
     constraint place_photos_cache_google_place_id_not_blank
     check (btrim(google_place_id) <> ''),
+  -- Bucket-relative Storage paths (e.g. '<google_place_id>/0.jpg'), not
+  -- absolute URLs — the Flutter client rebuilds public URLs against its own
+  -- Supabase origin so Docker-internal hosts never leak to devices.
   photo_urls text[] not null,
   fetched_at timestamptz not null default now()
 );
 
--- Global cache table is server-only, same zero-policy pattern as
--- merchant_locations (20260724020000_merchant_intelligence_foundation.sql).
+-- Global cache table is server-only: zero client policies, and clients lose
+-- table privileges entirely. Unlike merchant_locations (which is only ever
+-- touched via SECURITY DEFINER RPCs running as postgres), places-proxy
+-- reads/writes this table directly with the service role — so grant that
+-- role explicit DML. RLS stays on as defense-in-depth; service_role bypasses it.
 alter table public.place_photos_cache enable row level security;
 revoke all on table public.place_photos_cache from anon, authenticated;
+grant select, insert, update, delete on table public.place_photos_cache
+  to service_role;
 
 insert into storage.buckets (id, name, public)
 values ('place-photos', 'place-photos', true)

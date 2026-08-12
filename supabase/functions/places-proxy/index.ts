@@ -97,7 +97,12 @@ async function handlePlacePhotosMode(
       .filter((n): n is string => typeof n === "string")
       .slice(0, PLACE_PHOTO_LIMIT);
 
-    const photoUrls: string[] = [];
+    // Store/return Storage paths (e.g. "<placeId>/0.jpg"), NOT absolute
+    // public URLs. The edge runtime's SUPABASE_URL is the Docker-internal
+    // gateway (`http://kong:8000`), so getPublicUrl() would emit hostnames
+    // the Flutter client can't resolve. The client rebuilds public URLs
+    // against its own origin (127.0.0.1 / 10.0.2.2 / production).
+    const photoPaths: string[] = [];
     for (let i = 0; i < photoNames.length; i++) {
       const mediaResp = await fetch(
         `https://places.googleapis.com/v1/${photoNames[i]}/media?maxWidthPx=800&skipHttpRedirect=true`,
@@ -121,23 +126,25 @@ async function handlePlacePhotosMode(
         console.error(`places-proxy photo upload failed: ${uploadError.message}`);
         continue;
       }
-      const { data: pub } = admin.storage
-        .from("place-photos")
-        .getPublicUrl(storagePath);
-      photoUrls.push(pub.publicUrl);
+      photoPaths.push(storagePath);
     }
 
-    if (photoUrls.length > 0) {
-      await admin.from("place_photos_cache").upsert({
+    if (photoPaths.length > 0) {
+      const { error: upsertError } = await admin.from("place_photos_cache").upsert({
         google_place_id: placeId,
-        photo_urls: photoUrls,
+        photo_urls: photoPaths,
         fetched_at: new Date().toISOString(),
       });
+      if (upsertError) {
+        console.error(
+          `places-proxy place_photos cache upsert failed: ${upsertError.message}`,
+        );
+      }
     }
 
     return new Response(
       JSON.stringify({
-        photoUrls: photoUrls.length > 0 ? photoUrls : cachedUrls,
+        photoUrls: photoPaths.length > 0 ? photoPaths : cachedUrls,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

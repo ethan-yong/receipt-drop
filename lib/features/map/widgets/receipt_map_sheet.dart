@@ -50,6 +50,10 @@ class ReceiptMapSheet extends StatefulWidget {
 
 class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
   bool _closing = false;
+  /// False until the open animation has reached the collapsed resting size.
+  /// Without this, [initialChildSize] of 0 trips the drag-to-dismiss check
+  /// and the sheet closes itself before the user ever sees it.
+  bool _hasOpened = false;
   bool _isExpanded = false;
   int _activeIndex = 0;
 
@@ -108,8 +112,16 @@ class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
   void _onExtentChanged() {
     if (_closing || !widget.controller.isAttached) return;
     final size = widget.controller.size;
+    // Sheet mounts at size 0 then animates up — ignore dismiss until that
+    // open animation has actually landed on the collapsed resting extent.
+    if (!_hasOpened) {
+      if (size >= ReceiptMapSheet.collapsedExtent - 0.02) {
+        _hasOpened = true;
+      }
+      return;
+    }
     // Dragged (almost) fully down → dismiss, like Google Maps.
-    if (size < 0.08 && size < ReceiptMapSheet.collapsedExtent) {
+    if (size < 0.08) {
       _closing = true;
       widget.onClose();
       return;
@@ -202,10 +214,6 @@ class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
     final total = active.amountMyr ?? 0;
     final yourShare = split?.yourShareMyr ?? total;
     final items = active.lineItems ?? const <ReceiptLineItem>[];
-    final photoUrls = [
-      ..._placePhotoUrls,
-      ?_receiptPhotoUrl,
-    ];
 
     return DraggableScrollableSheet(
       controller: widget.controller,
@@ -255,7 +263,11 @@ class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
                   fmt: fmt,
                   onSelect: _selectReceipt,
                 ),
-              _PhotoRow(urls: photoUrls, loading: _loadingDetail),
+              _PhotoRow(
+                placePhotoUrls: _placePhotoUrls,
+                receiptPhotoUrl: _receiptPhotoUrl,
+                loading: _loadingDetail,
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                 child: Column(
@@ -508,44 +520,171 @@ class _ReceiptPill extends StatelessWidget {
 }
 
 class _PhotoRow extends StatelessWidget {
-  const _PhotoRow({required this.urls, required this.loading});
+  const _PhotoRow({
+    required this.placePhotoUrls,
+    required this.receiptPhotoUrl,
+    required this.loading,
+  });
 
-  final List<String> urls;
+  final List<String> placePhotoUrls;
+  final String? receiptPhotoUrl;
 
   /// Whether the active receipt's photo is still resolving — shows a
   /// trailing skeleton tile instead of letting a tile pop in abruptly once
   /// the signed URL lands.
   final bool loading;
 
+  static const _tileW = 130.0;
+  static const _tileH = 96.0;
+  static const _radius = 14.0;
+  // Same gold as the home carousel's newest-receipt frame
+  // (`receipt_card_carousel.dart` `_CardVisual._gold`).
+  static const _gold = Color(0xFFF6C64B);
+  static const _borderWidth = 3.5;
+  static const _badgeHang = 14.0;
+  // Room for the gold frame + the "view receipt" pill that hangs below.
+  static const _framedH = _tileH + _borderWidth * 2 + _badgeHang;
+
   @override
   Widget build(BuildContext context) {
-    if (urls.isEmpty && !loading) {
+    final hasPlace = placePhotoUrls.isNotEmpty;
+    final hasReceipt = receiptPhotoUrl != null && receiptPhotoUrl!.isNotEmpty;
+    if (!hasPlace && !hasReceipt && !loading) {
       return const Padding(
         padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
-        child: ReceiptThumbnail(width: 130, height: 96, radius: 14),
+        child: ReceiptThumbnail(width: _tileW, height: _tileH, radius: _radius),
       );
     }
     return SizedBox(
-      height: 96,
+      height: _framedH + 10,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
         children: [
-          for (final url in urls)
+          for (final url in placePhotoUrls)
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: ReceiptThumbnail(
-                imageUrl: url,
-                width: 130,
-                height: 96,
-                radius: 14,
+              // Top-align with the framed receipt tile (taller by gold border).
+              child: SizedBox(
+                height: _framedH,
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ReceiptThumbnail(
+                    imageUrl: url,
+                    width: _tileW,
+                    height: _tileH,
+                    radius: _radius,
+                  ),
+                ),
               ),
             ),
-          if (loading)
-            Skeleton(
-              palette: SkeletonPalette.receiptSheet,
-              child: SkeletonBox(width: 130, height: 96, radius: 14),
+          if (hasReceipt)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: _ViewReceiptTile(imageUrl: receiptPhotoUrl!),
             ),
+          if (loading)
+            SizedBox(
+              height: _framedH,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Skeleton(
+                  palette: SkeletonPalette.receiptSheet,
+                  child: SkeletonBox(
+                    width: _tileW,
+                    height: _tileH,
+                    radius: _radius,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Receipt photo framed like the home carousel's newest-receipt gold border,
+/// with a "view receipt" pill hanging off the bottom edge.
+class _ViewReceiptTile extends StatelessWidget {
+  const _ViewReceiptTile({required this.imageUrl});
+
+  final String imageUrl;
+
+  static const _gold = _PhotoRow._gold;
+  static const _borderWidth = _PhotoRow._borderWidth;
+  static const _tileW = _PhotoRow._tileW;
+  static const _tileH = _PhotoRow._tileH;
+  static const _radius = _PhotoRow._radius;
+  static const _badgeHang = _PhotoRow._badgeHang;
+
+  @override
+  Widget build(BuildContext context) {
+    final framedW = _tileW + _borderWidth * 2;
+    final framedH = _tileH + _borderWidth * 2;
+    return SizedBox(
+      width: framedW,
+      height: framedH + _badgeHang,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              width: framedW,
+              height: framedH,
+              decoration: BoxDecoration(
+                color: _gold,
+                borderRadius: BorderRadius.circular(_radius + _borderWidth),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x40DCAA28),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(_borderWidth),
+              child: ReceiptThumbnail(
+                imageUrl: imageUrl,
+                width: _tileW,
+                height: _tileH,
+                radius: _radius,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _gold,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x66DCAA28),
+                      blurRadius: 10,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  'view receipt',
+                  style: balooText(
+                    11,
+                    FontWeight.w800,
+                    color: const Color(0xFF23201A),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

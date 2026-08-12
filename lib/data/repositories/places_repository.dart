@@ -148,6 +148,10 @@ class PlacesRepository {
   /// bucket) so repeat calls for the same place don't re-hit Google's billed
   /// Photo Media endpoint. Returns an empty list on failure or when the
   /// place has no photos.
+  ///
+  /// The edge function returns Storage-relative paths (not absolute URLs) so
+  /// Docker-internal hosts like `kong:8000` never leak to the device. We
+  /// rebuild each public URL against this client's Supabase origin.
   static Future<List<String>> fetchPlacePhotos(String placeGooglePlaceId) async {
     if (!Env.hasSupabaseConfig || placeGooglePlaceId.trim().isEmpty) {
       return const [];
@@ -161,13 +165,33 @@ class PlacesRepository {
 
       final data = response.data;
       if (data is! Map<String, dynamic>) return const [];
-      final urls = data['photoUrls'];
-      if (urls is! List) return const [];
+      final refs = data['photoUrls'];
+      if (refs is! List) return const [];
 
-      return urls.whereType<String>().toList();
+      final storage = Supabase.instance.client.storage.from('place-photos');
+      return refs
+          .whereType<String>()
+          .map((ref) => storage.getPublicUrl(_placePhotoStoragePath(ref)))
+          .toList();
     } on Object {
       return const [];
     }
+  }
+
+  /// Normalizes an edge-function photo ref into a bucket-relative path.
+  /// Accepts bare paths (`ChIJ…/0.jpg`) and any absolute public URL that
+  /// already points at the `place-photos` bucket (stale cache entries).
+  @visibleForTesting
+  static String placePhotoStoragePath(String ref) => _placePhotoStoragePath(ref);
+
+  static String _placePhotoStoragePath(String ref) {
+    const marker = '/storage/v1/object/public/place-photos/';
+    final idx = ref.indexOf(marker);
+    if (idx >= 0) return ref.substring(idx + marker.length);
+    if (ref.startsWith('place-photos/')) {
+      return ref.substring('place-photos/'.length);
+    }
+    return ref;
   }
 
   /// Parses the raw `candidates` array from the `places-proxy` nearby response.
