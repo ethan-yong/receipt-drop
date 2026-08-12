@@ -22,7 +22,7 @@ import '../../widgets/profile_photo.dart';
 import 'widgets/friend_map_marker.dart';
 import 'widgets/friend_pin_sheet.dart';
 import 'widgets/overlap_stack_marker.dart';
-import 'widgets/place_detail_panel.dart';
+import 'widgets/receipt_map_sheet.dart';
 import 'widgets/spend_cluster_bubble.dart';
 import 'widgets/spend_place_marker.dart';
 
@@ -970,7 +970,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                   ),
                 ),
               if (selected != null)
-                PlaceDetailPanel(
+                ReceiptMapSheet(
                   cluster: selected,
                   controller: _panelController,
                   onClose: _closePanel,

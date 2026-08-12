@@ -142,6 +142,34 @@ class PlacesRepository {
     }
   }
 
+  /// Google Places photos of a venue (Google-Maps-style venue photos, not
+  /// receipt scans), via the `places-proxy` Edge Function's `place_photos`
+  /// mode — server-cached (`place_photos_cache` + the `place-photos` Storage
+  /// bucket) so repeat calls for the same place don't re-hit Google's billed
+  /// Photo Media endpoint. Returns an empty list on failure or when the
+  /// place has no photos.
+  static Future<List<String>> fetchPlacePhotos(String placeGooglePlaceId) async {
+    if (!Env.hasSupabaseConfig || placeGooglePlaceId.trim().isEmpty) {
+      return const [];
+    }
+    try {
+      final response = await Supabase.instance.client.functions.invoke(
+        'places-proxy',
+        body: {'mode': 'place_photos', 'placeId': placeGooglePlaceId},
+      );
+      if (response.status != 200) return const [];
+
+      final data = response.data;
+      if (data is! Map<String, dynamic>) return const [];
+      final urls = data['photoUrls'];
+      if (urls is! List) return const [];
+
+      return urls.whereType<String>().toList();
+    } on Object {
+      return const [];
+    }
+  }
+
   /// Parses the raw `candidates` array from the `places-proxy` nearby response.
   /// Exposed for unit testing; callers should use [fetchNearbyCandidates].
   @visibleForTesting
