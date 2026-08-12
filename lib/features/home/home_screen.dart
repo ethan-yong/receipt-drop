@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
@@ -19,7 +18,7 @@ import '../../features/share/receipt_capture_flow.dart';
 import '../../widgets/adaptive_sync_banner.dart';
 import '../../widgets/pending_drop_indicator.dart';
 import '../../widgets/receipt_card_carousel.dart';
-import '../../widgets/share_coach_mark.dart';
+import '../../widgets/share_ticker.dart';
 import '../../widgets/spending_insights_card.dart';
 import '../../widgets/top_badges_grid.dart';
 
@@ -31,8 +30,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  var _showCoachMark =
-      AppPrefs.shareCoachMarkPending && !AppPrefs.shareCoachMarkSeen;
   BadgeCatalog? _badgeCatalog;
   final _badgeStream = BadgeRepository.streamAll();
   final _splitRequestsStream = BillSplitRepository.streamMyPendingSplitParticipants();
@@ -214,9 +211,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           .where((row) => row['paid'] != true)
                           .length;
                       return _HomeTopOverlay(
-                        showCoachMark: _showCoachMark,
-                        onDismissCoachMark: () =>
-                            setState(() => _showCoachMark = false),
                         stuckCount: stuck,
                         onRetrySync: _retrySync,
                         needsReview: needsReview,
@@ -238,8 +232,6 @@ class _HomeScreenState extends State<HomeScreen> {
 /// Pinned home-screen alerts that stay above scrolling content.
 class _HomeTopOverlay extends StatefulWidget {
   const _HomeTopOverlay({
-    required this.showCoachMark,
-    required this.onDismissCoachMark,
     required this.stuckCount,
     required this.onRetrySync,
     required this.needsReview,
@@ -247,8 +239,6 @@ class _HomeTopOverlay extends StatefulWidget {
     required this.onHeightChanged,
   });
 
-  final bool showCoachMark;
-  final VoidCallback onDismissCoachMark;
   final int stuckCount;
   final VoidCallback onRetrySync;
   final int needsReview;
@@ -294,8 +284,7 @@ class _HomeTopOverlayState extends State<_HomeTopOverlay> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (widget.showCoachMark)
-                ShareCoachMark(onDismiss: widget.onDismissCoachMark),
+              const ShareTicker(),
               AdaptiveSyncBanner(
                 stuckCount: widget.stuckCount,
                 onRetry: widget.onRetrySync,

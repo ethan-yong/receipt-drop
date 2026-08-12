@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/platform/platform_feedback.dart';
 import '../../data/repositories/social_repository.dart';
@@ -119,7 +118,7 @@ class ReceiptCaptureFlow {
       ),
     );
     if (draft == null || !context.mounted) return;
-    await _showSaveSheet(context, draft, fromShareIntent: true);
+    await _showSaveSheet(context, draft);
   }
 
   static Future<void> _ingestAndSave(
@@ -142,9 +141,8 @@ class ReceiptCaptureFlow {
 
   static Future<void> _showSaveSheet(
     BuildContext context,
-    ReceiptIngestDraft draft, {
-    bool fromShareIntent = false,
-  }) async {
+    ReceiptIngestDraft draft,
+  ) async {
     TransactionView? savedTx;
 
     final categories = await loadBundledCategoryConfig();
@@ -172,12 +170,6 @@ class ReceiptCaptureFlow {
     );
 
     if (!saved || savedTx == null || !context.mounted) return;
-
-    if (fromShareIntent) {
-      await AppPrefs.setShareCoachMarkPending();
-    }
-
-    if (!context.mounted) return;
 
     context.pushNamed('save-success', extra: <TransactionView>[savedTx!]);
   }

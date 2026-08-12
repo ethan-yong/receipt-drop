@@ -2,8 +2,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _kOnboardingComplete = 'onboarding_complete';
 const _kProfileSetupComplete = 'profile_setup_complete';
-const _kShareCoachMarkSeen = 'share_coach_mark_seen';
-const _kShareCoachMarkPending = 'share_coach_mark_pending';
 const _kInsightsLastGeneratedAt = 'insights_last_generated_at';
 const _kInsightsSyncedTxSinceLastCycle = 'insights_synced_tx_since_last_cycle';
 
@@ -29,22 +27,6 @@ class AppPrefs {
 
   static Future<void> setProfileSetupComplete() async {
     await _prefs?.setBool(_kProfileSetupComplete, true);
-  }
-
-  static bool get shareCoachMarkSeen =>
-      _prefs?.getBool(_kShareCoachMarkSeen) ?? false;
-
-  static bool get shareCoachMarkPending =>
-      _prefs?.getBool(_kShareCoachMarkPending) ?? false;
-
-  static Future<void> setShareCoachMarkPending() async {
-    if (shareCoachMarkSeen) return;
-    await _prefs?.setBool(_kShareCoachMarkPending, true);
-  }
-
-  static Future<void> setShareCoachMarkSeen() async {
-    await _prefs?.setBool(_kShareCoachMarkSeen, true);
-    await _prefs?.remove(_kShareCoachMarkPending);
   }
 
   static DateTime? get insightsLastGeneratedAt {
