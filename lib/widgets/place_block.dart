@@ -33,7 +33,7 @@ class PlaceBlock extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
                 child: SizedBox(
-                  height: 100,
+                  height: 120,
                   width: double.infinity,
                   child: _buildPreview(),
                 ),

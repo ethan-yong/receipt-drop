@@ -455,20 +455,42 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     Widget thumb;
     if (_resolvingImage) {
       thumb = const Skeleton(
-        child: SkeletonBox(
-          width: 200,
-          height: 200,
-          radius: AppSpacing.cardRadius,
+        child: AspectRatio(
+          aspectRatio: 1 / 0.86,
+          child: SkeletonBox(
+            width: double.infinity,
+            height: double.infinity,
+            radius: AppSpacing.heroRadius,
+          ),
         ),
       );
     } else {
-      thumb = ReceiptThumbnail(
-        size: 200,
-        radius: AppSpacing.cardRadius,
-        localPath: image?.localPath,
-        imageUrl: image?.imageUrl,
+      thumb = AspectRatio(
+        aspectRatio: 1 / 0.86,
+        child: ReceiptThumbnail(
+          width: double.infinity,
+          height: double.infinity,
+          radius: AppSpacing.heroRadius,
+          localPath: image?.localPath,
+          imageUrl: image?.imageUrl,
+        ),
       );
     }
+
+    thumb = Container(
+      decoration: BoxDecoration(
+        borderRadius: AppSpacing.heroBorderRadius,
+        border: Border.all(color: AppColors.divider, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.10),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: thumb,
+    );
 
     return Column(
       children: [
@@ -555,6 +577,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 child: AmountField(
                   controller: _amountController,
                   onChanged: _onAmountChanged,
+                  bordered: true,
                 ),
               ),
             ),
@@ -688,11 +711,12 @@ class _TxDetailSkeleton extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Center(
+            const AspectRatio(
+              aspectRatio: 1 / 0.86,
               child: SkeletonBox(
-                width: 200,
-                height: 200,
-                radius: AppSpacing.cardRadius,
+                width: double.infinity,
+                height: double.infinity,
+                radius: AppSpacing.heroRadius,
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -793,17 +817,19 @@ class _ImpactChip extends StatelessWidget {
     }
   }
 
+  static final _pillRadius = BorderRadius.circular(999);
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: AppSpacing.chipBorderRadius,
+      borderRadius: _pillRadius,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected ? _color : AppColors.cardSurface,
-          borderRadius: AppSpacing.chipBorderRadius,
+          borderRadius: _pillRadius,
           border: Border.all(
             color: selected ? _color : AppColors.divider,
             width: selected ? 2 : 1,

@@ -9,6 +9,17 @@ import '../../widgets/insight_visualization.dart';
 import '../../widgets/spending_insights_card.dart';
 import '../../widgets/typewriter_text.dart';
 
+/// Screen-scoped tokens from the `Insights Screen Redo.dc.html` handoff that
+/// don't already match shared `AppColors` closely enough to reuse.
+abstract final class _InsightsColors {
+  static const mutedLabel = Color(0xFFB0A895);
+  static const divider = Color(0xFFF1EAD9);
+  static const alert = Color(0xFFB23A2E);
+  static const supportingText = Color(0xFF4A4438);
+}
+
+const _kCardRadius = 24.0;
+
 /// Detail view listing up to 3 curated insights.
 class InsightsDetailScreen extends StatelessWidget {
   const InsightsDetailScreen({super.key});
@@ -18,7 +29,10 @@ class InsightsDetailScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.scaffold,
       appBar: AppBar(
-        title: const Text('Insights'),
+        title: Text(
+          'Insights',
+          style: Theme.of(context).textTheme.displayMedium,
+        ),
         // After save-success we `goNamed` here (no stack to pop) — land home.
         leading: BackButton(
           onPressed: () {
@@ -57,7 +71,10 @@ class InsightsDetailScreen extends StatelessWidget {
           final freshness = insightFreshnessLabel(freshest.createdAt);
 
           return ListView.separated(
-            padding: const EdgeInsets.all(AppSpacing.md),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             itemCount: insights.length + 1,
             separatorBuilder: (_, index) {
               if (index == 0) return const SizedBox(height: AppSpacing.md);
@@ -67,7 +84,11 @@ class InsightsDetailScreen extends StatelessWidget {
               if (index == 0) {
                 return Text(
                   freshness,
-                  style: Theme.of(context).textTheme.labelSmall,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _InsightsColors.mutedLabel,
+                      ),
                 );
               }
               final insight = insights[index - 1];
@@ -99,21 +120,22 @@ class _InsightCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final headlineColor = dark ? Colors.white : AppColors.textPrimary;
     final supportingColor =
-        dark ? AppColors.onDarkCardSecondary : AppColors.textSecondary;
+        dark ? AppColors.onDarkCardSecondary : _InsightsColors.supportingText;
     final iconColor =
-        dark ? AppColors.insightNeutralOnDark : AppColors.primaryGreenDark;
+        dark ? AppColors.insightNeutralOnDark : AppColors.accentOrange;
 
     return Container(
       width: double.infinity,
-      padding: AppSpacing.cardPadding,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       decoration: BoxDecoration(
         color: dark ? AppColors.textPrimary : AppColors.cardSurface,
-        borderRadius: AppSpacing.cardBorderRadius,
-        border: dark ? null : Border.all(color: AppColors.divider),
+        borderRadius: BorderRadius.circular(_kCardRadius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? 0.18 : 0.06),
-            blurRadius: 20,
+            color: dark
+                ? Colors.black.withValues(alpha: 0.18)
+                : const Color(0xFF3C2D0F).withValues(alpha: 0.08),
+            blurRadius: dark ? 20 : 22,
             offset: const Offset(0, 8),
           ),
         ],
@@ -124,12 +146,15 @@ class _InsightCard extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(insightTypeIcon(insight.type), size: 20, color: iconColor),
+              Icon(insightTypeIcon(insight.type), size: 18, color: iconColor),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
                   split.headline,
-                  style: textTheme.titleSmall?.copyWith(color: headlineColor),
+                  style: textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: headlineColor,
+                  ),
                 ),
               ),
               if (badge != null) ...[
@@ -143,10 +168,22 @@ class _InsightCard extends StatelessWidget {
             InsightVisualization(visualization: insight.visualization),
           ],
           if (split.supporting != null) ...[
-            const SizedBox(height: AppSpacing.sm),
+            const SizedBox(height: 16),
+            Container(
+              height: 1.5,
+              color: dark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : _InsightsColors.divider,
+            ),
+            const SizedBox(height: 14),
             TypewriterText(
               text: split.supporting!,
-              style: textTheme.bodySmall?.copyWith(color: supportingColor),
+              style: textTheme.bodyMedium?.copyWith(
+                fontSize: 14.5,
+                height: 1.5,
+                fontWeight: FontWeight.w500,
+                color: supportingColor,
+              ),
             ),
           ],
         ],
@@ -164,7 +201,7 @@ class _InsightBadgeLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (badge.direction) {
-      InsightBadgeDirection.up => AppColors.insightAlert,
+      InsightBadgeDirection.up => _InsightsColors.alert,
       InsightBadgeDirection.down => AppColors.insightGood,
       InsightBadgeDirection.neutral =>
         dark ? AppColors.insightNeutralOnDark : AppColors.primaryGreenDark,
@@ -175,6 +212,7 @@ class _InsightBadgeLabel extends StatelessWidget {
         Text(
           badge.label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontSize: 14.5,
                 color: color,
                 fontWeight: FontWeight.w800,
               ),
@@ -185,7 +223,7 @@ class _InsightBadgeLabel extends StatelessWidget {
             badge.direction == InsightBadgeDirection.up
                 ? Icons.arrow_upward_rounded
                 : Icons.arrow_downward_rounded,
-            size: 14,
+            size: 13,
             color: color,
           ),
         ],
