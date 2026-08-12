@@ -90,6 +90,20 @@ class BillSplitView {
 
   bool get allSettled => pendingCount == 0;
 
+  /// User ids to show as assignee avatars on a line-item row.
+  /// Equal splits: owner + every friend participant (all share every item).
+  /// By-item: users assigned to this line item (empty when [itemId] is missing).
+  List<String> assigneeIdsForLineItem(String? itemId) {
+    if (mode == BillSplitMode.equal) {
+      return [ownerId, ...participants.map((p) => p.friendUserId)];
+    }
+    if (itemId == null || itemId.isEmpty) return const [];
+    return [
+      for (final a in itemAssignments)
+        if (a.lineItemId == itemId) a.assignedUserId,
+    ];
+  }
+
   BillSplitView copyWith({List<BillSplitParticipant>? participants}) => BillSplitView(
         id: id,
         transactionId: transactionId,

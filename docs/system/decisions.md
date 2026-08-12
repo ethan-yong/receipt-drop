@@ -46,7 +46,19 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 **Alternatives considered**: payer-only bookkeeping with no friend visibility (rejected — see reason above); ad-hoc/derived friend groups instead of a persisted table (rejected per explicit product decision — groups should be reusable, not recomputed); a full-screen `go_router` route for the payer flow instead of a bottom sheet (rejected — `ReceiptConfirmSheet`'s sheet-from-an-open-receipt pattern is the closer precedent, and `receipt_sheet_theme.dart`'s palette already matches the source design's gold/ink/cream almost hex-for-hex).
 
-**Tradeoffs**: a split is immutable once created (`bill_splits` has no update policy, `unique(transaction_id)`) — there is no "edit a split's composition" UI in v1; redoing one requires a manual delete. By-item split is gated on the receipt having finished syncing (`transaction.syncStatus == 'synced'`) since item assignments FK to server-side `receipt_line_items.id`, so a just-captured receipt briefly can't use by-item mode. "Remind" is best-effort only — it stamps `bill_split_participants.last_reminded_at` and flips the payer's own button label optimistically; there is no real notification delivery to the friend, by design (matches the rest of the app's lack of a push infrastructure).
+**Tradeoffs**: a split is immutable once created (`bill_splits` has no update policy, `unique(transaction_id)`) — there is no "edit a split's composition" UI after persist; redoing one requires a manual delete. By-item split is gated on the receipt having finished syncing (`transaction.syncStatus == 'synced'`) since item assignments FK to server-side `receipt_line_items.id`, so a just-captured receipt briefly can't use by-item mode. "Remind" is best-effort only — it stamps `bill_split_participants.last_reminded_at` and flips the payer's own button label optimistically; there is no real notification delivery to the friend, by design (matches the rest of the app's lack of a push infrastructure).
+
+---
+
+## Bill Split wizard: swipeable steps + deferred create (2026-08-12)
+
+**Decision**: `BillSplitSheet` uses a `PageView` for Who → How → Review so the payer can swipe (or use back/Continue) to change friends / split method before commit. Review shows a **local draft** `BillSplitView`; `createSplit` runs only on the first Remind, Done, or paid toggle (`_ensurePersisted`). Reopening a receipt that already has a split still locks on Review (`NeverScrollableScrollPhysics`, no back) so paid history is not recomposed away.
+
+**Reason**: create-on-enter-Review made swipe-back editing impossible without delete/recreate; deferring insert keeps the wizard editable and avoids friends briefly seeing a half-edited split.
+
+**Alternatives considered**: create on enter Review then delete on swipe-back (rejected — racey for friend discovery and wipeable paid state); swipe only before first Review visit (rejected — does not meet “edit from Review”).
+
+**Tradeoffs**: first Review action pays a create latency hop; after persist in-session, composition locks (same as reopen) because `bill_splits` remains insert-only.
 
 ---
 

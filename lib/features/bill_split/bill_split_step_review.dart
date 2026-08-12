@@ -11,7 +11,7 @@ import 'person_avatar.dart';
 /// amount with a tappable paid/pending status pill, and a best-effort
 /// "remind" action (see `BillSplitRepository.sendReminder` — there is no
 /// push-notification delivery; this only stamps a timestamp and flips the
-/// button label optimistically).
+/// button label optimistically before navigating to Insights).
 class BillSplitStepReview extends StatelessWidget {
   const BillSplitStepReview({
     super.key,
@@ -122,7 +122,7 @@ class BillSplitStepReview extends StatelessWidget {
             children: [
               ReceiptSheetCta(
                 label: remindersJustSent
-                    ? 'Reminders sent ✓'
+                    ? '✓ Reminders sent'
                     : split.allSettled
                         ? 'All settled 🎉'
                         : 'Remind ${split.pendingCount} ${split.pendingCount == 1 ? 'friend' : 'friends'}',
@@ -132,7 +132,7 @@ class BillSplitStepReview extends StatelessWidget {
               ReceiptSheetLink(
                 label: 'Done for now',
                 color: BillSplitColors.subLight,
-                onTap: onDone,
+                onTap: remindersJustSent ? null : onDone,
               ),
             ],
           ),

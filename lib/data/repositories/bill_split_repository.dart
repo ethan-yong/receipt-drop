@@ -238,7 +238,7 @@ class BillSplitRepository {
   /// notification or messaging system in this app to actually deliver a
   /// reminder — discovery is the friend's own Split Requests screen/Home
   /// banner (see `getMySplitRequests`). This just records that the payer
-  /// tapped "remind" and drives the "Reminders sent ✓" optimistic label.
+  /// tapped "remind" and drives the "✓ Reminders sent" optimistic label.
   static Future<void> sendReminder(String participantId) async {
     try {
       await Supabase.instance.client.from('bill_split_participants').update({

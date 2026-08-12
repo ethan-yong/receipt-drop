@@ -337,6 +337,29 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     _clearSpiderfy();
   }
 
+  /// Android/iOS system back: dismiss spiderfy → collapse sheet → close sheet
+  /// before the navigator exits the app (the pin sheet is not a route).
+  bool get _hasMapOverlay =>
+      _selectedCluster != null || _spiderfiedGroup != null;
+
+  void _handleSystemBack() {
+    if (_spiderfiedGroup != null) {
+      _clearSpiderfy();
+      return;
+    }
+    if (_selectedCluster == null) return;
+    final mid = (ReceiptMapSheet.collapsedExtent + ReceiptMapSheet.expandedExtent) / 2;
+    if (_panelController.isAttached && _panelController.size > mid) {
+      _panelController.animateTo(
+        ReceiptMapSheet.collapsedExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+      return;
+    }
+    _closePanel();
+  }
+
   /// One-time camera fit over everything worth seeing (own places, friend
   /// pins, own position) once the first data arrives from whichever async
   /// source resolves first — retried (harmlessly, via [_didAutoFit]) from
@@ -825,7 +848,12 @@ class _SpendMapScreenState extends State<SpendMapScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_hasMapOverlay,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleSystemBack();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.scaffold,
       body: StreamBuilder<List<TransactionView>>(
         stream: AppServices.transactions.watchAll(),
@@ -1000,6 +1028,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
           );
         },
       ),
+    ),
     );
   }
 }

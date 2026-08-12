@@ -339,6 +339,21 @@ class TransactionRepository {
         retryCount: const Value(0),
       ),
     );
+    final items = view.lineItems;
+    if (items != null) {
+      for (final item in items) {
+        final id = item.id;
+        if (id == null || id.isEmpty) continue;
+        await (_db.update(_db.outboxLineItems)..where((li) => li.id.equals(id)))
+            .write(
+          OutboxLineItemsCompanion(
+            name: Value(item.name),
+            priceMyr: Value(item.priceMyr),
+            quantity: Value(item.quantity),
+          ),
+        );
+      }
+    }
     unawaited(SyncWorker.run(_db, view.id));
   }
 

@@ -1,24 +1,36 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
+import '../../core/config/env.dart';
+import '../../core/platform/adaptive_sheet.dart';
 import '../../core/theme/app_theme.dart';
-import '../bill_split/bill_split_sheet.dart';
-import '../../domain/models/receipt_display_image.dart';
-import '../../domain/models/receipt_line_item.dart';
-import '../../domain/models/transaction_view.dart';
+import '../../core/theme/receipt_sheet_theme.dart';
+import '../../data/repositories/bill_split_repository.dart';
 import '../../data/repositories/places_repository.dart';
+import '../../data/repositories/profile_repository.dart';
+import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/category_matcher.dart';
 import '../../domain/logic/category_matcher_bundled.dart';
 import '../../domain/logic/impact_level.dart';
+import '../../domain/models/bill_split.dart';
+import '../../domain/models/receipt_display_image.dart';
+import '../../domain/models/receipt_line_item.dart';
+import '../../domain/models/transaction_view.dart';
 import '../../features/places/place_picker_screen.dart';
 import '../../features/share/receipt_retake_flow.dart';
 import '../../widgets/amount_field.dart';
 import '../../widgets/place_block.dart';
+import '../../widgets/quantity_picker_sheet.dart';
 import '../../widgets/receipt_drop_primary_button.dart';
+import '../../widgets/receipt_line_item_row.dart';
 import '../../widgets/receipt_thumbnail.dart';
 import '../../widgets/skeleton.dart';
+import '../bill_split/bill_split_sheet.dart';
 import 'receipt_image_viewer_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
@@ -33,6 +45,13 @@ class TransactionDetailScreen extends StatefulWidget {
 
 class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   final _amountController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _nameFocus = FocusNode();
+  final _priceFocus = FocusNode();
+  final _nameFieldKey = GlobalKey();
+  final _priceFieldKey = GlobalKey();
+
   String? _category;
   String _placeName = 'No place';
   String? _placeGooglePlaceId;
@@ -48,20 +67,44 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   ReceiptDisplayImage? _displayImage;
   bool _needsReview = false;
   bool _resolvingImage = false;
+  bool _amountManuallyEdited = false;
+  int? _editingNameIndex;
+  int? _editingPriceIndex;
+
+  /// By-item split assignees for the Items column layout (same as map sheet).
+  BillSplitView? _split;
+  List<FriendshipView> _friends = const [];
+  String? _ownerId;
+  String? _ownerDisplayName;
+  String? _ownerAvatarUrl;
 
   @override
   void dispose() {
     _amountController.dispose();
+    _nameController.dispose();
+    _priceController.dispose();
+    _nameFocus.dispose();
+    _priceFocus.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final ownerId =
+        Env.hasSupabaseConfig ? Supabase.instance.client.auth.currentUser?.id : null;
     final results = await Future.wait([
       AppServices.transactions.getById(widget.transactionId),
       loadBundledCategoryConfig(),
+      BillSplitRepository.getSplitForTransaction(widget.transactionId),
+      SocialRepository.listFriendships(),
+      if (ownerId != null) ProfileRepository.fetchProfileHeader(ownerId),
     ]);
     final tx = results[0] as TransactionView?;
     final config = results[1] as CategoryConfig;
+    final split = results[2] as BillSplitView?;
+    final friends = results[3] as List<FriendshipView>;
+    final ownerHeader = ownerId != null
+        ? results[4] as ({String? displayName, String? username, String? avatarUrl})
+        : null;
     if (tx == null || !mounted) return;
     setState(() {
       _amountController.text = tx.amountMyr?.toStringAsFixed(2) ?? '';
@@ -75,12 +118,43 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       _occurredAt = tx.occurredAt;
       _impactOverride = impactLevelFromStorage(tx.impactUser);
       _categoryConfig = config;
-      _lineItems = tx.lineItems ?? const [];
+      _lineItems = List<ReceiptLineItem>.from(tx.lineItems ?? const []);
       _needsReview = tx.needsReview;
+      _split = split;
+      _friends =
+          friends.where((f) => f.status == FriendshipStatus.accepted).toList();
+      _ownerId = ownerId;
+      _ownerDisplayName = ownerHeader?.displayName;
+      _ownerAvatarUrl = ownerHeader?.avatarUrl;
+      _amountManuallyEdited = false;
+      _editingNameIndex = null;
+      _editingPriceIndex = null;
       _loading = false;
       _resolvingImage = true;
     });
     await _resolveImage();
+  }
+
+  List<String> _assigneesFor(ReceiptLineItem item) {
+    final split = _split;
+    if (split == null) return const [];
+    return split.assigneeIdsForLineItem(item.id);
+  }
+
+  String? _displayNameFor(String userId) {
+    if (userId == _ownerId) return _ownerDisplayName ?? 'You';
+    for (final f in _friends) {
+      if (f.otherUserId == userId) return f.otherDisplayName;
+    }
+    return null;
+  }
+
+  String? _avatarUrlFor(String userId) {
+    if (userId == _ownerId) return _ownerAvatarUrl;
+    for (final f in _friends) {
+      if (f.otherUserId == userId) return f.otherAvatarUrl;
+    }
+    return null;
   }
 
   Future<void> _resolveImage() async {
@@ -97,7 +171,123 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   @override
   void initState() {
     super.initState();
+    _priceFocus.addListener(() {
+      if (!_priceFocus.hasFocus && _editingPriceIndex != null) {
+        _commitPriceEdit();
+      }
+    });
+    _nameFocus.addListener(() {
+      if (!_nameFocus.hasFocus && _editingNameIndex != null) {
+        _commitNameEdit();
+      }
+    });
     _load();
+  }
+
+  void _onAmountChanged(String _) {
+    _amountManuallyEdited = true;
+  }
+
+  void _syncAmountFromItems() {
+    if (_amountManuallyEdited) return;
+    if (_lineItems.isEmpty) return;
+    final total = _lineItems.fold<double>(0, (sum, item) => sum + item.priceMyr);
+    _amountController.text = total.toStringAsFixed(2);
+  }
+
+  void _commitAllPendingEdits() {
+    if (_editingPriceIndex != null) _commitPriceEdit();
+    if (_editingNameIndex != null) _commitNameEdit();
+  }
+
+  void _startNameEdit(int index) {
+    _commitAllPendingEdits();
+    setState(() {
+      _editingNameIndex = index;
+      _nameController.text = _lineItems[index].name;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _editingNameIndex != index) return;
+      _nameFocus.requestFocus();
+      _nameController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _nameController.text.length,
+      );
+    });
+  }
+
+  void _commitNameEdit() {
+    final index = _editingNameIndex;
+    if (index == null) return;
+    final text = _nameController.text.trim();
+    setState(() {
+      if (text.isNotEmpty) {
+        _lineItems = [
+          for (var i = 0; i < _lineItems.length; i++)
+            if (i == index) _lineItems[i].copyWith(name: text) else _lineItems[i],
+        ];
+      }
+      _editingNameIndex = null;
+    });
+  }
+
+  void _startPriceEdit(int index) {
+    _commitAllPendingEdits();
+    setState(() {
+      _editingPriceIndex = index;
+      _priceController.text = _lineItems[index].priceMyr.toStringAsFixed(2);
+      _priceController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _priceController.text.length,
+      );
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _editingPriceIndex != index) return;
+      _priceFocus.requestFocus();
+    });
+  }
+
+  void _commitPriceEdit() {
+    final index = _editingPriceIndex;
+    if (index == null) return;
+    final parsed =
+        double.tryParse(_priceController.text.trim().replaceAll(',', ''));
+    setState(() {
+      if (parsed != null && parsed >= 0) {
+        _lineItems = [
+          for (var i = 0; i < _lineItems.length; i++)
+            if (i == index)
+              _lineItems[i].copyWith(priceMyr: parsed)
+            else
+              _lineItems[i],
+        ];
+      }
+      _editingPriceIndex = null;
+      _syncAmountFromItems();
+    });
+  }
+
+  Future<void> _startQuantityEdit(int index) async {
+    _commitAllPendingEdits();
+    final item = _lineItems[index];
+    final result = await AdaptiveSheet.showForm<int>(
+      context: context,
+      backgroundColor: ReceiptSheetColors.surface,
+      topRadius: kReceiptSheetRadius,
+      showDragHandle: false,
+      child: QuantityPickerSheet(
+        itemName: item.name,
+        initialQuantity: item.quantity ?? 1,
+      ),
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _lineItems = [
+        for (var i = 0; i < _lineItems.length; i++)
+          if (i == index) _lineItems[i].copyWith(quantity: result) else _lineItems[i],
+      ];
+      _syncAmountFromItems();
+    });
   }
 
   Future<void> _openViewer() async {
@@ -127,6 +317,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   }
 
   Future<void> _save() async {
+    _commitAllPendingEdits();
     final tx = await AppServices.transactions.getById(widget.transactionId);
     if (tx == null) return;
     final parsed = double.tryParse(_amountController.text.trim());
@@ -142,6 +333,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       placeLng: _placeLng,
       occurredAt: _occurredAt,
       impactUser: impact.storageValue,
+      lineItems: _lineItems,
     );
     await AppServices.transactions.updateTransaction(updated);
     if (mounted) {
@@ -349,7 +541,10 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             Card(
               child: Padding(
                 padding: AppSpacing.cardPadding,
-                child: AmountField(controller: _amountController),
+                child: AmountField(
+                  controller: _amountController,
+                  onChanged: _onAmountChanged,
+                ),
               ),
             ),
             if (_lineItems.isNotEmpty) ...[
@@ -365,27 +560,29 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                         style: Theme.of(context).textTheme.labelMedium,
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      for (final item in _lineItems)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  item.displayLabel,
-                                  style:
-                                      Theme.of(context).textTheme.bodyMedium,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: AppSpacing.sm),
-                              Text(
-                                item.priceDisplay,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ],
-                          ),
+                      for (var i = 0; i < _lineItems.length; i++)
+                        ReceiptLineItemRow(
+                          item: _lineItems[i],
+                          assigneeIds: _assigneesFor(_lineItems[i]),
+                          displayNameFor: _displayNameFor,
+                          avatarUrlFor: _avatarUrlFor,
+                          textStyle:
+                              Theme.of(context).textTheme.bodyMedium ??
+                              const TextStyle(),
+                          bottomPadding: 6,
+                          editingName: _editingNameIndex == i,
+                          editingPrice: _editingPriceIndex == i,
+                          nameController: _nameController,
+                          nameFocus: _nameFocus,
+                          priceController: _priceController,
+                          priceFocus: _priceFocus,
+                          nameFieldKey:
+                              _editingNameIndex == i ? _nameFieldKey : null,
+                          priceFieldKey:
+                              _editingPriceIndex == i ? _priceFieldKey : null,
+                          onEditName: () => _startNameEdit(i),
+                          onEditPrice: () => _startPriceEdit(i),
+                          onEditQuantity: () => unawaited(_startQuantityEdit(i)),
                         ),
                     ],
                   ),

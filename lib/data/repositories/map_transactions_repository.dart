@@ -72,6 +72,8 @@ class MapTransactionsRepository {
     return raw
         .cast<Map<String, dynamic>>()
         .map((r) => ReceiptLineItem(
+              // Present after 20260812140000; null on older RPC payloads.
+              id: r['id'] as String?,
               name: r['name'] as String,
               priceMyr: (r['price_myr'] as num).toDouble(),
               quantity: (r['quantity'] as num?)?.toInt(),

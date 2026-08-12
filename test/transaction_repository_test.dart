@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:receipt_drop/data/local/app_database.dart';
 import 'package:receipt_drop/data/repositories/ingest_receipt_request.dart';
@@ -469,6 +469,67 @@ void main() {
     expect(row.categoryUser, 'Groceries');
     expect(row.syncStatus, 'pending');
     expect(row.retryCount, 0);
+
+    await db.close();
+  });
+
+  test(
+      'updateTransaction persists line-item name/price/qty edits and '
+      're-queues sync', () async {
+    final db = AppDatabase.memory();
+    final repo = TransactionRepository(db);
+
+    final saved = await repo.ingestReceipt(
+      const IngestReceiptRequest(
+        localFilePath: '/tmp/line_edit.png',
+        mimeType: 'image/png',
+        amountMyr: 18.0,
+        needsAmount: false,
+        merchantRaw: 'Item Cafe',
+        categoryGuess: 'Food & Drink',
+        lineItems: [
+          ReceiptLineItem(name: 'Latte', priceMyr: 10.0, quantity: 1),
+          ReceiptLineItem(name: 'Toast', priceMyr: 8.0, quantity: 2),
+        ],
+      ),
+    );
+
+    await (db.update(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .write(const OutboxTransactionsCompanion(syncStatus: Value('synced')));
+
+    final before = await repo.getById(saved.id);
+    expect(before!.lineItems, hasLength(2));
+    final ids = before.lineItems!.map((i) => i.id).toList();
+    expect(ids.every((id) => id != null && id.isNotEmpty), isTrue);
+
+    final edited = before.copyWith(
+      amountMyr: 22.5,
+      lineItems: [
+        before.lineItems![0].copyWith(name: 'Flat White', priceMyr: 12.5),
+        before.lineItems![1].copyWith(quantity: 3),
+      ],
+    );
+    await repo.updateTransaction(edited);
+
+    final row = await (db.select(db.outboxTransactions)
+          ..where((t) => t.id.equals(saved.id)))
+        .getSingle();
+    expect(row.amountMyr, 22.5);
+    expect(row.syncStatus, 'pending');
+    expect(row.retryCount, 0);
+
+    final lineItems = await (db.select(db.outboxLineItems)
+          ..where((li) => li.transactionId.equals(saved.id))
+          ..orderBy([(li) => OrderingTerm.asc(li.sortOrder)]))
+        .get();
+    expect(lineItems, hasLength(2));
+    expect(lineItems[0].id, ids[0]);
+    expect(lineItems[0].name, 'Flat White');
+    expect(lineItems[0].priceMyr, 12.5);
+    expect(lineItems[1].id, ids[1]);
+    expect(lineItems[1].name, 'Toast');
+    expect(lineItems[1].quantity, 3);
 
     await db.close();
   });

@@ -8,11 +8,13 @@ import '../../../core/config/env.dart';
 import '../../../core/theme/map_sheet_theme.dart';
 import '../../../data/repositories/bill_split_repository.dart';
 import '../../../data/repositories/places_repository.dart';
+import '../../../data/repositories/profile_repository.dart';
 import '../../../data/repositories/social_repository.dart';
 import '../../../domain/logic/map_aggregates.dart';
 import '../../../domain/models/bill_split.dart';
 import '../../../domain/models/receipt_line_item.dart';
 import '../../../domain/models/transaction_view.dart';
+import '../../../widgets/receipt_line_item_row.dart';
 import '../../../widgets/receipt_thumbnail.dart';
 import '../../../widgets/skeleton.dart';
 import '../../bill_split/person_avatar.dart';
@@ -61,6 +63,10 @@ class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
   String? _receiptPhotoUrl;
   BillSplitView? _split;
   List<FriendshipView> _friends = const [];
+  /// Current user (payer) — needed to render "you" avatars on by-item rows.
+  String? _ownerId;
+  String? _ownerDisplayName;
+  String? _ownerAvatarUrl;
   bool _loadingDetail = true;
   String? _loadedForTxId;
 
@@ -90,6 +96,7 @@ class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
     });
     unawaited(_loadPlacePhotos());
     unawaited(_loadFriends());
+    unawaited(_loadOwnerProfile());
     unawaited(_maybeLoadActiveReceiptDetail());
   }
 
@@ -155,6 +162,43 @@ class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
     final friends = await SocialRepository.listFriendships();
     if (!mounted) return;
     setState(() => _friends = friends);
+  }
+
+  Future<void> _loadOwnerProfile() async {
+    final id = Env.hasSupabaseConfig
+        ? Supabase.instance.client.auth.currentUser?.id
+        : null;
+    if (id == null) return;
+    final header = await ProfileRepository.fetchProfileHeader(id);
+    if (!mounted) return;
+    setState(() {
+      _ownerId = id;
+      _ownerDisplayName = header.displayName;
+      _ownerAvatarUrl = header.avatarUrl;
+    });
+  }
+
+  /// Assignee user ids for a line item when the active receipt has a split.
+  List<String> _assigneesFor(ReceiptLineItem item) {
+    final split = _split;
+    if (split == null) return const [];
+    return split.assigneeIdsForLineItem(item.id);
+  }
+
+  String? _displayNameFor(String userId) {
+    if (userId == _ownerId) return _ownerDisplayName ?? 'You';
+    for (final f in _friends) {
+      if (f.otherUserId == userId) return f.otherDisplayName;
+    }
+    return null;
+  }
+
+  String? _avatarUrlFor(String userId) {
+    if (userId == _ownerId) return _ownerAvatarUrl;
+    for (final f in _friends) {
+      if (f.otherUserId == userId) return f.otherAvatarUrl;
+    }
+    return null;
   }
 
   Future<void> _maybeLoadActiveReceiptDetail() async {
@@ -305,7 +349,8 @@ class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
                           ),
                         ),
                         Text(
-                          fmt.format(yourShare),
+                          // Spend amounts are always shown unsigned — never "-RM …".
+                          fmt.format(yourShare.abs()),
                           style: balooText(
                             26,
                             FontWeight.w800,
@@ -394,7 +439,18 @@ class _ReceiptMapSheetState extends State<ReceiptMapSheet> {
                           ),
                         )
                       else
-                        for (final item in items) _ItemRow(item: item),
+                        for (final item in items)
+                          ReceiptLineItemRow(
+                            item: item,
+                            assigneeIds: _assigneesFor(item),
+                            displayNameFor: _displayNameFor,
+                            avatarUrlFor: _avatarUrlFor,
+                            textStyle: balooText(
+                              15,
+                              FontWeight.w700,
+                              color: MapSheetColors.body,
+                            ),
+                          ),
                       const SizedBox(height: 14),
                       const _DottedDivider(),
                       const SizedBox(height: 14),
@@ -461,24 +517,29 @@ class _ReceiptPillsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 34,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
-        children: [
-          for (var i = 0; i < receipts.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _ReceiptPill(
-                label:
-                    '${dayGroupLabel(receipts[i].occurredAt, DateTime.now())} · '
-                    '${fmt.format(receipts[i].amountMyr ?? 0)}',
-                selected: i == activeIndex,
-                onTap: () => onSelect(i),
+    // Height is for the pills only — keep ListView padding horizontal so
+    // vertical padding does not steal from the 34px and squash the label.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: SizedBox(
+        height: 34,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          children: [
+            for (var i = 0; i < receipts.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _ReceiptPill(
+                  label:
+                      '${dayGroupLabel(receipts[i].occurredAt, DateTime.now())} · '
+                      '${fmt.format(receipts[i].amountMyr ?? 0)}',
+                  selected: i == activeIndex,
+                  onTap: () => onSelect(i),
+                ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -508,10 +569,13 @@ class _ReceiptPill extends StatelessWidget {
         ),
         child: Text(
           label,
+          maxLines: 1,
+          softWrap: false,
           style: balooText(
             12.5,
             FontWeight.w700,
             color: selected ? MapSheetColors.surface : MapSheetColors.sub,
+            height: 1.1,
           ),
         ),
       ),
@@ -684,37 +748,6 @@ class _ViewReceiptTile extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ItemRow extends StatelessWidget {
-  const _ItemRow({required this.item});
-
-  final ReceiptLineItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Text(
-              item.displayLabel,
-              style: balooText(15, FontWeight.w700, color: MapSheetColors.body),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            item.priceDisplay,
-            style: balooText(15, FontWeight.w700, color: MapSheetColors.body),
           ),
         ],
       ),
