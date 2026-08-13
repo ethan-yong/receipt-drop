@@ -5,10 +5,14 @@ import '../core/theme/app_theme.dart';
 /// Always-on scrolling banner teaching the OS Share-menu import path
 /// ("share a receipt from your bank/TNG app into Receipt Drop").
 ///
-/// Static and non-dismissible by design — replaces the old one-time
-/// dismissible coach-mark card that used to serve this purpose.
+/// Non-dismissible by design — replaces the old one-time dismissible
+/// coach-mark card. Home keeps this collapsed at the scroll top, then
+/// fades it in with a slide-up from below after a short scroll.
 class ShareTicker extends StatefulWidget {
-  const ShareTicker({super.key});
+  const ShareTicker({super.key, this.active = true});
+
+  /// When false, pauses marquee/glow animations (hidden off-screen).
+  final bool active;
 
   @override
   State<ShareTicker> createState() => _ShareTickerState();
@@ -33,11 +37,30 @@ class _ShareTickerState extends State<ShareTicker>
     _scrollController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 18),
-    )..repeat();
+    );
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2400),
-    )..repeat(reverse: true);
+    );
+    _syncAnimationPlayback();
+  }
+
+  @override
+  void didUpdateWidget(covariant ShareTicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active != widget.active) {
+      _syncAnimationPlayback();
+    }
+  }
+
+  void _syncAnimationPlayback() {
+    if (widget.active) {
+      if (!_scrollController.isAnimating) _scrollController.repeat();
+      if (!_glowController.isAnimating) _glowController.repeat(reverse: true);
+    } else {
+      _scrollController.stop();
+      _glowController.stop();
+    }
   }
 
   @override

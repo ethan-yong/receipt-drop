@@ -19,6 +19,15 @@ import 'bill_split_step_review.dart';
 import 'bill_split_step_who.dart';
 import 'create_group_sheet.dart';
 
+/// Where Remind / Done land after the split sheet commits.
+enum BillSplitAfterCommit {
+  /// Post-scan reward path — close the sheet and go to Insights.
+  insights,
+
+  /// Editing an existing receipt — just dismiss the sheet.
+  stay,
+}
+
 /// A receipt's payer picks who to split with (friends or a saved group),
 /// chooses equal or by-item split, then reviews amounts owed and can mark
 /// friends paid / send a reminder. From the Claude Design handoff "Bill
@@ -30,18 +39,30 @@ import 'create_group_sheet.dart';
 /// persisted on Remind / Done / paid. Reopening an existing split locks on
 /// Review so paid state cannot be recomposed away.
 class BillSplitSheet extends StatefulWidget {
-  const BillSplitSheet({super.key, required this.transactionId});
+  const BillSplitSheet({
+    super.key,
+    required this.transactionId,
+    this.afterCommit = BillSplitAfterCommit.stay,
+  });
 
   final String transactionId;
+  final BillSplitAfterCommit afterCommit;
 
-  static Future<void> show(BuildContext context, {required String transactionId}) {
+  static Future<void> show(
+    BuildContext context, {
+    required String transactionId,
+    BillSplitAfterCommit afterCommit = BillSplitAfterCommit.stay,
+  }) {
     return AdaptiveSheet.showForm<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: BillSplitColors.surface,
       topRadius: kReceiptSheetRadius,
       showDragHandle: false,
-      child: BillSplitSheet(transactionId: transactionId),
+      child: BillSplitSheet(
+        transactionId: transactionId,
+        afterCommit: afterCommit,
+      ),
     );
   }
 
@@ -76,7 +97,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
 
   late final PageController _pageController = PageController();
 
-  /// Success CTA dwell before auto-navigating to Insights (within 500–800ms).
+  /// Success CTA dwell before auto-exiting after Remind (within 500–800ms).
   static const _remindersSentDwell = Duration(milliseconds: 650);
 
   String? get _ownerId => Supabase.instance.client.auth.currentUser?.id;
@@ -402,20 +423,22 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     await BillSplitRepository.setParticipantPaid(realId, paid);
   }
 
-  void _exitToInsights() {
+  void _exitAfterCommit() {
     if (_exiting || !mounted) return;
     _exiting = true;
     _reminderTimer?.cancel();
     final router = GoRouter.of(context);
     Navigator.of(context).pop();
-    router.goNamed('insights');
+    if (widget.afterCommit == BillSplitAfterCommit.insights) {
+      router.goNamed('insights');
+    }
   }
 
   Future<void> _onDone() async {
     if (_exiting) return;
     final ok = await _ensurePersisted();
     if (!ok || !mounted) return;
-    _exitToInsights();
+    _exitAfterCommit();
   }
 
   Future<void> _sendReminders() async {
@@ -428,7 +451,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     if (pending.isEmpty) return;
     setState(() => _remindersJustSent = true);
     _reminderTimer?.cancel();
-    _reminderTimer = Timer(_remindersSentDwell, _exitToInsights);
+    _reminderTimer = Timer(_remindersSentDwell, _exitAfterCommit);
     await Future.wait(pending.map((p) => BillSplitRepository.sendReminder(p.id)));
   }
 

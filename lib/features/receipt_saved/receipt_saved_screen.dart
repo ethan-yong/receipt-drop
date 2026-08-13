@@ -8,9 +8,9 @@ import '../../domain/models/transaction_view.dart';
 import '../bill_split/bill_split_sheet.dart';
 
 /// Full-screen route shown right after a single receipt is saved — sits
-/// between the pigeon `SaveSuccessScreen` and Home, making "Split this bill"
-/// one tap away instead of buried in a reopened receipt. Close returns to
-/// Home. From the Claude Design handoff "Receipt Saved Screen.dc.html".
+/// between the pigeon `SaveSuccessScreen` and Insights (the scan reward).
+/// Split / Done for now land on Insights; View receipt is the only bypass.
+/// From the Claude Design handoff "Receipt Saved Screen.dc.html".
 class ReceiptSavedScreen extends StatefulWidget {
   const ReceiptSavedScreen({super.key, required this.receipt});
 
@@ -57,16 +57,20 @@ class _ReceiptSavedScreenState extends State<ReceiptSavedScreen>
     super.dispose();
   }
 
-  void _close() => context.goNamed('home');
+  void _doneForNow() => context.goNamed('insights');
 
   void _split() {
     PlatformFeedback.lightTap();
-    BillSplitSheet.show(context, transactionId: widget.receipt.id);
+    BillSplitSheet.show(
+      context,
+      transactionId: widget.receipt.id,
+      afterCommit: BillSplitAfterCommit.insights,
+    );
   }
 
   void _viewReceipt() {
     // Replace this screen so system/app-bar back from detail lands on Home,
-    // not back on the post-save celebration.
+    // not back on the post-save celebration (intentional Insights skip).
     context.goNamed('tx-detail', pathParameters: {'id': widget.receipt.id});
   }
 
@@ -76,95 +80,78 @@ class _ReceiptSavedScreenState extends State<ReceiptSavedScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: ReceiptSheetColors.screenBackground,
-      body: SafeArea(
-        child: Semantics(
-          liveRegion: true,
-          label: 'Receipt saved, $_total at $_merchant',
-          child: Column(
-            children: [
-              Align(
-                alignment: Alignment.topRight,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 10, 20, 0),
-                  child: _CloseButton(onTap: _close),
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AnimatedBuilder(
-                        animation: _badge,
-                        builder: (context, child) => Opacity(
-                          opacity: _badge.value.clamp(0.0, 1.0),
-                          child: Transform.scale(
-                            scale: _badge.value.clamp(0.0, 1.2),
-                            child: child,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _doneForNow();
+      },
+      child: Scaffold(
+        backgroundColor: ReceiptSheetColors.screenBackground,
+        body: SafeArea(
+          child: Semantics(
+            liveRegion: true,
+            label: 'Receipt saved, $_total at $_merchant',
+            child: Column(
+              children: [
+                const SizedBox(height: 42),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AnimatedBuilder(
+                          animation: _badge,
+                          builder: (context, child) => Opacity(
+                            opacity: _badge.value.clamp(0.0, 1.0),
+                            child: Transform.scale(
+                              scale: _badge.value.clamp(0.0, 1.2),
+                              child: child,
+                            ),
                           ),
+                          child: const _SavedPill(),
                         ),
-                        child: const _SavedPill(),
-                      ),
-                      const SizedBox(height: 16),
-                      AnimatedBuilder(
-                        animation: _card,
-                        builder: (context, child) => Opacity(
-                          opacity: _card.value.clamp(0.0, 1.0),
-                          child: Transform.translate(
-                            offset: Offset(0, 14 * (1 - _card.value.clamp(0.0, 1.0))),
-                            child: child,
+                        const SizedBox(height: 16),
+                        AnimatedBuilder(
+                          animation: _card,
+                          builder: (context, child) => Opacity(
+                            opacity: _card.value.clamp(0.0, 1.0),
+                            child: Transform.translate(
+                              offset: Offset(
+                                0,
+                                14 * (1 - _card.value.clamp(0.0, 1.0)),
+                              ),
+                              child: child,
+                            ),
                           ),
+                          child: _ReceiptSummaryCard(receipt: widget.receipt),
                         ),
-                        child: _ReceiptSummaryCard(receipt: widget.receipt),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              AnimatedBuilder(
-                animation: _footer,
-                builder: (context, child) => Opacity(
-                  opacity: _footer.value.clamp(0.0, 1.0),
-                  child: Transform.translate(
-                    offset: Offset(0, 14 * (1 - _footer.value.clamp(0.0, 1.0))),
-                    child: child,
+                AnimatedBuilder(
+                  animation: _footer,
+                  builder: (context, child) => Opacity(
+                    opacity: _footer.value.clamp(0.0, 1.0),
+                    child: Transform.translate(
+                      offset: Offset(
+                        0,
+                        14 * (1 - _footer.value.clamp(0.0, 1.0)),
+                      ),
+                      child: child,
+                    ),
+                  ),
+                  child: _ActionFooter(
+                    onSplit: _split,
+                    onDoneForNow: _doneForNow,
+                    onViewReceipt: _viewReceipt,
                   ),
                 ),
-                child: _ActionFooter(onSplit: _split, onViewReceipt: _viewReceipt),
-              ),
-              const SizedBox(height: 30),
-            ],
+                const SizedBox(height: 30),
+              ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CloseButton extends StatelessWidget {
-  const _CloseButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: 'Close',
-      button: true,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          width: 32,
-          height: 32,
-          decoration: const BoxDecoration(
-            color: ReceiptSheetColors.tile,
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.close, size: 16, color: ReceiptSheetColors.sub),
         ),
       ),
     );
@@ -452,9 +439,14 @@ class _LocationFallback extends StatelessWidget {
 }
 
 class _ActionFooter extends StatelessWidget {
-  const _ActionFooter({required this.onSplit, required this.onViewReceipt});
+  const _ActionFooter({
+    required this.onSplit,
+    required this.onDoneForNow,
+    required this.onViewReceipt,
+  });
 
   final VoidCallback onSplit;
+  final VoidCallback onDoneForNow;
   final VoidCallback onViewReceipt;
 
   @override
@@ -465,15 +457,33 @@ class _ActionFooter extends StatelessWidget {
         children: [
           _PrimaryButton(label: 'Split this bill', onTap: onSplit),
           GestureDetector(
-            onTap: onViewReceipt,
+            onTap: onDoneForNow,
             behavior: HitTestBehavior.opaque,
             child: Padding(
               padding: const EdgeInsets.only(top: 14),
               child: Padding(
                 padding: const EdgeInsets.all(6),
                 child: Text(
-                  'View receipt',
+                  'Done for now',
                   style: balooText(15, FontWeight.w700, color: ReceiptSheetColors.sub),
+                ),
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: onViewReceipt,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Text(
+                  'View receipt',
+                  style: balooText(
+                    14,
+                    FontWeight.w600,
+                    color: ReceiptSheetColors.subLight,
+                  ),
                 ),
               ),
             ),

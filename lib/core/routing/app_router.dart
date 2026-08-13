@@ -8,7 +8,6 @@ import 'auth_refresh.dart';
 import '../../features/auth/auth_screen.dart';
 import '../../features/avatar/avatar_customizer_screen.dart';
 import '../../features/badges/badges_screen.dart';
-import '../../features/feed/feed_screen.dart';
 import '../../features/friends/friends_screen.dart';
 import '../../features/history/receipt_history_screen.dart';
 import '../../features/home/home_screen.dart';
@@ -100,16 +99,6 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
           StatefulShellBranch(
             routes: <RouteBase>[
               GoRoute(
-                path: '/feed',
-                name: 'feed',
-                pageBuilder: (context, state) =>
-                    const NoTransitionPage<void>(child: FeedScreen()),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
                 path: '/map',
                 name: 'map',
                 pageBuilder: (context, state) =>
@@ -127,6 +116,16 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
               ),
             ],
           ),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: '/profile',
+                name: 'profile',
+                pageBuilder: (context, state) =>
+                    const NoTransitionPage<void>(child: SettingsScreen()),
+              ),
+            ],
+          ),
         ],
       ),
       GoRoute(
@@ -135,11 +134,12 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         name: 'insights',
         builder: (context, state) => const InsightsDetailScreen(),
       ),
+      // Legacy alias — Profile is a shell tab at /profile now.
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,
         path: '/settings',
         name: 'settings',
-        builder: (context, state) => const SettingsScreen(),
+        redirect: (context, state) => '/profile',
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

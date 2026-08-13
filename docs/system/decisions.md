@@ -46,7 +46,19 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 **Alternatives considered**: payer-only bookkeeping with no friend visibility (rejected — see reason above); ad-hoc/derived friend groups instead of a persisted table (rejected per explicit product decision — groups should be reusable, not recomputed); a full-screen `go_router` route for the payer flow instead of a bottom sheet (rejected — `ReceiptConfirmSheet`'s sheet-from-an-open-receipt pattern is the closer precedent, and `receipt_sheet_theme.dart`'s palette already matches the source design's gold/ink/cream almost hex-for-hex).
 
-**Tradeoffs**: a split is immutable once created (`bill_splits` has no update policy, `unique(transaction_id)`) — there is no "edit a split's composition" UI after persist; redoing one requires a manual delete. By-item split is gated on the receipt having finished syncing (`transaction.syncStatus == 'synced'`) since item assignments FK to server-side `receipt_line_items.id`, so a just-captured receipt briefly can't use by-item mode. "Remind" is best-effort only — it stamps `bill_split_participants.last_reminded_at` and flips the payer's own button label optimistically; there is no real notification delivery to the friend, by design (matches the rest of the app's lack of a push infrastructure).
+**Tradeoffs**: split *composition* (who / equal-vs-by-item / item assignments) is insert-or-delete only (`unique(transaction_id)`); redoing who requires a manual delete. Snapshotted `total_myr` and participant `share_myr` **can** be rewritten after a receipt amount / line-item edit (`20260813140000`, `BillSplitRepository.recalculateShares`) so friends are not stuck with stale amounts — paid flags are preserved. By-item split is gated on the receipt having finished syncing (`transaction.syncStatus == 'synced'`) since item assignments FK to server-side `receipt_line_items.id`, so a just-captured receipt briefly can't use by-item mode. "Remind" is best-effort only — it stamps `bill_split_participants.last_reminded_at` and flips the payer's own button label optimistically; there is no real notification delivery to the friend, by design (matches the rest of the app's lack of a push infrastructure).
+
+---
+
+## Post-scan vs post-edit destinations (2026-08-13)
+
+**Decision**: After a first-time scan, the default exit from `ReceiptSavedScreen` / bill-split Remind-or-Done is **Insights** (reward). View receipt is the only intentional bypass (details, then Back → Home). Editing an existing receipt on `TransactionDetailScreen` **stays on details** after Save — never Insights — with an in-page confirmation; if a split exists and amount/line prices changed, shares are recalculated and a "Remind friends" banner is shown.
+
+**Reason**: scanning is exploratory ("show me something interesting"); correcting a receipt is corrective ("fix the number"). Sending editors to Insights feels like a wrong turn. Staying on details lets the payer verify recalculated shares before leaving.
+
+**Alternatives considered**: always Home after edit (rejected — can't verify split without reopening); always Insights after any save (rejected — mismatches edit intent); X on receipt-saved → Home (rejected — ambiguous exit; remove X, default Done → Insights).
+
+**Tradeoffs**: `bill_splits` gained an owner UPDATE policy for amounts only; friends with open Split Requests may briefly see old `share_myr` until sync/reload — Remind CTA is still timestamp-only (no push).
 
 ---
 
@@ -58,7 +70,7 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 **Alternatives considered**: create on enter Review then delete on swipe-back (rejected — racey for friend discovery and wipeable paid state); swipe only before first Review visit (rejected — does not meet “edit from Review”).
 
-**Tradeoffs**: first Review action pays a create latency hop; after persist in-session, composition locks (same as reopen) because `bill_splits` remains insert-only.
+**Tradeoffs**: first Review action pays a create latency hop; after persist in-session, composition locks (same as reopen) because who/mode/assignments remain insert-or-delete (amounts may still be rewritten via `recalculateShares`).
 
 ---
 

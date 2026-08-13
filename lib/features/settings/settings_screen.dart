@@ -10,10 +10,9 @@ import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
 
-/// Settings screen (approved design, `Settings.dc.html`) — restyled onto the
-/// same warm cream/gold Baloo 2 system as the profile-setup screen, with a
-/// new editable profile-photo header (avatar edit moved here from onboarding
-/// so it's not a one-time-only action).
+/// Profile / settings tab (approved design, `Settings.dc.html`) — restyled
+/// onto the same warm cream/gold Baloo 2 system as the profile-setup screen,
+/// with an editable profile-photo header. Shown as the Profile bottom tab.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -178,27 +177,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-              child: Row(
-                children: [
-                  _PressScale(
-                    onTap: () => context.pop(),
-                    child: const Icon(
-                      Icons.arrow_back_ios_new_rounded,
-                      size: 20,
-                      color: ReceiptSheetColors.heading,
-                    ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Profile',
+                  style: balooText(
+                    20,
+                    FontWeight.w800,
+                    color: ReceiptSheetColors.heading,
+                    letterSpacing: -0.3,
                   ),
-                  const SizedBox(width: 14),
-                  Text(
-                    'Settings',
-                    style: balooText(
-                      20,
-                      FontWeight.w800,
-                      color: ReceiptSheetColors.heading,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
             Expanded(

@@ -234,6 +234,71 @@ class BillSplitRepository {
     }
   }
 
+  /// Rewrites [bill_splits.total_myr] and each friend's [share_myr] after a
+  /// receipt amount / line-item edit. Keeps who/mode/assignments and [paid]
+  /// flags unchanged. Returns the refreshed view, or null on failure.
+  static Future<BillSplitView?> recalculateShares({
+    required String transactionId,
+    required double totalMyr,
+    required List<({String id, double priceMyr})> lineItems,
+  }) async {
+    final userId = _userId;
+    if (userId == null) return null;
+    try {
+      final existing = await getSplitForTransaction(transactionId);
+      if (existing == null || existing.ownerId != userId) return null;
+
+      final Map<String, double> friendShares;
+      if (existing.mode == BillSplitMode.equal) {
+        final personIds = [
+          existing.ownerId,
+          ...existing.participants.map((p) => p.friendUserId),
+        ];
+        final shares = splitEqual(totalMyr: totalMyr, personIds: personIds);
+        friendShares = {
+          for (final p in existing.participants)
+            p.friendUserId: shares[p.friendUserId] ?? 0,
+        };
+      } else {
+        final priceById = {for (final li in lineItems) li.id: li.priceMyr};
+        final byLine = <String, List<String>>{};
+        for (final a in existing.itemAssignments) {
+          (byLine[a.lineItemId] ??= []).add(a.assignedUserId);
+        }
+        final assignmentInputs = [
+          for (final e in byLine.entries)
+            if (priceById.containsKey(e.key))
+              ItemAssignmentInput(
+                lineItemId: e.key,
+                priceMyr: priceById[e.key]!,
+                assignedPersonIds: e.value,
+              ),
+        ];
+        final shares = splitByItems(assignmentInputs);
+        friendShares = {
+          for (final p in existing.participants)
+            p.friendUserId: shares[p.friendUserId] ?? 0,
+        };
+      }
+
+      await Supabase.instance.client.from('bill_splits').update({
+        'total_myr': totalMyr,
+      }).eq('id', existing.id);
+
+      for (final p in existing.participants) {
+        final share = friendShares[p.friendUserId];
+        if (share == null) continue;
+        await Supabase.instance.client.from('bill_split_participants').update({
+          'share_myr': share,
+        }).eq('id', p.id);
+      }
+
+      return getSplitForTransaction(transactionId);
+    } on Object {
+      return null;
+    }
+  }
+
   /// Best-effort: stamps `last_reminded_at` only. There is no push-
   /// notification or messaging system in this app to actually deliver a
   /// reminder — discovery is the friend's own Split Requests screen/Home
