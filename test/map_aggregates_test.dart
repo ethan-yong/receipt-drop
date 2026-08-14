@@ -8,10 +8,11 @@ TransactionView _tx({
   double? lat,
   double? lng,
   String? category,
+  DateTime? occurredAt,
 }) {
   return TransactionView.fromOutbox(
     id: id,
-    occurredAt: DateTime(2026, 7, 1),
+    occurredAt: occurredAt ?? DateTime(2026, 7, 1),
     amountMyr: amount,
     needsAmount: false,
     merchantRaw: null,
@@ -90,13 +91,40 @@ void main() {
   });
 
   group('mapClusters', () {
-    test('computes dominantCategory once per place, highest spend wins', () {
+    test('dominantCategory is highest receipt count, not highest spend', () {
+      // Two cheap Transport receipts beat one expensive Food receipt.
       final clusters = mapClusters([
         _tx(id: 'a', amount: 100, lat: 3.1390, lng: 101.6869, category: 'Food'),
         _tx(id: 'b', amount: 10, lat: 3.1390, lng: 101.6869, category: 'Transport'),
+        _tx(id: 'c', amount: 10, lat: 3.1390, lng: 101.6869, category: 'Transport'),
       ]);
       expect(clusters, hasLength(1));
-      expect(clusters.single.dominantCategory, 'Food');
+      expect(clusters.single.dominantCategory, 'Transport');
+      expect(clusters.single.dominantCategoryCount, 2);
+      expect(clusters.single.visitCount, 3);
+    });
+
+    test('tie on count is broken by most recent occurredAt', () {
+      final clusters = mapClusters([
+        _tx(
+          id: 'a',
+          amount: 10,
+          lat: 3.1390,
+          lng: 101.6869,
+          category: 'Food',
+          occurredAt: DateTime(2026, 7, 1),
+        ),
+        _tx(
+          id: 'b',
+          amount: 10,
+          lat: 3.1390,
+          lng: 101.6869,
+          category: 'Transport',
+          occurredAt: DateTime(2026, 7, 3),
+        ),
+      ]);
+      expect(clusters.single.dominantCategory, 'Transport');
+      expect(clusters.single.dominantCategoryCount, 1);
     });
   });
 
@@ -113,6 +141,24 @@ void main() {
       expect(buckets, hasLength(1));
       expect(buckets.single.receiptCount, 3);
       expect(buckets.single.placeCount, 2);
+      expect(buckets.single.dominantCategory, 'Food');
+      expect(buckets.single.dominantCategoryCount, 2);
+    });
+
+    test('single-receipt bucket carries that receipt category', () {
+      final buckets = bucketClusters([
+        _tx(
+          id: 'a',
+          amount: 10,
+          lat: 3.1390,
+          lng: 101.6869,
+          category: 'Groceries',
+        ),
+      ], 5);
+      expect(buckets, hasLength(1));
+      expect(buckets.single.receiptCount, 1);
+      expect(buckets.single.dominantCategory, 'Groceries');
+      expect(buckets.single.dominantCategoryCount, 1);
     });
 
     test('splits into separate buckets for far-apart points', () {
@@ -121,14 +167,6 @@ void main() {
         _tx(id: 'b', amount: 10, lat: 5.4141, lng: 100.3288), // Penang
       ], 5);
       expect(buckets, hasLength(2));
-    });
-
-    test('dominant category is the highest-spend category in the bucket', () {
-      final buckets = bucketClusters([
-        _tx(id: 'a', amount: 100, lat: 3.1390, lng: 101.6869, category: 'Food'),
-        _tx(id: 'b', amount: 10, lat: 3.1391, lng: 101.6870, category: 'Transport'),
-      ], 5);
-      expect(buckets.single.dominantCategory, 'Food');
     });
 
     test('empty input yields no buckets', () {
@@ -168,10 +206,12 @@ void main() {
     });
 
     test('coarsens as zoom decreases', () {
-      expect(zoomBucketPrecision(13), 6);
-      expect(zoomBucketPrecision(10), 5);
-      expect(zoomBucketPrecision(7), 4);
-      expect(zoomBucketPrecision(3), 3);
+      expect(zoomBucketPrecision(14), 6);
+      expect(zoomBucketPrecision(12), 5);
+      expect(zoomBucketPrecision(10), 4);
+      expect(zoomBucketPrecision(8), 3);
+      expect(zoomBucketPrecision(6), 2);
+      expect(zoomBucketPrecision(3), 1);
     });
   });
 

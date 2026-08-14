@@ -10,11 +10,11 @@ typedef ScreenPoint = ({double x, double y});
 /// together even if A and C alone are far apart). Singletons come back as
 /// their own one-element group.
 ///
-/// [thresholdPx] defaults to ~half a typical spend-pill width so visually
-/// stacked markers collapse into one overlap indicator.
+/// [thresholdPx] defaults to roughly a compact emoji-pin circle diameter so
+/// visually stacked markers collapse into one overlap indicator.
 List<List<String>> groupOverlappingKeys(
   Map<String, ScreenPoint> positions, {
-  double thresholdPx = 56,
+  double thresholdPx = 52,
 }) {
   final keys = positions.keys.toList();
   if (keys.isEmpty) return const [];
@@ -67,7 +67,7 @@ List<List<String>> groupOverlappingKeys(
 /// Evenly spaced points on a circle of [radius] around (0, 0), starting at
 /// the top and going clockwise — the spiderfy fan-out offsets for [count]
 /// pins. Radius grows slightly with [count] so more pins don't crowd.
-List<ScreenPoint> spiderfyOffsets(int count, {double baseRadius = 46}) {
+List<ScreenPoint> spiderfyOffsets(int count, {double baseRadius = 44}) {
   if (count <= 0) return const [];
   if (count == 1) return const [(x: 0.0, y: 0.0)];
 

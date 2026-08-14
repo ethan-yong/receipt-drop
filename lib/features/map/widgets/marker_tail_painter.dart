@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Small downward-pointing tail whose tip is a marker's geographic anchor,
-/// shared by [SpendPlaceMarker] and [SpendClusterBubble] so both pill-shaped
-/// map markers render with the same tail.
+/// shared by spend-map pin widgets so cluster and place markers use the same tip.
 class MarkerTailPainter extends CustomPainter {
   const MarkerTailPainter({required this.color});
 

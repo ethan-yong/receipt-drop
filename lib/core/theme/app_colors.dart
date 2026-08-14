@@ -75,4 +75,27 @@ abstract final class AppColors {
         return chartOthers;
     }
   }
+
+  /// Exact-match emoji for a finalized/normalized [category] string
+  /// (canonical categories from `categories-v1.json`, or `Unclassified`).
+  /// Shared by map pins and the receipt-confirm category chip — do not use
+  /// the fuzzy keyword matcher in `receiptPaletteForCategory` for these.
+  static String categoryEmoji(String category) {
+    switch (category) {
+      case 'Food & Drink':
+        return '🍽️';
+      case 'Groceries':
+        return '🛒';
+      case 'Shopping':
+        return '🛍️';
+      case 'Transport':
+        return '🚌';
+      case 'Travel':
+        return '✈️';
+      case 'Health & Beauty':
+        return '💊';
+      default:
+        return '🧾';
+    }
+  }
 }

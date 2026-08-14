@@ -23,6 +23,7 @@ import '../../widgets/profile_photo.dart';
 import 'widgets/friend_map_marker.dart';
 import 'widgets/friend_pin_sheet.dart';
 import 'widgets/overlap_stack_marker.dart';
+import 'widgets/receipt_map_pin.dart';
 import 'widgets/receipt_map_sheet.dart';
 import 'widgets/spend_cluster_bubble.dart';
 import 'widgets/spend_place_marker.dart';
@@ -645,8 +646,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
         final pos = positions[key];
         if (c == null || pos == null) continue;
         widgets.add(Positioned(
-          left: pos.dx - 48,
-          top: pos.dy - 56,
+          left: pos.dx - ReceiptMapPin.halfWidth,
+          top: pos.dy - ReceiptMapPin.tipOffsetY,
           child: SpendPlaceMarker(
             cluster: c,
             onTap: () => _selectPlace(c),
@@ -676,16 +677,13 @@ class _SpendMapScreenState extends State<SpendMapScreen>
           spiderfied.length == groupKeys.length &&
           spiderfied.containsAll(groupKeys);
 
-      // Dominant category ≈ highest-spend place in the group (cheap proxy).
-      final dominant = members.reduce(
-        (a, b) => a.totalSpend >= b.totalSpend ? a : b,
-      );
+      final receiptCount = members.fold<int>(0, (a, m) => a + m.visitCount);
 
       final offsets = spiderfyOffsets(members.length);
-      // Match spiderfyOffsets radius growth: base 46 + (n-2)*6.
-      final radius = 46.0 + (members.length - 2) * 6.0;
-      // Room for pill+tail (~56 tall) beyond the fan-out radius.
-      final extent = radius + 60.0;
+      // Match spiderfyOffsets radius growth: base 44 + (n-2)*6.
+      final radius = 44.0 + (members.length - 2) * 6.0;
+      // Room for circle+tail (~tipOffsetY) beyond the fan-out radius.
+      final extent = radius + ReceiptMapPin.tipOffsetY + 8.0;
 
       widgets.add(Positioned(
         left: cx - extent,
@@ -712,14 +710,13 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                         offsets: [
                           for (final o in offsets) Offset(o.x, o.y),
                         ],
-                        color: AppColors.categoryColor(dominant.dominantCategory)
-                            .withValues(alpha: 0.45),
+                        color: AppColors.textMuted.withValues(alpha: 0.45),
                       ),
                     ),
                     for (var i = 0; i < members.length; i++)
                       Positioned(
-                        left: extent + offsets[i].x - 48,
-                        top: extent + offsets[i].y - 56,
+                        left: extent + offsets[i].x - ReceiptMapPin.halfWidth,
+                        top: extent + offsets[i].y - ReceiptMapPin.tipOffsetY,
                         child: SpendPlaceMarker(
                           cluster: members[i],
                           onTap: () => _selectPlace(members[i]),
@@ -732,8 +729,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                   // Tail tip at the geographic center (box midpoint).
                   alignment: const Alignment(0, 0.15),
                   child: OverlapStackMarker(
-                    count: members.length,
-                    dominantCategory: dominant.dominantCategory,
+                    receiptCount: receiptCount,
                     onTap: () => setState(
                       () => _spiderfiedGroup = groupKeys.toSet(),
                     ),
@@ -754,8 +750,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       final pos = positions[b.bucketKey];
       if (pos == null) continue;
       widgets.add(Positioned(
-        left: pos.dx - 54,
-        top: pos.dy - 60,
+        left: pos.dx - ReceiptMapPin.halfWidth,
+        top: pos.dy - ReceiptMapPin.tipOffsetY,
         child: SpendClusterBubble(
           bucket: b,
           onTap: () => _selectBucket(b),
