@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Spend map auto day/night tile styling (2026-08-14)
+
+**Decision**: The spend map (`SpendMapScreen`) switches base Google Maps tiles by device **local clock**: stock light tiles from 06:00–17:59, and a JSON night style (`assets/map/night_style.json`) from 18:00–05:59. Applied via `GoogleMap.style` (live swap on `setState`). A one-shot `Timer` wakes at the next 06:00/18:00 boundary and reschedules; `AppLifecycleState.resumed` re-applies so returning from background after a boundary updates immediately. Overlay chips/pins are unchanged — only the basemap.
+
+**Reason**: Google Maps–style morning/night readability without coupling the rest of the cream-themed app to Flutter dark mode, and without GPS/sunrise math.
+
+**Alternatives considered**: (1) follow system light/dark (rejected — app is light-only UI; night map should still happen on a light system theme after evening); (2) real sunrise/sunset from location (rejected — extra dependency and location requirement for a cosmetic switch); (3) cloud map IDs / `MapColorScheme` (rejected — web-oriented, heavier setup); (4) manual toggle only (deferred — auto clock match is the requested Google Maps behavior).
+
+**Tradeoffs**: Fixed 06:00/18:00 boundaries ignore seasonal daylight. Night style JSON is a static asset; invalid/missing asset falls back to light tiles. Web/desktop must support `GoogleMap.style` the same way as mobile.
+
+---
+
 ## Spend-map pins: emoji-first hierarchy with count badges (2026-08-14)
 
 **Decision**: Own-place map markers (`SpendPlaceMarker` / `SpendClusterBubble` / `OverlapStackMarker`) stopped being category-bordered text pills ("N receipts" / "N places"). They now share a single shell widget (`ReceiptMapPin`): a white circle + emoji + map-pin tail, with an optional top-right notification-style count badge when count > 1. **Pin face is count-driven, not zoom-driven**: a marker with exactly one receipt always shows that receipt's category emoji (via exact `AppColors.categoryEmoji()`, table extracted from the confirm-sheet `_CategoryChip`, not the fuzzy `receiptPaletteForCategory` keyword matcher) plus a unique `AppColors.categoryColor` border/tail — even inside a far-out geohash bucket. Multi-receipt unresolved clusters (geohash buckets with `receiptCount > 1`, or screen-space overlap groups) show the generic receipt emoji 🧾 with total receipt count and a **neutral** border. Same-place multi-receipt pins show the dominant category emoji + that category's count (`dominantCategoryCount`) with the matching category border. Multi-category places pick the category with the highest receipt *count*, ties broken by most recent `occurredAt`. `GeoBucket` carries `dominantCategory` / `dominantCategoryCount` so single-receipt buckets can render category faces. Overlap/spiderfy pixel constants were retuned for the smaller footprint (`thresholdPx` 56→40, `spiderfyOffsets` baseRadius 46→34). Zoom precision ladder also coarsens down to geohash 1–2 so far-out views collapse into few buckets.

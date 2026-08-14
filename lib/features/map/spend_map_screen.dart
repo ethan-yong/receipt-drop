@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -16,6 +17,7 @@ import '../../data/repositories/places_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/map_aggregates.dart';
+import '../../domain/logic/map_day_night.dart';
 import '../../domain/logic/map_pin_layout.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/map_filter_chips.dart';
@@ -77,8 +79,9 @@ class SpendMapScreen extends StatefulWidget {
 }
 
 class _SpendMapScreenState extends State<SpendMapScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _malaysiaCenter = LatLng(3.1390, 101.6869);
+  static const _nightStyleAsset = 'assets/map/night_style.json';
 
   GoogleMapController? _controller;
   final _panelController = DraggableScrollableController();
@@ -87,6 +90,11 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   String _categoryFilter = 'All categories';
   var _heatmapMode = false;
   var _didAutoFit = false;
+
+  /// Null = stock light tiles; night JSON when [isMapNightMode] is true.
+  String? _mapStyle;
+  String? _nightStyleJson;
+  Timer? _mapStyleTimer;
 
   List<FriendMapPin> _friendPins = const [];
   Position? _myPosition;
@@ -144,6 +152,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadMapStyles());
     SocialRepository.getFriendMapPins().then((pins) {
       if (mounted && pins.isNotEmpty) {
         setState(() => _friendPins = pins);
@@ -180,6 +190,44 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     _localSub = AppServices.transactions.watchAll().listen(_onLocalTransactionsChanged);
   }
 
+  Future<void> _loadMapStyles() async {
+    try {
+      _nightStyleJson = await rootBundle.loadString(_nightStyleAsset);
+    } catch (_) {
+      // Leave night style null — map stays on default light tiles.
+      _nightStyleJson = null;
+    }
+    if (!mounted) return;
+    _applyMapStyleForNow();
+    _scheduleNextMapStyleChange();
+  }
+
+  void _applyMapStyleForNow() {
+    final night = isMapNightMode(DateTime.now());
+    final next = night ? _nightStyleJson : null;
+    if (next == _mapStyle) return;
+    setState(() => _mapStyle = next);
+  }
+
+  void _scheduleNextMapStyleChange() {
+    _mapStyleTimer?.cancel();
+    final wait = untilNextMapStyleChange(DateTime.now());
+    // Add a second so we land firmly on the far side of the boundary.
+    _mapStyleTimer = Timer(wait + const Duration(seconds: 1), () {
+      if (!mounted) return;
+      _applyMapStyleForNow();
+      _scheduleNextMapStyleChange();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _applyMapStyleForNow();
+      _scheduleNextMapStyleChange();
+    }
+  }
+
   /// See [_localSub] — debounces a forced viewport refetch whenever the
   /// local dataset's map-relevant fingerprint changes.
   void _onLocalTransactionsChanged(List<TransactionView> rows) {
@@ -194,6 +242,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _mapStyleTimer?.cancel();
     _localSub?.cancel();
     _refetchDebounce?.cancel();
     _restoreShellChrome();
@@ -900,6 +950,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                 myLocationButtonEnabled: false,
                 mapToolbarEnabled: false,
                 compassEnabled: false,
+                style: _mapStyle,
                 circles: _heatmapMode ? _heatCircles(_viewportRows) : const {},
               ),
               // Isolated so a reprojection pass (every camera-move frame)
