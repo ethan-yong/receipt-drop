@@ -213,7 +213,11 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         name: 'tx-detail',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          return TransactionDetailScreen(transactionId: id);
+          final editable = state.uri.queryParameters['edit'] == '1';
+          return TransactionDetailScreen(
+            transactionId: id,
+            editable: editable,
+          );
         },
       ),
       GoRoute(

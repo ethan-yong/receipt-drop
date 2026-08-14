@@ -34,9 +34,17 @@ import '../bill_split/bill_split_sheet.dart';
 import 'receipt_image_viewer_screen.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
-  const TransactionDetailScreen({super.key, required this.transactionId});
+  const TransactionDetailScreen({
+    super.key,
+    required this.transactionId,
+    this.editable = false,
+  });
 
   final String transactionId;
+
+  /// When false (default), the screen is view-only: no item/place edits and
+  /// no Save / Split actions. Home opens with [editable] true.
+  final bool editable;
 
   @override
   State<TransactionDetailScreen> createState() =>
@@ -628,6 +636,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
 
     final parsedAmount = double.tryParse(_amountController.text.trim());
     final effectiveImpact = _impactOverride ?? deriveImpactLevel(parsedAmount);
+    final editable = widget.editable;
 
     return Scaffold(
       backgroundColor: AppColors.scaffold,
@@ -664,8 +673,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 padding: AppSpacing.cardPadding,
                 child: AmountField(
                   controller: _amountController,
-                  onChanged: _onAmountChanged,
+                  onChanged: editable ? _onAmountChanged : null,
                   bordered: true,
+                  readOnly: !editable,
                 ),
               ),
             ),
@@ -692,19 +702,27 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                               Theme.of(context).textTheme.bodyMedium ??
                               const TextStyle(),
                           bottomPadding: 6,
-                          editingName: _editingNameIndex == i,
-                          editingPrice: _editingPriceIndex == i,
+                          editingName:
+                              editable && _editingNameIndex == i,
+                          editingPrice:
+                              editable && _editingPriceIndex == i,
                           nameController: _nameController,
                           nameFocus: _nameFocus,
                           priceController: _priceController,
                           priceFocus: _priceFocus,
-                          nameFieldKey:
-                              _editingNameIndex == i ? _nameFieldKey : null,
-                          priceFieldKey:
-                              _editingPriceIndex == i ? _priceFieldKey : null,
-                          onEditName: () => _startNameEdit(i),
-                          onEditPrice: () => _startPriceEdit(i),
-                          onEditQuantity: () => unawaited(_startQuantityEdit(i)),
+                          nameFieldKey: editable && _editingNameIndex == i
+                              ? _nameFieldKey
+                              : null,
+                          priceFieldKey: editable && _editingPriceIndex == i
+                              ? _priceFieldKey
+                              : null,
+                          onEditName:
+                              editable ? () => _startNameEdit(i) : null,
+                          onEditPrice:
+                              editable ? () => _startPriceEdit(i) : null,
+                          onEditQuantity: editable
+                              ? () => unawaited(_startQuantityEdit(i))
+                              : null,
                         ),
                     ],
                   ),
@@ -723,7 +741,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                     child: _ImpactChip(
                       level: level,
                       selected: effectiveImpact == level,
-                      onTap: () => setState(() => _impactOverride = level),
+                      onTap: editable
+                          ? () => setState(() => _impactOverride = level)
+                          : null,
                     ),
                   ),
                 ],
@@ -734,7 +754,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               placeName: _placeName,
               lat: _placeLat,
               lng: _placeLng,
-              onChangePlace: _pickPlace,
+              onChangePlace: editable ? _pickPlace : null,
             ),
             const SizedBox(height: AppSpacing.md),
             Card(
@@ -750,7 +770,9 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                   items: _buildCategoryItems()
                       .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                       .toList(),
-                  onChanged: (v) => setState(() => _category = v),
+                  onChanged: editable
+                      ? (v) => setState(() => _category = v)
+                      : null,
                 ),
               ),
             ),
@@ -759,33 +781,41 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
               child: ListTile(
                 title: const Text('Date & time'),
                 subtitle: Text(dateLabel),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _pickDate,
+                trailing: editable ? const Icon(Icons.chevron_right) : null,
+                onTap: editable ? _pickDate : null,
               ),
             ),
-            const SizedBox(height: AppSpacing.xl),
-            ReceiptDropPrimaryButton(label: 'Save changes', onPressed: _save),
-            const SizedBox(height: AppSpacing.md),
-            if (_split != null) ...[
+            if (editable) ...[
+              const SizedBox(height: AppSpacing.xl),
+              ReceiptDropPrimaryButton(label: 'Save changes', onPressed: _save),
+              const SizedBox(height: AppSpacing.md),
+              if (_split != null) ...[
+                _SplitSharesSummary(
+                  split: _split!,
+                  displayNameFor: _displayNameFor,
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+              OutlinedButton.icon(
+                onPressed: parsedAmount != null ? _openBillSplit : null,
+                icon: const Icon(Icons.call_split),
+                label: Text(_split == null ? 'Split this bill' : 'View split'),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextButton(
+                onPressed: _delete,
+                child: const Text(
+                  'Delete transaction',
+                  style: TextStyle(color: AppColors.destructive),
+                ),
+              ),
+            ] else if (_split != null) ...[
+              const SizedBox(height: AppSpacing.xl),
               _SplitSharesSummary(
                 split: _split!,
                 displayNameFor: _displayNameFor,
               ),
-              const SizedBox(height: AppSpacing.md),
             ],
-            OutlinedButton.icon(
-              onPressed: parsedAmount != null ? _openBillSplit : null,
-              icon: const Icon(Icons.call_split),
-              label: Text(_split == null ? 'Split this bill' : 'View split'),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            TextButton(
-              onPressed: _delete,
-              child: const Text(
-                'Delete transaction',
-                style: TextStyle(color: AppColors.destructive),
-              ),
-            ),
           ],
         ),
       ),
@@ -1041,12 +1071,12 @@ class _ImpactChip extends StatelessWidget {
   const _ImpactChip({
     required this.level,
     required this.selected,
-    required this.onTap,
+    this.onTap,
   });
 
   final ImpactLevel level;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   Color get _color {
     switch (level) {

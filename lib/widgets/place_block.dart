@@ -7,7 +7,7 @@ class PlaceBlock extends StatelessWidget {
   const PlaceBlock({
     super.key,
     required this.placeName,
-    required this.onChangePlace,
+    this.onChangePlace,
     this.lat,
     this.lng,
   });
@@ -15,10 +15,13 @@ class PlaceBlock extends StatelessWidget {
   final String placeName;
   final double? lat;
   final double? lng;
-  final VoidCallback onChangePlace;
+
+  /// When null, the map and Change place control are display-only.
+  final VoidCallback? onChangePlace;
 
   @override
   Widget build(BuildContext context) {
+    final canChange = onChangePlace != null;
     return Card(
       child: Padding(
         padding: AppSpacing.cardPadding,
@@ -48,10 +51,11 @@ class PlaceBlock extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                TextButton(
-                  onPressed: onChangePlace,
-                  child: const Text('Change place'),
-                ),
+                if (canChange)
+                  TextButton(
+                    onPressed: onChangePlace,
+                    child: const Text('Change place'),
+                  ),
               ],
             ),
           ],

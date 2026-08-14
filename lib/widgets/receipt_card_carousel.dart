@@ -265,7 +265,11 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
   }
 
   void _openDetail(TransactionView tx) {
-    context.pushNamed('tx-detail', pathParameters: {'id': tx.id});
+    context.pushNamed(
+      'tx-detail',
+      pathParameters: {'id': tx.id},
+      queryParameters: const {'edit': '1'},
+    );
   }
 
   // Only bookkeeping here — no visual change yet. Flutter calls this the

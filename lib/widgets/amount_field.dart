@@ -10,6 +10,7 @@ class AmountField extends StatelessWidget {
     this.label = 'Amount (MYR)',
     this.onChanged,
     this.bordered = false,
+    this.readOnly = false,
   });
 
   final TextEditingController controller;
@@ -19,15 +20,19 @@ class AmountField extends StatelessWidget {
   /// Wraps the field in a bordered box, separate from the label above it.
   final bool bordered;
 
+  final bool readOnly;
+
   @override
   Widget build(BuildContext context) {
     final field = TextField(
       controller: controller,
+      readOnly: readOnly,
+      enableInteractiveSelection: !readOnly,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: [
         FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
       ],
-      onChanged: onChanged,
+      onChanged: readOnly ? null : onChanged,
       style: Theme.of(context).textTheme.displaySmall?.copyWith(
             fontWeight: FontWeight.w700,
             color: AppColors.primaryGreen,

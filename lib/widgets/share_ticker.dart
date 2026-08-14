@@ -3,15 +3,14 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 
 /// Always-on scrolling banner teaching the OS Share-menu import path
-/// ("share a receipt from your bank/TNG app into Receipt Drop").
+/// (share a receipt from your bank/TNG app into Receipt Drop).
 ///
 /// Non-dismissible by design — replaces the old one-time dismissible
-/// coach-mark card. Home keeps this collapsed at the scroll top, then
-/// fades it in with a slide-up from below after a short scroll.
+/// coach-mark card. Shown on Home directly under the Drop Receipt button.
 class ShareTicker extends StatefulWidget {
   const ShareTicker({super.key, this.active = true});
 
-  /// When false, pauses marquee/glow animations (hidden off-screen).
+  /// When false, pauses marquee/glow animations.
   final bool active;
 
   @override
@@ -95,12 +94,7 @@ class _ShareTickerState extends State<ShareTicker>
     final style = _style;
     final itemWidth = _itemWidth;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md,
-        0,
-      ),
+      padding: const EdgeInsets.only(top: AppSpacing.xs),
       child: AnimatedBuilder(
         animation: _glowController,
         builder: (context, child) {

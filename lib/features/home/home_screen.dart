@@ -134,6 +134,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: AppSpacing.sm),
+                        const ShareTicker(),
                         const SizedBox(height: AppSpacing.lg),
                         const SpendingInsightsCard(),
                         const SizedBox(height: AppSpacing.lg),
@@ -204,7 +206,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           .where((row) => row['paid'] != true)
                           .length;
                       return _HomeTopOverlay(
-                        scrollController: _scrollController,
                         stuckCount: stuck,
                         onRetrySync: _retrySync,
                         needsReview: needsReview,
@@ -226,7 +227,6 @@ class _HomeScreenState extends State<HomeScreen> {
 /// Pinned home-screen alerts that stay above scrolling content.
 class _HomeTopOverlay extends StatefulWidget {
   const _HomeTopOverlay({
-    required this.scrollController,
     required this.stuckCount,
     required this.onRetrySync,
     required this.needsReview,
@@ -234,7 +234,6 @@ class _HomeTopOverlay extends StatefulWidget {
     required this.onHeightChanged,
   });
 
-  final ScrollController scrollController;
   final int stuckCount;
   final VoidCallback onRetrySync;
   final int needsReview;
@@ -246,46 +245,17 @@ class _HomeTopOverlay extends StatefulWidget {
 }
 
 class _HomeTopOverlayState extends State<_HomeTopOverlay> {
-  /// Show the share ticker once the user has scrolled past this offset.
-  static const _tickerRevealPx = 36.0;
-  static const _tickerAnimDuration = Duration(milliseconds: 320);
-
   final _key = GlobalKey();
-  bool _tickerVisible = false;
 
   @override
   void initState() {
     super.initState();
-    widget.scrollController.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _onScroll();
-      _reportHeight();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
   }
 
   @override
   void didUpdateWidget(covariant _HomeTopOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.scrollController != widget.scrollController) {
-      oldWidget.scrollController.removeListener(_onScroll);
-      widget.scrollController.addListener(_onScroll);
-      _onScroll();
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
-  }
-
-  @override
-  void dispose() {
-    widget.scrollController.removeListener(_onScroll);
-    super.dispose();
-  }
-
-  void _onScroll() {
-    final offset =
-        widget.scrollController.hasClients ? widget.scrollController.offset : 0.0;
-    final next = offset >= _tickerRevealPx;
-    if (next == _tickerVisible) return;
-    setState(() => _tickerVisible = next);
     WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
   }
 
@@ -309,43 +279,6 @@ class _HomeTopOverlayState extends State<_HomeTopOverlay> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Hidden at scroll top so Drop Receipt stays fully in view.
-              // After a short scroll: fade + slide up from below.
-              AnimatedSize(
-                duration: _tickerAnimDuration,
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: AnimatedSwitcher(
-                  duration: _tickerAnimDuration,
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    if (child.key != const ValueKey('share-ticker')) {
-                      return child;
-                    }
-                    return FadeTransition(
-                      opacity: animation,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0, 0.55),
-                          end: Offset.zero,
-                        ).animate(animation),
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: _tickerVisible
-                      ? const ShareTicker(
-                          key: ValueKey('share-ticker'),
-                          active: true,
-                        )
-                      : const SizedBox(
-                          key: ValueKey('share-ticker-off'),
-                          width: double.infinity,
-                          height: 0,
-                        ),
-                ),
-              ),
               AdaptiveSyncBanner(
                 stuckCount: widget.stuckCount,
                 onRetry: widget.onRetrySync,
