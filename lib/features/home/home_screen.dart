@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
 import '../../core/theme/app_theme.dart';
@@ -19,7 +18,7 @@ import '../../features/share/receipt_capture_flow.dart';
 import '../../widgets/adaptive_sync_banner.dart';
 import '../../widgets/pending_drop_indicator.dart';
 import '../../widgets/receipt_card_carousel.dart';
-import '../../widgets/share_coach_mark.dart';
+import '../../widgets/share_ticker.dart';
 import '../../widgets/spending_insights_card.dart';
 import '../../widgets/top_badges_grid.dart';
 
@@ -31,11 +30,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  var _showCoachMark =
-      AppPrefs.shareCoachMarkPending && !AppPrefs.shareCoachMarkSeen;
   BadgeCatalog? _badgeCatalog;
   final _badgeStream = BadgeRepository.streamAll();
   final _splitRequestsStream = BillSplitRepository.streamMyPendingSplitParticipants();
+  final _scrollController = ScrollController();
   double _topOverlayHeight = 0;
 
   @override
@@ -47,6 +45,12 @@ class _HomeScreenState extends State<HomeScreen> {
     BadgeCatalog.loadBundled().then((catalog) {
       if (mounted) setState(() => _badgeCatalog = catalog);
     });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _retrySync() async {
@@ -87,6 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Positioned.fill(
                   child: SingleChildScrollView(
+                    controller: _scrollController,
                     padding: EdgeInsets.fromLTRB(
                       AppSpacing.md,
                       _topOverlayHeight + AppSpacing.xs,
@@ -96,21 +101,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _DropCountPill(count: today.length),
-                              const SizedBox(width: AppSpacing.sm),
-                              _RoundIconButton(
-                                icon: Icons.settings_outlined,
-                                onTap: () => context.pushNamed('settings'),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -144,6 +134,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: AppSpacing.sm),
+                        const ShareTicker(),
                         const SizedBox(height: AppSpacing.lg),
                         const SpendingInsightsCard(),
                         const SizedBox(height: AppSpacing.lg),
@@ -214,9 +206,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           .where((row) => row['paid'] != true)
                           .length;
                       return _HomeTopOverlay(
-                        showCoachMark: _showCoachMark,
-                        onDismissCoachMark: () =>
-                            setState(() => _showCoachMark = false),
                         stuckCount: stuck,
                         onRetrySync: _retrySync,
                         needsReview: needsReview,
@@ -238,8 +227,6 @@ class _HomeScreenState extends State<HomeScreen> {
 /// Pinned home-screen alerts that stay above scrolling content.
 class _HomeTopOverlay extends StatefulWidget {
   const _HomeTopOverlay({
-    required this.showCoachMark,
-    required this.onDismissCoachMark,
     required this.stuckCount,
     required this.onRetrySync,
     required this.needsReview,
@@ -247,8 +234,6 @@ class _HomeTopOverlay extends StatefulWidget {
     required this.onHeightChanged,
   });
 
-  final bool showCoachMark;
-  final VoidCallback onDismissCoachMark;
   final int stuckCount;
   final VoidCallback onRetrySync;
   final int needsReview;
@@ -294,8 +279,6 @@ class _HomeTopOverlayState extends State<_HomeTopOverlay> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (widget.showCoachMark)
-                ShareCoachMark(onDismiss: widget.onDismissCoachMark),
               AdaptiveSyncBanner(
                 stuckCount: widget.stuckCount,
                 onRetry: widget.onRetrySync,
@@ -450,32 +433,6 @@ class _SplitRequestsBanner extends StatelessWidget {
   }
 }
 
-class _DropCountPill extends StatelessWidget {
-  const _DropCountPill({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.cardSurface,
-        borderRadius: AppSpacing.chipBorderRadius,
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.auto_awesome, size: 14),
-          const SizedBox(width: 4),
-          Text('$count drops', style: Theme.of(context).textTheme.labelSmall),
-        ],
-      ),
-    );
-  }
-}
-
 /// Small boxed text link next to "TODAY'S RECEIPTS" that opens the
 /// receipts-only history view (`ReceiptHistoryScreen`).
 class _ViewHistoryButton extends StatelessWidget {
@@ -500,32 +457,6 @@ class _ViewHistoryButton extends StatelessWidget {
                 letterSpacing: 0.8,
               ),
         ),
-      ),
-    );
-  }
-}
-
-class _RoundIconButton extends StatelessWidget {
-  const _RoundIconButton({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        width: 36,
-        height: 36,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: AppColors.cardSurface,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.divider),
-        ),
-        child: Icon(icon, size: 18, color: AppColors.textPrimary),
       ),
     );
   }

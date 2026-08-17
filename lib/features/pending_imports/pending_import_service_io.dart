@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/bootstrap/app_prefs.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
 import '../../core/platform/platform_feedback.dart';
@@ -203,8 +202,6 @@ abstract final class PendingImportService {
       unawaited(
         AppServices.pendingImports.markSupabaseCompleted(import.id, tx.id),
       );
-
-      await AppPrefs.setShareCoachMarkPending();
 
       if (context.mounted && !deferSaveSuccessNav) {
         context.pushNamed('save-success', extra: [tx]);

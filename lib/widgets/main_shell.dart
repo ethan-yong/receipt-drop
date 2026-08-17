@@ -10,8 +10,8 @@ import '../core/platform/platform_utils.dart';
 import '../core/theme/app_theme.dart';
 import '../features/share/receipt_capture_flow.dart';
 
-/// Bottom navigation: Home, Feed, Map, Ranks — with a center capture FAB on
-/// Feed, Map, and Ranks (Home uses the in-page Drop Receipt CTA instead).
+/// Bottom navigation: Home, Map, Ranks, Profile — with a center capture FAB on
+/// Map, Ranks, and Profile (Home uses the in-page Drop Receipt CTA instead).
 class MainShell extends StatelessWidget {
   const MainShell({super.key, required this.navigationShell});
 
@@ -33,7 +33,7 @@ class MainShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final index = navigationShell.currentIndex;
-    // Capture FAB on Feed / Map / Ranks — Home already has Drop Receipt.
+    // Capture FAB on Map / Ranks / Profile — Home already has Drop Receipt.
     final tabWantsFab = index != 0;
 
     return ValueListenableBuilder<int>(
@@ -114,24 +114,24 @@ class _IosTabBar extends StatelessWidget {
                     onTap: () => onTap(0),
                   ),
                   _NavItem(
-                    icon: CupertinoIcons.person_2,
-                    selectedIcon: CupertinoIcons.person_2_fill,
-                    label: 'Feed',
+                    icon: CupertinoIcons.map,
+                    selectedIcon: CupertinoIcons.map_fill,
+                    label: 'Map',
                     selected: index == 1,
                     onTap: () => onTap(1),
                   ),
                   const SizedBox(width: 56),
                   _NavItem(
-                    icon: CupertinoIcons.map,
-                    selectedIcon: CupertinoIcons.map_fill,
-                    label: 'Map',
+                    icon: CupertinoIcons.rosette,
+                    selectedIcon: CupertinoIcons.rosette,
+                    label: 'Ranks',
                     selected: index == 2,
                     onTap: () => onTap(2),
                   ),
                   _NavItem(
-                    icon: CupertinoIcons.rosette,
-                    selectedIcon: CupertinoIcons.rosette,
-                    label: 'Ranks',
+                    icon: CupertinoIcons.person,
+                    selectedIcon: CupertinoIcons.person_fill,
+                    label: 'Profile',
                     selected: index == 3,
                     onTap: () => onTap(3),
                   ),
@@ -172,24 +172,24 @@ class _AndroidTabBar extends StatelessWidget {
             onTap: () => onTap(0),
           ),
           _NavItem(
-            icon: Icons.people_outline,
-            selectedIcon: Icons.people,
-            label: 'Feed',
+            icon: Icons.map_outlined,
+            selectedIcon: Icons.map,
+            label: 'Map',
             selected: index == 1,
             onTap: () => onTap(1),
           ),
           const SizedBox(width: 56),
           _NavItem(
-            icon: Icons.map_outlined,
-            selectedIcon: Icons.map,
-            label: 'Map',
+            icon: Icons.emoji_events_outlined,
+            selectedIcon: Icons.emoji_events,
+            label: 'Ranks',
             selected: index == 2,
             onTap: () => onTap(2),
           ),
           _NavItem(
-            icon: Icons.emoji_events_outlined,
-            selectedIcon: Icons.emoji_events,
-            label: 'Ranks',
+            icon: Icons.person_outline,
+            selectedIcon: Icons.person,
+            label: 'Profile',
             selected: index == 3,
             onTap: () => onTap(3),
           ),

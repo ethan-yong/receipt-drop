@@ -15,6 +15,7 @@ class MapPlaceCluster {
     required this.visitCount,
     required this.transactions,
     required this.dominantCategory,
+    required this.dominantCategoryCount,
   });
 
   final String placeKey;
@@ -25,14 +26,18 @@ class MapPlaceCluster {
   final int visitCount;
   final List<TransactionView> transactions;
 
-  /// Highest-spend category among this place's transactions, computed once
-  /// here rather than per marker per animation frame.
+  /// Category shown on the place pin: highest receipt *count* at this place;
+  /// ties broken by the most recent [TransactionView.occurredAt] among the
+  /// tied categories. Computed once in [mapClusters], not per marker frame.
   final String dominantCategory;
+
+  /// Number of receipts in [dominantCategory] at this place — drives the
+  /// pin's count badge (not [visitCount], which is the place total).
+  final int dominantCategoryCount;
 }
 
 /// Coarser-than-place aggregation for zoomed-out map cluster bubbles (e.g.
-/// "42 receipts" / "15 places"), bucketed by geohash cell instead of exact
-/// place identity.
+/// "42 receipts"), bucketed by geohash cell instead of exact place identity.
 class GeoBucket {
   const GeoBucket({
     required this.bucketKey,
@@ -41,6 +46,7 @@ class GeoBucket {
     required this.receiptCount,
     required this.placeCount,
     required this.dominantCategory,
+    required this.dominantCategoryCount,
   });
 
   final String bucketKey;
@@ -48,7 +54,12 @@ class GeoBucket {
   final double lng;
   final int receiptCount;
   final int placeCount;
+
+  /// Same count+recency rule as [MapPlaceCluster.dominantCategory] — used when
+  /// a bucket collapses to a single receipt so the pin can show that
+  /// receipt's category emoji/border instead of a generic cluster face.
   final String dominantCategory;
+  final int dominantCategoryCount;
 }
 
 /// Geohash precision at which a place-level cluster is itself the finest
@@ -59,13 +70,16 @@ const individualPinPrecision = 8;
 
 /// Geohash precision to use for cluster bubbles at a given camera zoom.
 /// Thresholds line up with standard geohash cell sizes: precision 8 (~38m,
-/// individual place territory) down to precision 3 (~156km, country-scale).
+/// individual place territory) down to precision 1 (~5,000km, country /
+/// continent scale) so far-out zooms collapse into one or a few buckets.
 int zoomBucketPrecision(double zoom) {
   if (zoom >= 15) return individualPinPrecision;
-  if (zoom >= 12) return 6;
-  if (zoom >= 9) return 5;
-  if (zoom >= 6) return 4;
-  return 3;
+  if (zoom >= 13) return 6;
+  if (zoom >= 11) return 5;
+  if (zoom >= 9) return 4;
+  if (zoom >= 7) return 3;
+  if (zoom >= 5) return 2;
+  return 1;
 }
 
 /// Lat/lng box, kept as a plain record (not `google_maps_flutter`'s
@@ -144,6 +158,7 @@ List<MapPlaceCluster> mapClusters(List<TransactionView> rows) {
     final lat = txs.first.placeLat!;
     final lng = txs.first.placeLng!;
     final total = txs.fold<double>(0, (a, t) => a + (t.amountMyr ?? 0));
+    final dominant = _dominantCategoryByCount(txs);
     return MapPlaceCluster(
       placeKey: e.key,
       displayName: txs.first.displayPlace,
@@ -152,22 +167,46 @@ List<MapPlaceCluster> mapClusters(List<TransactionView> rows) {
       totalSpend: total,
       visitCount: txs.length,
       transactions: txs,
-      dominantCategory: _dominantCategory(txs),
+      dominantCategory: dominant.category,
+      dominantCategoryCount: dominant.count,
     );
   }).toList();
 }
 
-String _dominantCategory(List<TransactionView> txs) {
-  final totals = <String, double>{};
+/// Highest receipt-count category; ties broken by the most recent
+/// [TransactionView.occurredAt] among the tied categories.
+({String category, int count}) _dominantCategoryByCount(
+  List<TransactionView> txs,
+) {
+  if (txs.isEmpty) return (category: 'Unclassified', count: 0);
+
+  final counts = <String, int>{};
+  final latest = <String, DateTime>{};
   for (final t in txs) {
-    totals.update(
-      t.effectiveCategory,
-      (v) => v + (t.amountMyr ?? 0),
-      ifAbsent: () => t.amountMyr ?? 0,
-    );
+    final cat = t.effectiveCategory;
+    counts.update(cat, (v) => v + 1, ifAbsent: () => 1);
+    final prev = latest[cat];
+    if (prev == null || t.occurredAt.isAfter(prev)) {
+      latest[cat] = t.occurredAt;
+    }
   }
-  if (totals.isEmpty) return 'Unclassified';
-  return totals.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+
+  String? best;
+  for (final entry in counts.entries) {
+    if (best == null) {
+      best = entry.key;
+      continue;
+    }
+    final bestCount = counts[best]!;
+    if (entry.value > bestCount) {
+      best = entry.key;
+    } else if (entry.value == bestCount) {
+      final a = latest[entry.key]!;
+      final b = latest[best]!;
+      if (a.isAfter(b)) best = entry.key;
+    }
+  }
+  return (category: best!, count: counts[best]!);
 }
 
 /// Groups geolocated rows into geohash-precision buckets for zoomed-out map
@@ -199,13 +238,15 @@ List<GeoBucket> bucketClusters(List<TransactionView> rows, int precision) {
       for (final t in txs)
         effectivePlaceKey(t.placeGooglePlaceId, t.placeLat!, t.placeLng!),
     };
+    final dominant = _dominantCategoryByCount(txs);
     return GeoBucket(
       bucketKey: e.key,
       lat: latSum / txs.length,
       lng: lngSum / txs.length,
       receiptCount: txs.length,
       placeCount: placeKeys.length,
-      dominantCategory: _dominantCategory(txs),
+      dominantCategory: dominant.category,
+      dominantCategoryCount: dominant.count,
     );
   }).toList();
 }

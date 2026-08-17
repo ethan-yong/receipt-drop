@@ -51,6 +51,44 @@ Widget _harness(Widget child) {
   );
 }
 
+List<TransactionView> _threeReceipts() => [
+      _tx(
+        id: 'a',
+        occurredAt: DateTime(2026, 7, 10, 12),
+        merchant: 'Newest Spot',
+      ),
+      _tx(
+        id: 'b',
+        occurredAt: DateTime(2026, 7, 10, 11),
+        merchant: 'Older Spot',
+      ),
+      _tx(
+        id: 'c',
+        occurredAt: DateTime(2026, 7, 10, 10),
+        merchant: 'Oldest Spot',
+      ),
+    ];
+
+List<TransactionView> _fiveReceipts() => [
+      for (var i = 0; i < 5; i++)
+        _tx(
+          id: 'tx-$i',
+          occurredAt: DateTime(2026, 7, 10, 12 - i),
+          merchant: 'Receipt $i',
+        ),
+    ];
+
+Future<void> _settleFling(WidgetTester tester) async {
+  // SpringSimulation can take ~600–900ms; pump past it without binding to
+  // infinite auto-rotate timers.
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.pump(const Duration(milliseconds: 600));
+  await tester.pump(const Duration(milliseconds: 200));
+}
+
 void main() {
   testWidgets('shows an empty state when there are no receipts', (
     tester,
@@ -77,28 +115,13 @@ void main() {
 
     expect(find.text('Solo Cafe'), findsWidgets);
     expect(find.textContaining('Latest Spending'), findsOneWidget);
+    expect(find.byKey(const ValueKey('receipt-carousel-dots')), findsNothing);
   });
 
   testWidgets('multiple receipts show one dot per receipt and only one card', (
     tester,
   ) async {
-    final txs = [
-      _tx(
-        id: 'a',
-        occurredAt: DateTime(2026, 7, 10, 12),
-        merchant: 'Newest Spot',
-      ),
-      _tx(
-        id: 'b',
-        occurredAt: DateTime(2026, 7, 10, 11),
-        merchant: 'Older Spot',
-      ),
-      _tx(
-        id: 'c',
-        occurredAt: DateTime(2026, 7, 10, 10),
-        merchant: 'Oldest Spot',
-      ),
-    ];
+    final txs = _threeReceipts();
 
     await tester.pumpWidget(_harness(ReceiptCardCarousel(transactions: txs)));
     await tester.pump();
@@ -112,37 +135,18 @@ void main() {
   testWidgets('tapping a dot advances the carousel to that receipt', (
     tester,
   ) async {
-    final txs = [
-      _tx(
-        id: 'a',
-        occurredAt: DateTime(2026, 7, 10, 12),
-        merchant: 'Newest Spot',
-      ),
-      _tx(
-        id: 'b',
-        occurredAt: DateTime(2026, 7, 10, 11),
-        merchant: 'Older Spot',
-      ),
-      _tx(
-        id: 'c',
-        occurredAt: DateTime(2026, 7, 10, 10),
-        merchant: 'Oldest Spot',
-      ),
-    ];
+    final txs = _threeReceipts();
 
     await tester.pumpWidget(_harness(ReceiptCardCarousel(transactions: txs)));
     await tester.pump();
 
-    // Three dots, tap the third one (index 2 -> "Oldest Spot").
-    final dotFinder = find.byWidgetPredicate(
-      (w) => w is GestureDetector && w.onTap != null,
-    );
-    expect(dotFinder, findsWidgets);
+    final dots = find.byKey(const ValueKey('receipt-carousel-dots'));
+    expect(dots, findsOneWidget);
 
-    await tester.tap(dotFinder.at(dotFinder.evaluate().length - 1));
-    // Settle the deck-transition animation (~690ms) plus resume timer.
-    await tester.pump(const Duration(milliseconds: 750));
-    await tester.pumpAndSettle();
+    // Tap the right side of the dots row → last index ("Oldest Spot").
+    final box = tester.getRect(dots);
+    await tester.tapAt(Offset(box.right - 4, box.center.dy));
+    await _settleFling(tester);
 
     expect(find.text('Oldest Spot'), findsWidgets);
     expect(find.text('Newest Spot'), findsNothing);
@@ -170,13 +174,10 @@ void main() {
     await tester.pumpWidget(_harness(ReceiptCardCarousel(transactions: older)));
     await tester.pump();
 
-    // Move off index 0 by jumping to the last dot.
-    final dotFinder = find.byWidgetPredicate(
-      (w) => w is GestureDetector && w.onTap != null,
-    );
-    await tester.tap(dotFinder.at(dotFinder.evaluate().length - 1));
-    await tester.pump(const Duration(milliseconds: 750));
-    await tester.pumpAndSettle();
+    final dots = find.byKey(const ValueKey('receipt-carousel-dots'));
+    final box = tester.getRect(dots);
+    await tester.tapAt(Offset(box.right - 4, box.center.dy));
+    await _settleFling(tester);
     expect(find.text('Oldest Spot'), findsWidgets);
 
     // A new receipt is prepended (the list is newest-first): the carousel
@@ -195,5 +196,70 @@ void main() {
     expect(find.text('Newest Spot'), findsWidgets);
     expect(find.text('Oldest Spot'), findsNothing);
     expect(find.textContaining('Latest Spending'), findsOneWidget);
+  });
+
+  testWidgets('slow left swipe advances exactly one receipt', (tester) async {
+    await tester.pumpWidget(
+      _harness(ReceiptCardCarousel(transactions: _threeReceipts())),
+    );
+    await tester.pump();
+
+    // Drag left past the 56px commit threshold with a gentle fling.
+    await tester.fling(
+      find.text('Newest Spot').first,
+      const Offset(-120, 0),
+      400,
+    );
+    await _settleFling(tester);
+
+    expect(find.text('Older Spot'), findsWidgets);
+    expect(find.text('Newest Spot'), findsNothing);
+    expect(find.text('Oldest Spot'), findsNothing);
+  });
+
+  testWidgets('fast left fling can skip past the next receipt', (tester) async {
+    await tester.pumpWidget(
+      _harness(ReceiptCardCarousel(transactions: _fiveReceipts())),
+    );
+    await tester.pump();
+
+    await tester.fling(
+      find.text('Receipt 0').first,
+      const Offset(-180, 0),
+      3500,
+    );
+    await _settleFling(tester);
+
+    // Should have advanced at least two pages (not stuck on Receipt 0 or 1).
+    expect(find.text('Receipt 0'), findsNothing);
+    final landedOnOne = find.text('Receipt 1').evaluate().isNotEmpty;
+    final landedOnTwo = find.text('Receipt 2').evaluate().isNotEmpty;
+    final landedOnThree = find.text('Receipt 3').evaluate().isNotEmpty;
+    final landedOnFour = find.text('Receipt 4').evaluate().isNotEmpty;
+    expect(
+      !landedOnOne && (landedOnTwo || landedOnThree || landedOnFour),
+      isTrue,
+      reason: 'fast fling should skip Receipt 1',
+    );
+  });
+
+  testWidgets('under-threshold drag springs back to the same receipt', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(ReceiptCardCarousel(transactions: _threeReceipts())),
+    );
+    await tester.pump();
+
+    await tester.fling(
+      find.text('Newest Spot').first,
+      const Offset(-30, 0),
+      50,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.text('Newest Spot'), findsWidgets);
+    expect(find.text('Older Spot'), findsNothing);
   });
 }

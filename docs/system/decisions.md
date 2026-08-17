@@ -14,6 +14,42 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Spend-map overlap: unify own + friend pins (2026-08-14)
+
+**Decision**: At individual-pin zoom, friend avatar markers participate in the same screen-space `groupOverlappingKeys` / spiderfy pipeline as own place pins (`_placeAndFriendOverlays` in `SpendMapScreen`). Prefixed keys (`place:<placeKey>` / `friend:<userId>`) share one union-find pass; singletons still render their normal marker (`SpendPlaceMarker` / `FriendMapMarker`); groups of 2+ collapse to `OverlapStackMarker` and expand all members (including friends) on tap. The collapsed badge counts **own receipts only** — friend markers contribute `receiptCount: 0` so they are visual overlap participants without inflating the user's receipt total. Bucket-mode zoom and the "you are here" avatar stay out of this grouping (friends still render via plain `_friendOverlays` in heatmap/bucket modes).
+
+**Reason**: Friend pins previously bypassed overlap detection and could sit directly on own receipt markers, looking like a broken multi-layer stack. Unifying the input to the existing grouping utility fixes that without a parallel overlap system or hiding friends.
+
+**Alternatives considered**: (1) hide friend markers under own pins (rejected — loses social signal); (2) raise the pixel threshold only (rejected — friends still bypass grouping); (3) count friends toward the stack badge (rejected — badge is the user's receipt count); (4) also group friends with geohash bucket bubbles (deferred — separate clustering system; out of scope for the reported bug).
+
+**Tradeoffs**: Bucket-mode friend/own visual overlap remains possible at far zoom. A 1-own + 1-friend stack shows `OverlapStackMarker` with no badge (own count = 1). Spiderfy identity sets now use prefixed keys.
+
+---
+
+## Spend map auto day/night tile styling (2026-08-14)
+
+**Decision**: The spend map (`SpendMapScreen`) switches base Google Maps tiles by device **local clock**: stock light tiles from 06:00–17:59, and a JSON night style (`assets/map/night_style.json`) from 18:00–05:59. Applied via `GoogleMap.style` (live swap on `setState`). A one-shot `Timer` wakes at the next 06:00/18:00 boundary and reschedules; `AppLifecycleState.resumed` re-applies so returning from background after a boundary updates immediately. Overlay chips/pins are unchanged — only the basemap.
+
+**Reason**: Google Maps–style morning/night readability without coupling the rest of the cream-themed app to Flutter dark mode, and without GPS/sunrise math.
+
+**Alternatives considered**: (1) follow system light/dark (rejected — app is light-only UI; night map should still happen on a light system theme after evening); (2) real sunrise/sunset from location (rejected — extra dependency and location requirement for a cosmetic switch); (3) cloud map IDs / `MapColorScheme` (rejected — web-oriented, heavier setup); (4) manual toggle only (deferred — auto clock match is the requested Google Maps behavior).
+
+**Tradeoffs**: Fixed 06:00/18:00 boundaries ignore seasonal daylight. Night style JSON is a static asset; invalid/missing asset falls back to light tiles. Web/desktop must support `GoogleMap.style` the same way as mobile.
+
+---
+
+## Spend-map pins: emoji-first hierarchy with count badges (2026-08-14)
+
+**Decision**: Own-place map markers (`SpendPlaceMarker` / `SpendClusterBubble` / `OverlapStackMarker`) stopped being category-bordered text pills ("N receipts" / "N places"). They now share a single shell widget (`ReceiptMapPin`): a white circle + emoji + map-pin tail, with an optional top-right notification-style count badge when count > 1. **Pin face is count-driven, not zoom-driven**: a marker with exactly one receipt always shows that receipt's category emoji (via exact `AppColors.categoryEmoji()`, table extracted from the confirm-sheet `_CategoryChip`, not the fuzzy `receiptPaletteForCategory` keyword matcher) plus a unique `AppColors.categoryColor` border/tail — even inside a far-out geohash bucket. Multi-receipt unresolved clusters (geohash buckets with `receiptCount > 1`, or screen-space overlap groups) show the generic receipt emoji 🧾 with total receipt count and a **neutral** border. Same-place multi-receipt pins show the dominant category emoji + that category's count (`dominantCategoryCount`) with the matching category border. Multi-category places pick the category with the highest receipt *count*, ties broken by most recent `occurredAt`. `GeoBucket` carries `dominantCategory` / `dominantCategoryCount` so single-receipt buckets can render category faces. Overlap/spiderfy pixel constants were retuned for the smaller footprint (`thresholdPx` 56→40, `spiderfyOffsets` baseRadius 46→34). Zoom precision ladder also coarsens down to geohash 1–2 so far-out views collapse into few buckets.
+
+**Reason**: a lone receipt should remain identifiable at any zoom; 🧾 means "multiple receipts not yet resolved to categories," not "you are zoomed out." Category-colored borders restore per-category glanceability next to the emoji without bringing back text pills. Exact emoji lookup is correct because map rows already carry a finalized `effectiveCategory`. Count-based (not spend-based) category selection matches the product rule that the badge is a receipt count, not a spend signal.
+
+**Alternatives considered**: (1) always-neutral borders with emoji only (rejected — user wanted unique category borders); (2) always-🧾 for all zoomed-out buckets including singles (rejected — hides single-receipt identity); (3) reuse fuzzy `receiptPaletteForCategory` for pin emoji (rejected — wrong for already-normalized categories); (4) plain numbered circle clusters without 🧾 (rejected — loses Receipt Drop specificity); (5) category emoji nested inside a receipt icon (rejected — visual clutter at mobile map sizes).
+
+**Tradeoffs**: Travel/Shopping/Transport emoji on the map (✈️🛍️🚌) can differ from receipt-card fuzzy palettes (which still use keyword matching for demo/messy labels). Place-count sublabel on cluster bubbles is gone — place diversity is only visible after tap-to-zoom. Overlap badges now sum receipts across places, not distinct place count. Multi-receipt clusters stay visually neutral even when a dominant category exists (by design — 🧾 signals unresolved multiplicity).
+
+---
+
 ## Map sheet venue photos via Places Photo Media + shared Storage cache (2026-08-11)
 
 **Decision**: The spend-map pin sheet (`ReceiptMapSheet`) shows a horizontal photo carousel of Google Places venue photos for the pin's `place_google_place_id`, plus the active receipt's own photo. Photos are fetched through a new `places-proxy` mode (`place_photos`): Places Details (`fields=photos`) → Photo Media (`maxWidthPx=800`) → re-host into a public `place-photos` Storage bucket → cache the **bucket-relative paths** (not absolute URLs) in `place_photos_cache` for 30 days (max 3 photos/place). Flutter's `PlacesRepository.fetchPlacePhotos` rebuilds public URLs against the client's own Supabase origin via `storage.from('place-photos').getPublicUrl(...)`. Same migration pass also extends `get_map_transactions_in_bounds` with `line_items` + `receipt_storage_path` so the sheet can render items/receipt photo for pins captured on another device.
@@ -46,7 +82,19 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 **Alternatives considered**: payer-only bookkeeping with no friend visibility (rejected — see reason above); ad-hoc/derived friend groups instead of a persisted table (rejected per explicit product decision — groups should be reusable, not recomputed); a full-screen `go_router` route for the payer flow instead of a bottom sheet (rejected — `ReceiptConfirmSheet`'s sheet-from-an-open-receipt pattern is the closer precedent, and `receipt_sheet_theme.dart`'s palette already matches the source design's gold/ink/cream almost hex-for-hex).
 
-**Tradeoffs**: a split is immutable once created (`bill_splits` has no update policy, `unique(transaction_id)`) — there is no "edit a split's composition" UI after persist; redoing one requires a manual delete. By-item split is gated on the receipt having finished syncing (`transaction.syncStatus == 'synced'`) since item assignments FK to server-side `receipt_line_items.id`, so a just-captured receipt briefly can't use by-item mode. "Remind" is best-effort only — it stamps `bill_split_participants.last_reminded_at` and flips the payer's own button label optimistically; there is no real notification delivery to the friend, by design (matches the rest of the app's lack of a push infrastructure).
+**Tradeoffs**: split *composition* (who / equal-vs-by-item / item assignments) is insert-or-delete only (`unique(transaction_id)`); redoing who requires a manual delete. Snapshotted `total_myr` and participant `share_myr` **can** be rewritten after a receipt amount / line-item edit (`20260813140000`, `BillSplitRepository.recalculateShares`) so friends are not stuck with stale amounts — paid flags are preserved. By-item split is gated on the receipt having finished syncing (`transaction.syncStatus == 'synced'`) since item assignments FK to server-side `receipt_line_items.id`, so a just-captured receipt briefly can't use by-item mode. "Remind" is best-effort only — it stamps `bill_split_participants.last_reminded_at` and flips the payer's own button label optimistically; there is no real notification delivery to the friend, by design (matches the rest of the app's lack of a push infrastructure).
+
+---
+
+## Post-scan vs post-edit destinations (2026-08-13)
+
+**Decision**: After a first-time scan, the default exit from `ReceiptSavedScreen` / bill-split Remind-or-Done is **Insights** (reward). View receipt is the only intentional bypass (details, then Back → Home). Editing an existing receipt on `TransactionDetailScreen` **stays on details** after Save — never Insights — with an in-page confirmation; if a split exists and amount/line prices changed, shares are recalculated and a "Remind friends" banner is shown.
+
+**Reason**: scanning is exploratory ("show me something interesting"); correcting a receipt is corrective ("fix the number"). Sending editors to Insights feels like a wrong turn. Staying on details lets the payer verify recalculated shares before leaving.
+
+**Alternatives considered**: always Home after edit (rejected — can't verify split without reopening); always Insights after any save (rejected — mismatches edit intent); X on receipt-saved → Home (rejected — ambiguous exit; remove X, default Done → Insights).
+
+**Tradeoffs**: `bill_splits` gained an owner UPDATE policy for amounts only; friends with open Split Requests may briefly see old `share_myr` until sync/reload — Remind CTA is still timestamp-only (no push).
 
 ---
 
@@ -58,7 +106,7 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 **Alternatives considered**: create on enter Review then delete on swipe-back (rejected — racey for friend discovery and wipeable paid state); swipe only before first Review visit (rejected — does not meet “edit from Review”).
 
-**Tradeoffs**: first Review action pays a create latency hop; after persist in-session, composition locks (same as reopen) because `bill_splits` remains insert-only.
+**Tradeoffs**: first Review action pays a create latency hop; after persist in-session, composition locks (same as reopen) because who/mode/assignments remain insert-or-delete (amounts may still be rewritten via `recalculateShares`).
 
 ---
 

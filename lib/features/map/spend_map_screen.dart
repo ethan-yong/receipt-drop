@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -16,6 +17,7 @@ import '../../data/repositories/places_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/map_aggregates.dart';
+import '../../domain/logic/map_day_night.dart';
 import '../../domain/logic/map_pin_layout.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/map_filter_chips.dart';
@@ -23,6 +25,7 @@ import '../../widgets/profile_photo.dart';
 import 'widgets/friend_map_marker.dart';
 import 'widgets/friend_pin_sheet.dart';
 import 'widgets/overlap_stack_marker.dart';
+import 'widgets/receipt_map_pin.dart';
 import 'widgets/receipt_map_sheet.dart';
 import 'widgets/spend_cluster_bubble.dart';
 import 'widgets/spend_place_marker.dart';
@@ -76,8 +79,9 @@ class SpendMapScreen extends StatefulWidget {
 }
 
 class _SpendMapScreenState extends State<SpendMapScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const _malaysiaCenter = LatLng(3.1390, 101.6869);
+  static const _nightStyleAsset = 'assets/map/night_style.json';
 
   GoogleMapController? _controller;
   final _panelController = DraggableScrollableController();
@@ -86,6 +90,11 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   String _categoryFilter = 'All categories';
   var _heatmapMode = false;
   var _didAutoFit = false;
+
+  /// Null = stock light tiles; night JSON when [isMapNightMode] is true.
+  String? _mapStyle;
+  String? _nightStyleJson;
+  Timer? _mapStyleTimer;
 
   List<FriendMapPin> _friendPins = const [];
   Position? _myPosition;
@@ -98,9 +107,10 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   /// so select/close/dispose never double-increment or leak the count.
   bool _shellChromeHidden = false;
 
-  /// Place keys of the overlap group currently expanded via spiderfy.
-  /// `null` means nothing is expanded. Cleared on bare-map tap, when the
-  /// live grouping no longer matches, or when zooming out to bucket mode.
+  /// Prefixed keys (`place:<placeKey>` / `friend:<userId>`) of the overlap
+  /// group currently expanded via spiderfy. `null` means nothing is
+  /// expanded. Cleared on bare-map tap, when the live grouping no longer
+  /// matches, or when zooming out to bucket mode.
   Set<String>? _spiderfiedGroup;
 
   /// Viewport-fetched rows backing the map's own-place clustering/heat data
@@ -143,6 +153,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadMapStyles());
     SocialRepository.getFriendMapPins().then((pins) {
       if (mounted && pins.isNotEmpty) {
         setState(() => _friendPins = pins);
@@ -179,6 +191,44 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     _localSub = AppServices.transactions.watchAll().listen(_onLocalTransactionsChanged);
   }
 
+  Future<void> _loadMapStyles() async {
+    try {
+      _nightStyleJson = await rootBundle.loadString(_nightStyleAsset);
+    } catch (_) {
+      // Leave night style null — map stays on default light tiles.
+      _nightStyleJson = null;
+    }
+    if (!mounted) return;
+    _applyMapStyleForNow();
+    _scheduleNextMapStyleChange();
+  }
+
+  void _applyMapStyleForNow() {
+    final night = isMapNightMode(DateTime.now());
+    final next = night ? _nightStyleJson : null;
+    if (next == _mapStyle) return;
+    setState(() => _mapStyle = next);
+  }
+
+  void _scheduleNextMapStyleChange() {
+    _mapStyleTimer?.cancel();
+    final wait = untilNextMapStyleChange(DateTime.now());
+    // Add a second so we land firmly on the far side of the boundary.
+    _mapStyleTimer = Timer(wait + const Duration(seconds: 1), () {
+      if (!mounted) return;
+      _applyMapStyleForNow();
+      _scheduleNextMapStyleChange();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _applyMapStyleForNow();
+      _scheduleNextMapStyleChange();
+    }
+  }
+
   /// See [_localSub] — debounces a forced viewport refetch whenever the
   /// local dataset's map-relevant fingerprint changes.
   void _onLocalTransactionsChanged(List<TransactionView> rows) {
@@ -193,6 +243,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _mapStyleTimer?.cancel();
     _localSub?.cancel();
     _refetchDebounce?.cancel();
     _restoreShellChrome();
@@ -609,19 +661,56 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     }
   }
 
-  List<Widget> _placeOverlays(
+  /// Combined own-place + friend overlays for individual-pin mode. Both
+  /// marker types share one [groupOverlappingKeys] pass so a friend avatar
+  /// sitting on a receipt pin collapses into a single [OverlapStackMarker]
+  /// instead of stacking as a broken 2-layer pile.
+  List<Widget> _placeAndFriendOverlays(
     List<MapPlaceCluster> clusters,
-    Map<String, Offset> positions,
+    Map<String, Offset> placePositions,
+    Map<String, Offset> friendPositions,
   ) {
-    final byKey = {for (final c in clusters) c.placeKey: c};
+    const placeAnchor = Offset(ReceiptMapPin.halfWidth, ReceiptMapPin.tipOffsetY);
+    // Matches the literal offsets [_friendOverlays] uses for FriendMapMarker.
+    const friendAnchor = Offset(36, 72);
+
+    final markers = <String, _MapMarker>{
+      for (final c in clusters)
+        'place:${c.placeKey}': _MapMarker(
+          key: 'place:${c.placeKey}',
+          receiptCount: c.visitCount,
+          anchor: placeAnchor,
+          widget: SpendPlaceMarker(
+            cluster: c,
+            onTap: () => _selectPlace(c),
+          ),
+        ),
+      for (final p in _friendPins)
+        'friend:${p.userId}': _MapMarker(
+          key: 'friend:${p.userId}',
+          // Friends participate in overlap/spiderfy but must not inflate the
+          // user's own-receipt badge on OverlapStackMarker.
+          receiptCount: 0,
+          anchor: friendAnchor,
+          widget: FriendMapMarker(
+            pin: p,
+            onTap: () => FriendPinSheet.show(context, p),
+          ),
+        ),
+    };
+
+    final allPositions = <String, Offset>{
+      for (final e in placePositions.entries) 'place:${e.key}': e.value,
+      for (final e in friendPositions.entries) 'friend:${e.key}': e.value,
+    };
     final screenPoints = <String, ScreenPoint>{
-      for (final e in positions.entries)
-        if (byKey.containsKey(e.key)) e.key: (x: e.value.dx, y: e.value.dy),
+      for (final e in allPositions.entries)
+        if (markers.containsKey(e.key)) e.key: (x: e.value.dx, y: e.value.dy),
     };
     final groups = groupOverlappingKeys(screenPoints);
 
     // Drop a spiderfy that no longer matches any live overlap group
-    // (zoom/pan separated the pins, or a place left the viewport).
+    // (zoom/pan separated the pins, or a place/friend left the viewport).
     var spiderfied = _spiderfiedGroup;
     if (spiderfied != null) {
       final stillValid = groups.any((g) {
@@ -641,30 +730,27 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     for (final groupKeys in groups) {
       if (groupKeys.length == 1) {
         final key = groupKeys.single;
-        final c = byKey[key];
-        final pos = positions[key];
-        if (c == null || pos == null) continue;
+        final item = markers[key];
+        final pos = allPositions[key];
+        if (item == null || pos == null) continue;
         widgets.add(Positioned(
-          left: pos.dx - 48,
-          top: pos.dy - 56,
-          child: SpendPlaceMarker(
-            cluster: c,
-            onTap: () => _selectPlace(c),
-          ),
+          left: pos.dx - item.anchor.dx,
+          top: pos.dy - item.anchor.dy,
+          child: item.widget,
         ));
         continue;
       }
 
-      final members = <MapPlaceCluster>[
+      final members = <_MapMarker>[
         for (final k in groupKeys)
-          if (byKey[k] != null) byKey[k]!,
+          if (markers[k] != null) markers[k]!,
       ];
       if (members.length < 2) continue;
 
       var cx = 0.0;
       var cy = 0.0;
       for (final k in groupKeys) {
-        final p = positions[k]!;
+        final p = allPositions[k]!;
         cx += p.dx;
         cy += p.dy;
       }
@@ -676,16 +762,15 @@ class _SpendMapScreenState extends State<SpendMapScreen>
           spiderfied.length == groupKeys.length &&
           spiderfied.containsAll(groupKeys);
 
-      // Dominant category ≈ highest-spend place in the group (cheap proxy).
-      final dominant = members.reduce(
-        (a, b) => a.totalSpend >= b.totalSpend ? a : b,
-      );
+      // Own receipts only — friends contribute 0 (see [_MapMarker] above).
+      final receiptCount =
+          members.fold<int>(0, (a, m) => a + m.receiptCount);
 
       final offsets = spiderfyOffsets(members.length);
-      // Match spiderfyOffsets radius growth: base 46 + (n-2)*6.
-      final radius = 46.0 + (members.length - 2) * 6.0;
-      // Room for pill+tail (~56 tall) beyond the fan-out radius.
-      final extent = radius + 60.0;
+      // Match spiderfyOffsets radius growth: base 44 + (n-2)*6.
+      final radius = 44.0 + (members.length - 2) * 6.0;
+      // Room for circle+tail (~tipOffsetY) beyond the fan-out radius.
+      final extent = radius + ReceiptMapPin.tipOffsetY + 8.0;
 
       widgets.add(Positioned(
         left: cx - extent,
@@ -712,18 +797,14 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                         offsets: [
                           for (final o in offsets) Offset(o.x, o.y),
                         ],
-                        color: AppColors.categoryColor(dominant.dominantCategory)
-                            .withValues(alpha: 0.45),
+                        color: AppColors.textMuted.withValues(alpha: 0.45),
                       ),
                     ),
                     for (var i = 0; i < members.length; i++)
                       Positioned(
-                        left: extent + offsets[i].x - 48,
-                        top: extent + offsets[i].y - 56,
-                        child: SpendPlaceMarker(
-                          cluster: members[i],
-                          onTap: () => _selectPlace(members[i]),
-                        ),
+                        left: extent + offsets[i].x - members[i].anchor.dx,
+                        top: extent + offsets[i].y - members[i].anchor.dy,
+                        child: members[i].widget,
                       ),
                   ],
                 )
@@ -732,8 +813,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                   // Tail tip at the geographic center (box midpoint).
                   alignment: const Alignment(0, 0.15),
                   child: OverlapStackMarker(
-                    count: members.length,
-                    dominantCategory: dominant.dominantCategory,
+                    receiptCount: receiptCount,
                     onTap: () => setState(
                       () => _spiderfiedGroup = groupKeys.toSet(),
                     ),
@@ -754,8 +834,8 @@ class _SpendMapScreenState extends State<SpendMapScreen>
       final pos = positions[b.bucketKey];
       if (pos == null) continue;
       widgets.add(Positioned(
-        left: pos.dx - 54,
-        top: pos.dy - 60,
+        left: pos.dx - ReceiptMapPin.halfWidth,
+        top: pos.dy - ReceiptMapPin.tipOffsetY,
         child: SpendClusterBubble(
           bucket: b,
           onTap: () => _selectBucket(b),
@@ -904,6 +984,7 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                 myLocationButtonEnabled: false,
                 mapToolbarEnabled: false,
                 compassEnabled: false,
+                style: _mapStyle,
                 circles: _heatmapMode ? _heatCircles(_viewportRows) : const {},
               ),
               // Isolated so a reprojection pass (every camera-move frame)
@@ -927,12 +1008,20 @@ class _SpendMapScreenState extends State<SpendMapScreen>
                             children: _bucketMode
                                 ? _bucketOverlays(
                                     _lastBuckets, _overlayPositions.bucketPos)
-                                : _placeOverlays(
-                                    _lastClusters, _overlayPositions.placePos),
+                                : _placeAndFriendOverlays(
+                                    _lastClusters,
+                                    _overlayPositions.placePos,
+                                    _overlayPositions.friendPos,
+                                  ),
                           ),
                         ),
                       ),
-                    ..._friendOverlays(_overlayPositions.friendPos),
+                    // Friends are already in the unified pipeline above when
+                    // individual pins are showing; only draw them separately
+                    // in heatmap / bucket modes where own markers aren't
+                    // place-level overlap candidates.
+                    if (_heatmapMode || _bucketMode)
+                      ..._friendOverlays(_overlayPositions.friendPos),
                     ?_myLocationOverlay(_overlayPositions.mePos),
                   ],
                 ),
@@ -1031,6 +1120,31 @@ class _SpendMapScreenState extends State<SpendMapScreen>
     ),
     );
   }
+}
+
+/// One overlap-groupable map marker — either an own place cluster or a
+/// friend pin — carrying its already-built "normal" widget plus the anchor
+/// offset needed to position it (differs between the two visual shells).
+class _MapMarker {
+  const _MapMarker({
+    required this.key,
+    required this.receiptCount,
+    required this.anchor,
+    required this.widget,
+  });
+
+  /// Prefixed identity: `place:<placeKey>` or `friend:<userId>`.
+  final String key;
+
+  /// Own receipts only; friends contribute 0 so the stack badge isn't
+  /// inflated by social pins that merely participate in visual overlap.
+  final int receiptCount;
+
+  /// Subtract from a screen point to get the widget's top-left.
+  final Offset anchor;
+
+  /// [SpendPlaceMarker] / [FriendMapMarker], with tap already wired.
+  final Widget widget;
 }
 
 /// Thin "legs" from a spiderfy group's shared center out to each spread pin,

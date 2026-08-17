@@ -1175,25 +1175,6 @@ class _CategoryChip extends StatelessWidget {
 
   final String category;
 
-  String get _emoji {
-    switch (category) {
-      case 'Food & Drink':
-        return '🍽️';
-      case 'Groceries':
-        return '🛒';
-      case 'Shopping':
-        return '🛍️';
-      case 'Transport':
-        return '🚌';
-      case 'Travel':
-        return '✈️';
-      case 'Health & Beauty':
-        return '💊';
-      default:
-        return '🧾';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     // Ties this bubble's color into the same per-category coding used
@@ -1210,7 +1191,10 @@ class _CategoryChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(_emoji, style: const TextStyle(fontSize: 13)),
+          Text(
+            AppColors.categoryEmoji(category),
+            style: const TextStyle(fontSize: 13),
+          ),
           const SizedBox(width: 7),
           Text(
             category,

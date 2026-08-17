@@ -104,6 +104,7 @@ flutter:
   assets:
     - assets/config/categories-v1.json
     - assets/config/badges-v1.json
+    - assets/map/night_style.json
     - assets/branding/
     - assets/badges/
     - category_images/

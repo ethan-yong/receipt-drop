@@ -283,10 +283,10 @@ String _receiptNumber(String id) {
 /// Every receipt card is exactly this tall, no matter how many line items it
 /// has — the items scroll inside the card instead of growing it. The carousel
 /// viewport adds 10px for the newest-card gold frame (5px per side).
-const kReceiptCardHeight = 500.0;
-const kReceiptCardBorderRadius = 26.0;
+const kReceiptCardHeight = 450.0;
+const kReceiptCardBorderRadius = 24.0;
 
-const _illustrationHeight = 190.0;
+const _illustrationHeight = 168.0;
 
 class ReceiptCard extends StatelessWidget {
   const ReceiptCard({
@@ -341,16 +341,16 @@ class ReceiptCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Top accent bar
-          Container(height: 12, color: palette.acc),
+          Container(height: 10, color: palette.acc),
 
           // Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Row(
               children: [
                 Container(
-                  width: 46,
-                  height: 46,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
@@ -365,10 +365,10 @@ class ReceiptCard extends StatelessWidget {
                   alignment: Alignment.center,
                   child: Text(
                     palette.emoji,
-                    style: const TextStyle(fontSize: 22),
+                    style: const TextStyle(fontSize: 20),
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -377,7 +377,7 @@ class ReceiptCard extends StatelessWidget {
                         tx.displayPlace,
                         style: TextStyle(
                           fontFamily: 'Baloo 2',
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.w800,
                           color: palette.ink,
                           letterSpacing: -0.3,
@@ -452,12 +452,12 @@ class ReceiptCard extends StatelessWidget {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: Column(
                       children: [
                         // Dashed divider
                         Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                           child: CustomPaint(
                             size: const Size(double.infinity, 2),
                             painter: _DashedLinePainter(
@@ -469,8 +469,8 @@ class ReceiptCard extends StatelessWidget {
                         // Total row
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
+                            horizontal: 14,
+                            vertical: 10,
                           ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.24),
@@ -482,7 +482,7 @@ class ReceiptCard extends StatelessWidget {
                               Text(
                                 'Total',
                                 style: TextStyle(
-                                  fontSize: 16,
+                                  fontSize: 15,
                                   fontWeight: FontWeight.w800,
                                   color: palette.ink,
                                 ),
@@ -490,7 +490,7 @@ class ReceiptCard extends StatelessWidget {
                               Text(
                                 tx.needsAmount ? 'Pending' : amountText,
                                 style: TextStyle(
-                                  fontSize: 22,
+                                  fontSize: 20,
                                   fontWeight: FontWeight.w800,
                                   color: palette.ink,
                                 ),
@@ -560,10 +560,10 @@ class _ReceiptItemsListState extends State<_ReceiptItemsList> {
         // Right gutter keeps the scrollbar clear of the prices; bottom
         // padding gives the last row breathing room instead of sitting
         // flush against the box edge.
-        padding: const EdgeInsets.fromLTRB(20, 18, 14, 14),
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
         physics: const ClampingScrollPhysics(),
         itemCount: items.isEmpty ? 1 : items.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 14),
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, i) => GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: widget.onTap,
@@ -594,16 +594,16 @@ Widget _buildItemRow({
   return Row(
     children: [
       Container(
-        width: 34,
-        height: 34,
+        width: 32,
+        height: 32,
         decoration: BoxDecoration(
           color: palette.tile,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(9),
         ),
         alignment: Alignment.center,
-        child: Text(palette.emoji, style: const TextStyle(fontSize: 17)),
+        child: Text(palette.emoji, style: const TextStyle(fontSize: 16)),
       ),
-      const SizedBox(width: 12),
+      const SizedBox(width: 10),
       Expanded(
         child: name == null
             ? Text(
