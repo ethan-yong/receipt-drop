@@ -47,6 +47,26 @@ void main() {
       }, thresholdPx: 20);
       expect(groups, hasLength(2));
     });
+
+    test('mixed place:/friend: prefixes group when within threshold', () {
+      final groups = groupOverlappingKeys({
+        'place:abc': (x: 0, y: 0),
+        'friend:xyz': (x: 20, y: 10),
+      });
+      expect(groups, hasLength(1));
+      expect(groups.single.toSet(), {'place:abc', 'friend:xyz'});
+    });
+
+    test('mixed place:/friend: prefixes stay separate when far apart', () {
+      final groups = groupOverlappingKeys({
+        'place:abc': (x: 0, y: 0),
+        'friend:xyz': (x: 200, y: 200),
+      });
+      expect(groups, hasLength(2));
+      expect(groups.every((g) => g.length == 1), isTrue);
+      final keys = groups.expand((g) => g).toSet();
+      expect(keys, {'place:abc', 'friend:xyz'});
+    });
   });
 
   group('spiderfyOffsets', () {

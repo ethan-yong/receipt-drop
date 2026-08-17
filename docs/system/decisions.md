@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Spend-map overlap: unify own + friend pins (2026-08-14)
+
+**Decision**: At individual-pin zoom, friend avatar markers participate in the same screen-space `groupOverlappingKeys` / spiderfy pipeline as own place pins (`_placeAndFriendOverlays` in `SpendMapScreen`). Prefixed keys (`place:<placeKey>` / `friend:<userId>`) share one union-find pass; singletons still render their normal marker (`SpendPlaceMarker` / `FriendMapMarker`); groups of 2+ collapse to `OverlapStackMarker` and expand all members (including friends) on tap. The collapsed badge counts **own receipts only** — friend markers contribute `receiptCount: 0` so they are visual overlap participants without inflating the user's receipt total. Bucket-mode zoom and the "you are here" avatar stay out of this grouping (friends still render via plain `_friendOverlays` in heatmap/bucket modes).
+
+**Reason**: Friend pins previously bypassed overlap detection and could sit directly on own receipt markers, looking like a broken multi-layer stack. Unifying the input to the existing grouping utility fixes that without a parallel overlap system or hiding friends.
+
+**Alternatives considered**: (1) hide friend markers under own pins (rejected — loses social signal); (2) raise the pixel threshold only (rejected — friends still bypass grouping); (3) count friends toward the stack badge (rejected — badge is the user's receipt count); (4) also group friends with geohash bucket bubbles (deferred — separate clustering system; out of scope for the reported bug).
+
+**Tradeoffs**: Bucket-mode friend/own visual overlap remains possible at far zoom. A 1-own + 1-friend stack shows `OverlapStackMarker` with no badge (own count = 1). Spiderfy identity sets now use prefixed keys.
+
+---
+
 ## Spend map auto day/night tile styling (2026-08-14)
 
 **Decision**: The spend map (`SpendMapScreen`) switches base Google Maps tiles by device **local clock**: stock light tiles from 06:00–17:59, and a JSON night style (`assets/map/night_style.json`) from 18:00–05:59. Applied via `GoogleMap.style` (live swap on `setState`). A one-shot `Timer` wakes at the next 06:00/18:00 boundary and reschedules; `AppLifecycleState.resumed` re-applies so returning from background after a boundary updates immediately. Overlay chips/pins are unchanged — only the basemap.
