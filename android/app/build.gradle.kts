@@ -57,4 +57,8 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // NotificationManagerCompat.getEnabledListenerPackages — used by
+    // MainActivity to check notification-listener access for the payment-
+    // detection settings rows.
+    implementation("androidx.core:core-ktx:1.13.1")
 }

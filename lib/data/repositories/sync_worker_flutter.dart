@@ -52,10 +52,15 @@ class SyncWorker {
     if (row == null) return;
     if (row.syncStatus == 'synced' || row.syncStatus == 'syncing') return;
 
+    // A missing artifact row is a supported state (e.g. a transaction
+    // captured from a payment notification, with no receipt image) — sync
+    // still uploads/upserts everything else, it just skips the file/storage
+    // steps below. See lib/data/repositories/transaction_repository_native.dart
+    // (ingestReceipt only inserts an outbox_artifacts row when a local file
+    // was actually supplied).
     final artifact = await (db.select(db.outboxArtifacts)
           ..where((a) => a.transactionId.equals(transactionId)))
         .getSingleOrNull();
-    if (artifact == null) return;
 
     await (db.update(db.outboxTransactions)
           ..where((t) => t.id.equals(transactionId)))
@@ -64,25 +69,30 @@ class SyncWorker {
     );
 
     try {
-      final ext = _extensionForMime(artifact.mimeType);
-      final storagePath =
-          '$userId/${row.id}/${artifact.id}.$ext';
+      // Only set when there's an artifact to upload — see the artifact-less
+      // branches below, all gated on `artifact != null`.
+      String? storagePath;
 
-      final file = File(artifact.localFilePath);
-      if (!await file.exists()) {
-        throw StateError('Artifact file missing');
+      if (artifact != null) {
+        final ext = _extensionForMime(artifact.mimeType);
+        storagePath = '$userId/${row.id}/${artifact.id}.$ext';
+
+        final file = File(artifact.localFilePath);
+        if (!await file.exists()) {
+          throw StateError('Artifact file missing');
+        }
+
+        await Supabase.instance.client.storage
+            .from('receipts')
+            .upload(
+              storagePath,
+              file,
+              fileOptions: FileOptions(
+                contentType: artifact.mimeType,
+                upsert: true,
+              ),
+            );
       }
-
-      await Supabase.instance.client.storage
-          .from('receipts')
-          .upload(
-            storagePath,
-            file,
-            fileOptions: FileOptions(
-              contentType: artifact.mimeType,
-              upsert: true,
-            ),
-          );
 
       await Supabase.instance.client.from('transactions').upsert({
         'id': row.id,
@@ -135,21 +145,24 @@ class SyncWorker {
             : jsonDecode(row.ocrCorrectionsJson!),
       });
 
-      await Supabase.instance.client.from('receipt_artifacts').upsert({
-        'id': artifact.id,
-        'user_id': userId,
-        'transaction_id': row.id,
-        'storage_path': storagePath,
-        'mime_type': artifact.mimeType,
-      });
+      if (artifact != null) {
+        await Supabase.instance.client.from('receipt_artifacts').upsert({
+          'id': artifact.id,
+          'user_id': userId,
+          'transaction_id': row.id,
+          'storage_path': storagePath,
+          'mime_type': artifact.mimeType,
+        });
 
-      // Single-version semantics: after a retake, any older remote artifact
-      // rows for this transaction are superseded. Clean them up here (async
-      // relative to the local replace) so Storage stays bounded.
-      await _cleanupSupersededRemoteArtifacts(
-        transactionId: row.id,
-        keepArtifactId: artifact.id,
-      );
+        // Single-version semantics: after a retake, any older remote
+        // artifact rows for this transaction are superseded. Clean them up
+        // here (async relative to the local replace) so Storage stays
+        // bounded.
+        await _cleanupSupersededRemoteArtifacts(
+          transactionId: row.id,
+          keepArtifactId: artifact.id,
+        );
+      }
 
       final lineItems = await (db.select(db.outboxLineItems)
             ..where((li) => li.transactionId.equals(transactionId)))
@@ -170,9 +183,11 @@ class SyncWorker {
         ]);
       }
 
-      await (db.update(db.outboxArtifacts)
-            ..where((a) => a.id.equals(artifact.id)))
-          .write(OutboxArtifactsCompanion(storagePath: Value(storagePath)));
+      if (artifact != null) {
+        await (db.update(db.outboxArtifacts)
+              ..where((a) => a.id.equals(artifact.id)))
+            .write(OutboxArtifactsCompanion(storagePath: Value(storagePath)));
+      }
 
       // Field corrections must land before enrich-transaction runs below —
       // its merchant-alias write-back (see

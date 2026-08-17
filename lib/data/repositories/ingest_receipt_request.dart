@@ -8,8 +8,8 @@ import '../../domain/models/receipt_understanding.dart';
 /// Parameters for saving a confirmed receipt to the local outbox.
 class IngestReceiptRequest {
   const IngestReceiptRequest({
-    required this.localFilePath,
-    required this.mimeType,
+    this.localFilePath,
+    this.mimeType,
     required this.amountMyr,
     required this.needsAmount,
     required this.merchantRaw,
@@ -41,8 +41,12 @@ class IngestReceiptRequest {
     this.notes,
   });
 
-  final String localFilePath;
-  final String mimeType;
+  /// Both null for a transaction with no receipt image (e.g. captured from a
+  /// payment notification) — see [TransactionRepository.ingestReceipt] and
+  /// `SyncWorker.run`, both of which treat "no artifact" as a valid,
+  /// supported state rather than requiring a placeholder file.
+  final String? localFilePath;
+  final String? mimeType;
   final double? amountMyr;
   final bool needsAmount;
   final String? merchantRaw;

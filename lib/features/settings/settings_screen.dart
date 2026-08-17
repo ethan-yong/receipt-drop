@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
+import '../../core/payment_detection/payment_event_bridge.dart';
 import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
@@ -20,7 +21,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   static const _version = '1.0.0';
 
   // Optimistic default (matches the server column default) while loading.
@@ -30,11 +32,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _avatarUrl;
   Uint8List? _pendingAvatarBytes;
 
+  bool _notificationAccessGranted = false;
+  bool _overlayPermissionGranted = false;
+
   String? get _userId => Supabase.instance.client.auth.currentUser?.id;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     SocialRepository.getShareMapLocation().then((value) {
       if (mounted) setState(() => _shareMapLocation = value);
     });
@@ -48,6 +54,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _avatarUrl = header.avatarUrl;
           });
         }
+      });
+    }
+    _refreshPaymentDetectionPermissions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The two permissions below are granted from a separate system Settings
+    // screen with no callback into the app — re-check on resume so the
+    // Granted/Not granted labels reflect what the user just did.
+    if (state == AppLifecycleState.resumed) {
+      _refreshPaymentDetectionPermissions();
+    }
+  }
+
+  Future<void> _refreshPaymentDetectionPermissions() async {
+    final notificationAccess =
+        await PaymentEventBridge.isNotificationAccessGranted();
+    final overlayPermission =
+        await PaymentEventBridge.isOverlayPermissionGranted();
+    if (mounted) {
+      setState(() {
+        _notificationAccessGranted = notificationAccess;
+        _overlayPermissionGranted = overlayPermission;
       });
     }
   }
@@ -361,6 +397,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: 'Clear local cache',
                         subtitle: 'Does not delete cloud data',
                         onTap: _clearCache,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _SettingsGroup(
+                    rows: [
+                      _SettingsRow(
+                        icon: Icons.notifications_active_outlined,
+                        title: 'Notification access',
+                        subtitle:
+                            'Lets Receipt Drop detect Google Wallet payments',
+                        trailing: _notificationAccessGranted
+                            ? 'Granted'
+                            : 'Not granted',
+                        onTap: () =>
+                            PaymentEventBridge.openNotificationAccessSettings(),
+                      ),
+                      _SettingsRow(
+                        icon: Icons.layers_outlined,
+                        title: 'Display over other apps',
+                        subtitle:
+                            'Shows the category picker on top of other apps',
+                        trailing: _overlayPermissionGranted
+                            ? 'Granted'
+                            : 'Not granted',
+                        onTap: () =>
+                            PaymentEventBridge.openOverlayPermissionSettings(),
                       ),
                     ],
                   ),
