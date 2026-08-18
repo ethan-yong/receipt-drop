@@ -25,6 +25,11 @@ from ocr_api.ocr_engine import (
     run_ocr_detailed,
     word_enrichment_threshold,
 )
+from ocr_api.payment_notification_understanding import (
+    PaymentNotificationUnderstandingRequest,
+    PaymentNotificationUnderstandingResponse,
+    call_payment_notification_understanding,
+)
 from ocr_api.preprocessing import InvalidImageError, preprocess
 from ocr_api.receipt_understanding import (
     ReceiptUnderstandingError,
@@ -103,6 +108,13 @@ async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
 
 
+# ReceiptUnderstandingError is an alias of ocr_api.llm_gateway.LlmGatewayError
+# (see receipt_understanding.py) — this handler therefore also covers
+# gateway-level failures raised by ocr_api/payment_notification_understanding.py,
+# not just the receipt-understanding pipeline. Both pipelines share the same
+# small error-code taxonomy (server_misconfigured, llm_timeout, and a handful
+# of upstream-failure codes), so one status-mapping table for both is correct,
+# not coincidental.
 _RECEIPT_UNDERSTANDING_STATUS = {
     "server_misconfigured": 500,
     "llm_timeout": 504,
@@ -302,6 +314,37 @@ async def understand(
         raise HTTPException(status_code=400, detail="empty_ocr_text")
     return await call_receipt_understanding(
         body.ocr_text, http_client=request.app.state.http_client
+    )
+
+
+@app.post(
+    "/understand-payment-notification",
+    response_model=PaymentNotificationUnderstandingResponse,
+    dependencies=[Depends(verify_ocr_secret)],
+)
+async def understand_payment_notification(
+    request: Request, body: PaymentNotificationUnderstandingRequest
+) -> PaymentNotificationUnderstandingResponse:
+    """LLM payment-notification-understanding step (see
+    ocr_api/payment_notification_understanding.py) — a separate pipeline
+    from receipt understanding above, with its own prompt/schema/parser.
+    Only ever called by the `payment-notification-proxy` Supabase edge
+    function on behalf of this app's own native Android notification
+    listener, using the same shared-secret auth as every other route here.
+
+    No fallback: any failure (timeout, LLM gateway down, unparseable
+    response) propagates as an error response (see
+    receipt_understanding_error_handler, which also covers this pipeline's
+    errors since both raise the same LlmGatewayError class) rather than
+    inventing a transaction.
+    """
+    if not body.notification_text.strip():
+        raise HTTPException(status_code=400, detail="empty_notification_text")
+    return await call_payment_notification_understanding(
+        body.notification_text,
+        body.source_package,
+        body.posted_at,
+        http_client=request.app.state.http_client,
     )
 
 

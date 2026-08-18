@@ -45,6 +45,7 @@
             android:textColor="#5C5241"/>
 
         <TextView
+            android:id="@+id/overlay_category_label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
@@ -53,13 +54,11 @@
             android:textStyle="bold"
             android:textColor="#8A7D63"/>
 
-        <GridLayout
-            android:id="@+id/overlay_category_grid"
+        <com.receiptdrop.receipt_drop.paymentdetect.FlowLayout
+            android:id="@+id/overlay_category_chips"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:columnCount="4"
-            android:useDefaultMargins="false"/>
+            android:layout_marginTop="8dp"/>
 
         <TextView
             android:id="@+id/overlay_not_now"

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/payment_detection/payment_permission_prompt.dart';
 import '../core/platform/adaptive_sheet.dart';
 import '../core/platform/platform_feedback.dart';
 import '../core/platform/platform_utils.dart';
@@ -12,16 +14,21 @@ import '../features/share/receipt_capture_flow.dart';
 
 /// Bottom navigation: Home, Map, Ranks, Profile — with a center capture FAB on
 /// Map, Ranks, and Profile (Home uses the in-page Drop Receipt CTA instead).
-class MainShell extends StatelessWidget {
+class MainShell extends StatefulWidget {
   const MainShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
 
+  @override
+  State<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void _goBranch(int index) {
     PlatformFeedback.selectionTap();
-    navigationShell.goBranch(
+    widget.navigationShell.goBranch(
       index,
-      initialLocation: index == navigationShell.currentIndex,
+      initialLocation: index == widget.navigationShell.currentIndex,
     );
   }
 
@@ -31,8 +38,30 @@ class MainShell extends StatelessWidget {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(PaymentPermissionPrompt.maybeShow(context));
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      unawaited(PaymentPermissionPrompt.maybeShow(context));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final index = navigationShell.currentIndex;
+    final index = widget.navigationShell.currentIndex;
     // Capture FAB on Map / Ranks / Profile — Home already has Drop Receipt.
     final tabWantsFab = index != 0;
 
@@ -47,7 +76,7 @@ class MainShell extends StatelessWidget {
 
         return Scaffold(
           backgroundColor: AppColors.scaffold,
-          body: navigationShell,
+          body: widget.navigationShell,
           extendBody: true,
           floatingActionButton: showFab
               ? Transform.translate(

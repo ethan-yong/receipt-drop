@@ -20,10 +20,39 @@ class QueuedPaymentEvent {
   final String fingerprint;
 }
 
+enum PaymentListenerState { notGranted, grantedButInactive, active }
+
+class PaymentListenerStatus {
+  const PaymentListenerStatus({
+    required this.granted,
+    required this.active,
+    required this.neverConnected,
+    this.lastNotificationAt,
+  });
+
+  const PaymentListenerStatus.unavailable()
+    : granted = false,
+      active = false,
+      neverConnected = true,
+      lastNotificationAt = null;
+
+  final bool granted;
+  final bool active;
+  final bool neverConnected;
+  final DateTime? lastNotificationAt;
+
+  PaymentListenerState get state => PaymentListenerState.notGranted;
+}
+
 abstract final class PaymentEventBridge {
   static Future<bool> isNotificationAccessGranted() async => false;
 
+  static Future<PaymentListenerStatus> notificationListenerStatus() async =>
+      const PaymentListenerStatus.unavailable();
+
   static Future<void> openNotificationAccessSettings() async {}
+
+  static Future<void> openAutostartSettings() async {}
 
   static Future<bool> isOverlayPermissionGranted() async => false;
 

@@ -39,6 +39,56 @@ class QueuedPaymentEvent {
   final String fingerprint;
 }
 
+/// Whether payment detection is permitted *and* actually running.
+///
+/// [granted] and [active] come apart on OEM skins (MIUI/HyperOS especially)
+/// that require a separate "background autostart" allowance before the OS
+/// will bind a notification listener: system Settings keeps reporting
+/// notification access as allowed while the listener is never started, so
+/// the feature silently receives nothing. Surfacing [PaymentListenerState
+/// .grantedButInactive] is the difference between a user seeing a fixable
+/// warning and the feature just appearing broken.
+enum PaymentListenerState { notGranted, grantedButInactive, active }
+
+class PaymentListenerStatus {
+  const PaymentListenerStatus({
+    required this.granted,
+    required this.active,
+    required this.neverConnected,
+    this.lastNotificationAt,
+  });
+
+  const PaymentListenerStatus.unavailable()
+    : granted = false,
+      active = false,
+      neverConnected = true,
+      lastNotificationAt = null;
+
+  factory PaymentListenerStatus.fromMap(Map<Object?, Object?> map) {
+    final lastNotificationMs = (map['lastNotificationAtEpochMs'] as int?) ?? 0;
+    return PaymentListenerStatus(
+      granted: (map['enabled'] as bool?) ?? false,
+      active: (map['connected'] as bool?) ?? false,
+      neverConnected: (map['neverConnected'] as bool?) ?? true,
+      lastNotificationAt: lastNotificationMs == 0
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(lastNotificationMs),
+    );
+  }
+
+  final bool granted;
+  final bool active;
+  final bool neverConnected;
+  final DateTime? lastNotificationAt;
+
+  PaymentListenerState get state {
+    if (!granted) return PaymentListenerState.notGranted;
+    return active
+        ? PaymentListenerState.active
+        : PaymentListenerState.grantedButInactive;
+  }
+}
+
 /// Best-effort bridge to the native payment-notification-detection feature
 /// (Android only — see android/app/src/main/kotlin/.../paymentdetect/ and
 /// MainActivity.kt's `payment_events` channel). Every method is safe to call
@@ -62,10 +112,34 @@ abstract final class PaymentEventBridge {
     }
   }
 
+  static Future<PaymentListenerStatus> notificationListenerStatus() async {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return const PaymentListenerStatus.unavailable();
+    }
+    try {
+      final raw = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'getNotificationListenerStatus',
+      );
+      if (raw == null) return const PaymentListenerStatus.unavailable();
+      return PaymentListenerStatus.fromMap(raw);
+    } on Object {
+      return const PaymentListenerStatus.unavailable();
+    }
+  }
+
   static Future<void> openNotificationAccessSettings() async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
       await _channel.invokeMethod<void>('openNotificationAccessSettings');
+    } on Object {
+      // Best-effort — nothing else to do if the settings screen can't open.
+    }
+  }
+
+  static Future<void> openAutostartSettings() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await _channel.invokeMethod<void>('openAutostartSettings');
     } on Object {
       // Best-effort — nothing else to do if the settings screen can't open.
     }

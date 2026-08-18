@@ -4,6 +4,9 @@ const _kOnboardingComplete = 'onboarding_complete';
 const _kProfileSetupComplete = 'profile_setup_complete';
 const _kInsightsLastGeneratedAt = 'insights_last_generated_at';
 const _kInsightsSyncedTxSinceLastCycle = 'insights_synced_tx_since_last_cycle';
+const _kPaymentNotificationAccessPrompted =
+    'payment_notification_access_prompted';
+const _kPaymentOverlayPrompted = 'payment_overlay_prompted';
 
 /// Persisted first-run flags (onboarding) + insights generation guard state.
 class AppPrefs {
@@ -43,6 +46,23 @@ class AppPrefs {
 
   static Future<void> setInsightsSyncedTxSinceLastCycle(int n) async {
     await _prefs?.setInt(_kInsightsSyncedTxSinceLastCycle, n);
+  }
+
+  /// True after the in-app notification-access rationale has been shown
+  /// once this install — Android cannot show a system runtime dialog for
+  /// this permission, so we only prompt once then leave it to Settings.
+  static bool get paymentNotificationAccessPrompted =>
+      _prefs?.getBool(_kPaymentNotificationAccessPrompted) ?? false;
+
+  static Future<void> setPaymentNotificationAccessPrompted() async {
+    await _prefs?.setBool(_kPaymentNotificationAccessPrompted, true);
+  }
+
+  static bool get paymentOverlayPrompted =>
+      _prefs?.getBool(_kPaymentOverlayPrompted) ?? false;
+
+  static Future<void> setPaymentOverlayPrompted() async {
+    await _prefs?.setBool(_kPaymentOverlayPrompted, true);
   }
 
   /// Clears onboarding flag and other local prefs (not cloud data).

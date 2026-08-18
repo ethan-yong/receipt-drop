@@ -11,19 +11,23 @@ import '../domain/models/transaction_view.dart';
 import 'receipt_card.dart';
 import 'receipt_carousel_physics.dart';
 
-/// Auto-rotating, single-card receipt carousel for the home screen.
+/// Continuously-scrolling, momentum-driven receipt carousel for the home
+/// screen, styled after the Pokémon TCG Pocket card browser: the whole deck
+/// tracks the finger 1:1 while dragging (neighbor receipts always peeking in
+/// on either side), and the newest receipt (index 0 — the list is sorted
+/// newest-first by [TransactionRepository.watchAll]) gets a gold highlight
+/// border and a "Latest Spending" badge breaking its bottom edge whenever
+/// it's centered.
 ///
-/// Reimplements the design handoff at
-/// `handoff/# Budget App Room Backgrounds/design_handoff_home_carousel/`:
-/// exactly one card is ever visible/interactive at rest (no adjacent-card
-/// peeking), it crossfades+scales "through a deck" on rotation/swipe/dot-tap,
-/// and the newest receipt (index 0 — the list is sorted newest-first by
-/// [TransactionRepository.watchAll]) gets a gold highlight border and a
-/// "Latest Spending" badge breaking its bottom edge.
-///
-/// Swipes use velocity-based paging: a slow drag advances one receipt, a fast
-/// fling can skip several, then the carousel decelerates and spring-snaps onto
-/// an integer page (see [computeTargetPage]).
+/// Settling is intentionally split in two: a real drag release decelerates
+/// naturally via friction, then a slightly-overdamped spring snaps it onto
+/// the nearest receipt with no bounce/overshoot (swipe velocity determines
+/// how many receipts a hard flick carries past — see
+/// [receipt_carousel_physics.dart] for the offset, windowing, and
+/// friction/spring handoff math). Programmatic transitions with no real
+/// gesture velocity (auto-rotate, dot-tap, tap-to-recenter a peeking card)
+/// use a plain eased tween instead of that spring — see [_animateToIndex] —
+/// so bounce stays exclusive to genuine flicks.
 class ReceiptCardCarousel extends StatefulWidget {
   const ReceiptCardCarousel({super.key, required this.transactions});
 
@@ -33,6 +37,8 @@ class ReceiptCardCarousel extends StatefulWidget {
   State<ReceiptCardCarousel> createState() => _ReceiptCardCarouselState();
 }
 
+enum _MomentumPhase { idle, friction, settling }
+
 class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     with TickerProviderStateMixin {
   // Card height plus the newest-card gold frame (5px per side), plus room for
@@ -41,59 +47,49 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
   static const _latestSpendingBadgeOverflow = 32.0;
   static const _rotateInterval = Duration(seconds: 5);
   static const _resumeDelay = Duration(milliseconds: 400);
-
-  static const _overshootCurve = Cubic(0.34, 1.56, 0.64, 1.0);
-  static const _dragExitNudge = 26.0;
-  static const _dragClamp = 140.0;
   static const _dragTapTolerance = 4.0;
 
-  /// Unbounded controller whose value is the fractional (possibly unwrapped)
-  /// page offset during a fling / spring snap.
-  late final AnimationController _flingController;
+  /// Unbounded controller whose value IS the live, continuous page offset —
+  /// the single source of truth read by drag updates, the friction/spring
+  /// simulations, and every renderer. Assigning `.value` while a simulation
+  /// is animating implicitly stops it, which is what lets a new touch grab
+  /// the deck mid-flight for free.
+  late final AnimationController _controller;
 
-  /// Settled integer page index.
-  int _current = 0;
+  _MomentumPhase _momentumPhase = _MomentumPhase.idle;
+  bool get _busy => _momentumPhase != _MomentumPhase.idle;
 
-  /// Live fractional page offset. Equals [_current] when idle.
-  double _pageOffset = 0;
+  /// Where the current friction/spring gesture started, for the travel cap.
+  double _momentumStartOffset = 0;
 
-  /// +1 advancing (left swipe), −1 going back. Used while flinging.
-  int _flingDirection = 1;
+  /// Last integer page floor we fired a haptic tick for.
+  double _lastHapticFloor = 0;
 
-  double _flingStart = 0;
-  double _flingEnd = 0;
-  int _hapticPagesCrossed = 0;
-  bool _flinging = false;
+  /// Rounded-nearest real (wrapped) transaction index. Only notifies when
+  /// the value actually changes, so its listeners (dots, badge height)
+  /// don't rebuild on every animation tick.
+  late final ValueNotifier<int> _activeIndexNotifier;
 
-  // Live transform applied only to the resting/interacting active card
-  // (press-down, drag tracking, spring-back, tap-bounce) — reset to the
-  // identity once a deck-transition takes over.
-  double _dx = 0, _scale = 1, _opacity = 1;
-  Duration _liveDuration = Duration.zero;
-  Curve _liveCurve = Curves.linear;
-
-  double? _dragStartX;
-  double _dragRawDx = 0;
+  double? _dragStartGlobalX;
+  double? _lastDragGlobalX;
   bool _dragMoved = false;
   double _viewportWidth = 300;
 
   Timer? _autoTimer;
   Timer? _resumeTimer;
-  Timer? _tapSettleTimer;
 
   final GlobalKey _dotsKey = GlobalKey();
   double? _dotDragStartGlobalX;
   bool _dotDragMoved = false;
   bool _scrubbing = false;
 
-  bool get _busy => _flinging;
-
   @override
   void initState() {
     super.initState();
-    _flingController = AnimationController.unbounded(vsync: this)
-      ..addListener(_onFlingTick)
-      ..addStatusListener(_onFlingStatus);
+    _controller = AnimationController.unbounded(vsync: this)
+      ..addListener(_onControllerChanged)
+      ..addStatusListener(_onControllerStatus);
+    _activeIndexNotifier = ValueNotifier(0);
     _startAutoRotate();
   }
 
@@ -103,16 +99,18 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     final n = widget.transactions.length;
     if (n != old.transactions.length) {
       final grew = n > old.transactions.length;
-      if (grew || _current >= n) {
-        _stopFling();
-        setState(() {
-          // A longer list means a receipt was just captured (the list is
-          // sorted newest-first), so snap to it at index 0; otherwise clamp
-          // after removals.
-          _current = grew || n == 0 ? 0 : n - 1;
-          _pageOffset = _current.toDouble();
-          _resetLiveTransform();
-        });
+      final currentReal = nearestRealIndex(
+        _controller.value,
+        old.transactions.length,
+      );
+      if (grew || currentReal >= n) {
+        // A longer list means a receipt was just captured (the list is
+        // sorted newest-first), so snap to it at index 0; otherwise clamp
+        // after removals.
+        _momentumPhase = _MomentumPhase.idle;
+        final settled = grew || n == 0 ? 0 : n - 1;
+        _controller.value = settled.toDouble();
+        _activeIndexNotifier.value = settled;
       }
       _startAutoRotate();
     }
@@ -122,26 +120,19 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
   void dispose() {
     _autoTimer?.cancel();
     _resumeTimer?.cancel();
-    _tapSettleTimer?.cancel();
-    _flingController.dispose();
+    _controller.dispose();
+    _activeIndexNotifier.dispose();
     super.dispose();
-  }
-
-  void _resetLiveTransform() {
-    _dx = 0;
-    _scale = 1;
-    _opacity = 1;
-    _liveDuration = Duration.zero;
-    _liveCurve = Curves.linear;
   }
 
   void _startAutoRotate() {
     _autoTimer?.cancel();
     if (widget.transactions.length <= 1) return;
     _autoTimer = Timer.periodic(_rotateInterval, (_) {
-      if (_dragStartX != null || _busy) return;
+      if (_dragStartGlobalX != null || _busy) return;
       final n = widget.transactions.length;
-      _animateToPage((_current + 1) % n, haptic: false);
+      final currentReal = nearestRealIndex(_controller.value, n);
+      _animateToIndex((currentReal + 1) % n, haptic: false);
     });
   }
 
@@ -155,123 +146,145 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     _resumeTimer = Timer(_resumeDelay, _startAutoRotate);
   }
 
-  void _stopFling() {
-    if (!_flinging && !_flingController.isAnimating) return;
-    _flingController.stop();
-    _flinging = false;
-  }
-
-  void _onFlingTick() {
-    final x = _flingController.value;
-    final progress = (x - _flingStart).abs();
-    final pagesCrossed = progress.floor();
-    if (pagesCrossed > _hapticPagesCrossed) {
+  void _maybeHaptic() {
+    final floor = _controller.value.floorToDouble();
+    if (floor != _lastHapticFloor) {
       PlatformFeedback.selectionTap();
-      _hapticPagesCrossed = pagesCrossed;
+      _lastHapticFloor = floor;
     }
-    setState(() => _pageOffset = x);
   }
 
-  void _onFlingStatus(AnimationStatus status) {
+  /// Fires on every tick of the friction/spring simulations AND on every
+  /// direct `.value` write (drag updates, scrub, jumps) — the single place
+  /// that keeps [_activeIndexNotifier] and the friction→spring handoff in
+  /// sync with the live offset. No `setState` here: the card stack listens
+  /// to [_controller] directly via [AnimatedBuilder].
+  void _onControllerChanged() {
+    final n = widget.transactions.length;
+    if (n <= 0) return;
+
+    if (_momentumPhase == _MomentumPhase.friction) {
+      // Capture velocity before anything below could mutate `.value` (a
+      // direct write stops the running simulation, which would zero out a
+      // later read of `_controller.velocity`).
+      final v = _controller.velocity;
+      if (frictionShouldHandoffToSpring(
+        velocityPagesPerSec: v,
+        offset: _controller.value,
+        flingStart: _momentumStartOffset,
+      )) {
+        _startSpringPhase(v);
+      }
+    }
+
+    _maybeHaptic();
+    final idx = nearestRealIndex(_controller.value, n);
+    if (idx != _activeIndexNotifier.value) _activeIndexNotifier.value = idx;
+  }
+
+  void _onControllerStatus(AnimationStatus status) {
     if (status != AnimationStatus.completed) return;
     final n = widget.transactions.length;
     if (n <= 0) return;
-    final settled = _wrapIndex(_flingEnd.round(), n);
-    setState(() {
-      _flinging = false;
-      _current = settled;
-      _pageOffset = settled.toDouble();
-      _resetLiveTransform();
-    });
+    final settled = wrapIndex(roundToNearestPage(_controller.value), n);
+    // Set phase before mutating `.value` so the reentrant change-notify this
+    // triggers doesn't re-enter the (now-stale) friction handoff check.
+    _momentumPhase = _MomentumPhase.idle;
+    _controller.value = settled.toDouble();
+    _activeIndexNotifier.value = settled;
     _resumeAutoRotateSoon();
   }
 
-  /// Animate from the current settled page to [target] with a spring that
-  /// carries [initialVelocityPages] (positive = advance toward higher indices).
-  void _animateToPage(
-    int target, {
-    double initialVelocityPages = 0,
-    bool haptic = false,
-  }) {
-    final n = widget.transactions.length;
-    if (n <= 1) return;
-
-    final delta = shortestPageDelta(_current, target, n);
-    if (delta == 0) {
-      _springBackLiveTransform();
-      _resumeAutoRotateSoon();
+  /// Starts post-release momentum: a [FrictionSimulation] glide that hands
+  /// off to a centering [SpringSimulation] once it decays (or hits the
+  /// travel cap) — see [_onControllerChanged]. Zero/near-zero velocity
+  /// degenerates straight into the settle spring.
+  void _startMomentum(double velocityPagesPerSec) {
+    _pauseAutoRotate();
+    _momentumStartOffset = _controller.value;
+    if (frictionShouldHandoffToSpring(
+      velocityPagesPerSec: velocityPagesPerSec,
+      offset: _momentumStartOffset,
+      flingStart: _momentumStartOffset,
+    )) {
+      _startSpringPhase(velocityPagesPerSec);
       return;
     }
+    _momentumPhase = _MomentumPhase.friction;
+    _controller.animateWith(
+      FrictionSimulation(
+        kFrictionDrag,
+        _momentumStartOffset,
+        velocityPagesPerSec,
+      ),
+    );
+  }
 
-    _pauseAutoRotate();
-    _stopFling();
-    if (haptic) PlatformFeedback.selectionTap();
-
-    _flingDirection = delta > 0 ? 1 : -1;
-    _flingStart = _current.toDouble();
-    _flingEnd = (_current + delta).toDouble();
-    _hapticPagesCrossed = 0;
-    _resetLiveTransform();
-
+  void _startSpringPhase(double velocityPagesPerSec) {
+    _momentumPhase = _MomentumPhase.settling;
+    final start = _controller.value;
+    final target = roundToNearestPage(start).toDouble();
     final spring = SpringDescription(
       mass: kSnapSpringMass,
       stiffness: kSnapSpringStiffness,
       damping: kSnapSpringDamping,
     );
-    // Bias velocity toward the travel direction so a slow drag still lands
-    // cleanly, and a fast fling overshoots slightly before settling.
-    var velocity = initialVelocityPages;
-    if (velocity == 0) {
-      velocity = _flingDirection * 2.5;
-    } else if (velocity.sign != _flingDirection && velocity != 0) {
-      // Finger velocity disagreed with computed target — keep magnitude but
-      // point it at the target so the spring doesn't fight itself.
-      velocity = velocity.abs() * _flingDirection;
-    }
-
-    setState(() {
-      _flinging = true;
-      _pageOffset = _flingStart;
-    });
-    _flingController.animateWith(
-      SpringSimulation(spring, _flingStart, _flingEnd, velocity),
+    _controller.animateWith(
+      SpringSimulation(spring, start, target, velocityPagesPerSec),
     );
   }
 
-  void _springBackLiveTransform() {
-    setState(() {
-      _liveDuration = const Duration(milliseconds: 300);
-      _liveCurve = Curves.easeOut;
-      _dx = 0;
-      _scale = 1;
-      _opacity = 1;
-    });
+  /// Duration/curve for a programmatic jump — see [_animateToIndex].
+  static const _jumpDuration = Duration(milliseconds: 420);
+  static const _jumpCurve = Curves.easeOutCubic;
+
+  /// Smooth eased jump to [targetIndex] — no real gesture velocity involved
+  /// (auto-rotate, dot-tap, tap-to-recenter a peeking card), so this is a
+  /// plain curved tween rather than a physics spring: there's no gesture
+  /// momentum to stay continuous with, and a tween can't overshoot, keeping
+  /// "bounce" exclusive to real flick releases (see [_startSpringPhase]).
+  void _animateToIndex(int targetIndex, {bool haptic = false}) {
+    final n = widget.transactions.length;
+    if (n <= 1) return;
+    final currentRounded = roundToNearestPage(_controller.value);
+    final currentReal = wrapIndex(currentRounded, n);
+    final delta = shortestPageDelta(currentReal, targetIndex, n);
+    if (delta == 0) {
+      _resumeAutoRotateSoon();
+      return;
+    }
+
+    _pauseAutoRotate();
+    if (haptic) PlatformFeedback.selectionTap();
+
+    final start = currentRounded.toDouble();
+    _momentumPhase = _MomentumPhase.settling;
+    _controller.value = start; // rebase onto the nearest integer before jumping
+    _controller.animateTo(start + delta, duration: _jumpDuration, curve: _jumpCurve);
   }
 
   void _dotJump(int target) {
-    if (target == _current || _busy) {
+    final n = widget.transactions.length;
+    final currentReal = nearestRealIndex(_controller.value, n);
+    if (target == currentReal || _busy) {
       _pauseAutoRotate();
       _resumeAutoRotateSoon();
       return;
     }
-    _animateToPage(target, haptic: true);
+    _animateToIndex(target, haptic: true);
   }
 
   void _setScrubIndex(int idx) {
-    if (idx == _current) return;
-    _stopFling();
-    PlatformFeedback.selectionTap();
-    setState(() {
-      _current = idx;
-      _pageOffset = idx.toDouble();
-      _flinging = false;
-      _resetLiveTransform();
-    });
+    final n = widget.transactions.length;
+    final currentReal = nearestRealIndex(_controller.value, n);
+    if (idx == currentReal) return;
+    _momentumPhase = _MomentumPhase.idle;
+    _controller.value = idx.toDouble();
   }
 
   int _globalXToDotIndex(double globalX) {
     final rb = _dotsKey.currentContext?.findRenderObject() as RenderBox?;
-    if (rb == null) return _current;
+    if (rb == null) return nearestRealIndex(_controller.value, widget.transactions.length);
     final localX = rb.globalToLocal(Offset(globalX, 0)).dx;
     final n = widget.transactions.length;
     return (localX / rb.size.width * n).floor().clamp(0, n - 1);
@@ -327,131 +340,73 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     );
   }
 
+  /// Tapping the centered card opens its detail; tapping a peeking neighbor
+  /// spring-recenters it instead. Ignored mid-hard-flick so it doesn't fight
+  /// the gesture.
+  void _onCardTap(int index, TransactionView tx) {
+    if (_momentumPhase == _MomentumPhase.friction) return;
+    _pauseAutoRotate();
+    if (index == _activeIndexNotifier.value) {
+      _openDetail(tx);
+    } else {
+      _animateToIndex(index, haptic: true);
+    }
+    _resumeAutoRotateSoon();
+  }
+
   // Only bookkeeping here — no visual change yet. Flutter calls this the
   // instant a finger touches the card, before the gesture arena has decided
   // whether it's a horizontal swipe, a tap, or a vertical scroll inside the
   // card's own items list.
   void _onDragDown(DragDownDetails details) {
-    if (_busy) return;
     _pauseAutoRotate();
-    _dragStartX = details.globalPosition.dx;
-    _dragRawDx = 0;
+    _dragStartGlobalX = details.globalPosition.dx;
+    _lastDragGlobalX = details.globalPosition.dx;
     _dragMoved = false;
   }
 
   void _onDragUpdate(DragUpdateDetails details) {
-    final startX = _dragStartX;
-    if (startX == null || _busy) return;
-    _dragRawDx = details.globalPosition.dx - startX;
-    final justConfirmed = !_dragMoved && _dragRawDx.abs() > _dragTapTolerance;
-    if (justConfirmed) _dragMoved = true;
+    final startX = _dragStartGlobalX;
+    final lastX = _lastDragGlobalX;
+    if (startX == null || lastX == null) return;
+    final frameDx = details.globalPosition.dx - lastX;
+    _lastDragGlobalX = details.globalPosition.dx;
+    if (!_dragMoved && (details.globalPosition.dx - startX).abs() > _dragTapTolerance) {
+      _dragMoved = true;
+    }
     if (!_dragMoved) return;
-    final clamped = _dragRawDx.clamp(-_dragClamp, _dragClamp).toDouble();
-    final scale =
-        1 - (clamped.abs() / _dragClamp).clamp(0.0, 1.0).toDouble() * 0.08;
-    final fade =
-        1 - (clamped.abs() / (_dragClamp * 2)).clamp(0.0, 1.0).toDouble() * 0.3;
-    setState(() {
-      _liveDuration = justConfirmed
-          ? const Duration(milliseconds: 100)
-          : Duration.zero;
-      _liveCurve = justConfirmed ? Curves.easeInOut : Curves.linear;
-      _dx = clamped * 0.6;
-      _scale = scale;
-      _opacity = fade;
-    });
+    // A real drag always takes over immediately, even mid-momentum — this
+    // direct `.value` write implicitly stops whatever simulation is running.
+    _momentumPhase = _MomentumPhase.idle;
+    _controller.value += pxDeltaToPages(
+      deltaPx: frameDx,
+      viewportWidth: _viewportWidth,
+    );
   }
 
   void _onDragEnd(DragEndDetails details) {
-    if (_dragStartX == null || _busy) return;
-    _dragStartX = null;
+    final startX = _dragStartGlobalX;
+    if (startX == null) return;
+    _dragStartGlobalX = null;
+    _lastDragGlobalX = null;
 
-    final velocityPx = details.velocity.pixelsPerSecond.dx;
-    final n = widget.transactions.length;
-    if (!_dragMoved || n <= 1) {
-      _springBackLiveTransform();
-      _resumeAutoRotateSoon();
+    if (!_dragMoved) {
+      _startMomentum(0);
       return;
     }
 
-    final target = computeTargetPage(
-      currentPage: _current.toDouble(),
-      dragDeltaPx: _dragRawDx,
-      velocityPxPerSec: velocityPx,
-      viewportWidthPx: _viewportWidth,
-      pageCount: n,
+    final velocityPages = pxVelocityToPagesPerSecond(
+      velocityPxPerSec: details.velocity.pixelsPerSecond.dx,
+      viewportWidth: _viewportWidth,
     );
-
-    if (target == _current) {
-      _springBackLiveTransform();
-      _resumeAutoRotateSoon();
-      return;
-    }
-
-    // Convert px/s → pages/s (left swipe / negative px → positive pages).
-    final velocityPages = _viewportWidth > 0
-        ? -velocityPx / _viewportWidth
-        : 0.0;
-
-    _animateToPage(
-      target,
-      initialVelocityPages: velocityPages,
-      haptic: true,
-    );
+    _startMomentum(velocityPages);
   }
 
   void _onDragCancel() {
-    if (_dragStartX == null || _busy) return;
-    _dragStartX = null;
-    _springBackLiveTransform();
-    _resumeAutoRotateSoon();
-  }
-
-  /// Haptic-style bounce, then open the receipt. Wired both to the viewport
-  /// tap recognizer and (via [ReceiptCard.onTap]) to the item rows inside
-  /// the card's scroller, which would otherwise swallow taps.
-  void _onCardTap(TransactionView tx) {
-    if (_busy) return;
-    _dragStartX = null;
-    _pauseAutoRotate();
-    setState(() {
-      _liveDuration = const Duration(milliseconds: 160);
-      _liveCurve = _overshootCurve;
-      _dx = 0;
-      _opacity = 1;
-      _scale = 1.02;
-    });
-    _tapSettleTimer?.cancel();
-    _tapSettleTimer = Timer(const Duration(milliseconds: 130), () {
-      if (!mounted) return;
-      setState(() {
-        _liveDuration = const Duration(milliseconds: 180);
-        _liveCurve = Curves.easeOut;
-        _scale = 1;
-      });
-    });
-    _openDetail(tx);
-    _resumeAutoRotateSoon();
-  }
-
-  int _wrapIndex(int index, int pageCount) {
-    if (pageCount <= 0) return 0;
-    return ((index % pageCount) + pageCount) % pageCount;
-  }
-
-  /// Which settled/display index should drive viewport height (gold badge).
-  int get _heightIndex {
-    if (!_flinging) return _current;
-    final n = widget.transactions.length;
-    if (n <= 0) return 0;
-    final blend = pageBlendDirected(
-      pageOffset: _pageOffset,
-      pageCount: n,
-      direction: _flingDirection,
-    );
-    // Prefer the incoming card once past halfway so the badge room opens
-    // before the newest card fully settles.
-    return blend.t >= 0.5 ? blend.to : blend.from;
+    if (_dragStartGlobalX == null) return;
+    _dragStartGlobalX = null;
+    _lastDragGlobalX = null;
+    _startMomentum(0);
   }
 
   @override
@@ -473,47 +428,35 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     }
 
     final n = txs.length;
-    final current = _current < n ? _current : n - 1;
-    final activeTx = txs[_flinging
-        ? _wrapIndex(
-            pageBlendDirected(
-              pageOffset: _pageOffset,
-              pageCount: n,
-              direction: _flingDirection,
-            ).to,
-            n,
-          )
-        : current];
-
-    final heightIndex = _heightIndex.clamp(0, n - 1);
-    final viewportHeight = heightIndex == 0
-        ? kReceiptCardHeight + 10 + _latestSpendingBadgeOverflow
-        : kReceiptCardHeight;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          height: viewportHeight,
+        ValueListenableBuilder<int>(
+          valueListenable: _activeIndexNotifier,
+          builder: (context, activeIndex, child) {
+            final viewportHeight = activeIndex == 0
+                ? kReceiptCardHeight + 10 + _latestSpendingBadgeOverflow
+                : kReceiptCardHeight;
+            return SizedBox(height: viewportHeight, child: child);
+          },
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             // Horizontal-only recognizers (the handlers only ever use dx) so
             // vertical drags reach the items scroller inside the card and
-            // the page's own scroll view.
+            // the page's own scroll view. Tap handling lives per-card below.
             onHorizontalDragDown: n > 1 ? _onDragDown : null,
             onHorizontalDragUpdate: n > 1 ? _onDragUpdate : null,
             onHorizontalDragEnd: n > 1 ? _onDragEnd : null,
             onHorizontalDragCancel: n > 1 ? _onDragCancel : null,
-            onTap: () => _onCardTap(activeTx),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 _viewportWidth = constraints.maxWidth;
-                final width = constraints.maxWidth;
                 return Stack(
                   clipBehavior: Clip.none,
                   children: [
                     _DepthBlob(visible: !_busy),
-                    ..._buildVisibleCards(txs, width),
+                    _buildCardStack(txs, constraints.maxWidth),
                   ],
                 );
               },
@@ -522,150 +465,100 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
         ),
         if (n > 1) ...[
           const SizedBox(height: 4),
-          _DotIndicator(
-            key: _dotsKey,
-            count: n,
-            current: _dotCurrentIndex(n),
-            scrubbing: _scrubbing,
-            palettes: txs
-                .map((t) => receiptPaletteForCategory(t.effectiveCategory))
-                .toList(),
-            onPanStart: _onDotPanStart,
-            onPanUpdate: _onDotPanUpdate,
-            onPanEnd: _onDotPanEnd,
-            onPanCancel: _onDotPanCancel,
+          ValueListenableBuilder<int>(
+            valueListenable: _activeIndexNotifier,
+            builder: (context, activeIndex, _) => _DotIndicator(
+              key: _dotsKey,
+              count: n,
+              current: activeIndex.clamp(0, n - 1),
+              scrubbing: _scrubbing,
+              palettes: txs
+                  .map((t) => receiptPaletteForCategory(t.effectiveCategory))
+                  .toList(),
+              onPanStart: _onDotPanStart,
+              onPanUpdate: _onDotPanUpdate,
+              onPanEnd: _onDotPanEnd,
+              onPanCancel: _onDotPanCancel,
+            ),
           ),
         ],
       ],
     );
   }
 
-  int _dotCurrentIndex(int n) {
-    if (!_flinging) return _current.clamp(0, n - 1);
-    final blend = pageBlendDirected(
-      pageOffset: _pageOffset,
-      pageCount: n,
-      direction: _flingDirection,
-    );
-    return (blend.t >= 0.5 ? blend.to : blend.from).clamp(0, n - 1);
-  }
-
-  List<Widget> _buildVisibleCards(
-    List<TransactionView> txs,
-    double width,
-  ) {
-    final n = txs.length;
-
-    if (!_flinging) {
-      final i = _current.clamp(0, n - 1);
-      return [
-        _buildSettledCard(i, txs[i], width),
-      ];
-    }
-
-    final blend = pageBlendDirected(
-      pageOffset: _pageOffset,
-      pageCount: n,
-      direction: _flingDirection,
-    );
-
-    if (blend.from == blend.to || blend.t < 1e-4) {
-      return [
-        _buildFlingCard(
-          index: blend.from,
-          tx: txs[blend.from],
-          width: width,
-          t: 0,
-          role: _FlingRole.incoming,
-        ),
-      ];
-    }
-
-    // Outgoing underneath, incoming on top so it fades in over the deck.
-    return [
-      _buildFlingCard(
-        index: blend.from,
-        tx: txs[blend.from],
-        width: width,
-        t: blend.t,
-        role: _FlingRole.outgoing,
-      ),
-      _buildFlingCard(
-        index: blend.to,
-        tx: txs[blend.to],
-        width: width,
-        t: blend.t,
-        role: _FlingRole.incoming,
-      ),
-    ];
-  }
-
-  Widget _buildSettledCard(int i, TransactionView tx, double width) {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: AnimatedSlide(
-        duration: _liveDuration,
-        curve: _liveCurve,
-        offset: Offset(width > 0 ? _dx / width : 0, 0),
-        child: AnimatedScale(
-          duration: _liveDuration,
-          curve: _liveCurve,
-          scale: _scale,
-          child: AnimatedOpacity(
-            duration: _liveDuration,
-            curve: _liveCurve,
-            opacity: _opacity.clamp(0.0, 1.0).toDouble(),
-            child: _CardVisual(
-              tx: tx,
-              isNewest: i == 0,
-              onTap: () => _onCardTap(tx),
-            ),
-          ),
-        ),
-      ),
+  /// The continuously-driven card deck. Scoped to its own [AnimatedBuilder]
+  /// listening to [_controller] directly (no `setState`) so a 60-120Hz drag
+  /// or simulation tick only rebuilds this small subtree, not the whole
+  /// carousel.
+  Widget _buildCardStack(List<TransactionView> txs, double width) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final n = txs.length;
+        final slots = visibleSlots(offset: _controller.value, pageCount: n);
+        final ordered = [...slots]
+          ..sort((a, b) => b.delta.abs().compareTo(a.delta.abs()));
+        final activeIndex = nearestRealIndex(_controller.value, n);
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final slot in ordered)
+              _buildPeekCard(
+                slot,
+                txs[slot.index],
+                width,
+                isActive: slot.index == activeIndex,
+              ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildFlingCard({
-    required int index,
-    required TransactionView tx,
-    required double width,
-    required double t,
-    required _FlingRole role,
+  Widget _buildPeekCard(
+    CarouselSlot slot,
+    TransactionView tx,
+    double width, {
+    required bool isActive,
   }) {
-    final dir = _flingDirection;
-    late final double dx;
-    late final double scale;
-    late final double opacity;
-
-    if (role == _FlingRole.outgoing) {
-      dx = dir * -_dragExitNudge * t;
-      scale = lerpDouble(1.0, 0.92, t)!;
-      opacity = 1.0 - t;
-    } else {
-      dx = dir * _dragExitNudge * (1.0 - t);
-      scale = lerpDouble(0.92, 1.0, t)!;
-      opacity = t;
-    }
-
+    final transform = cardTransformForDelta(
+      delta: slot.delta,
+      cardExtentPx: cardExtentPx(width),
+    );
     return Positioned(
       top: 0,
       left: 0,
       right: 0,
-      child: IgnorePointer(
-        ignoring: role == _FlingRole.outgoing,
-        child: Transform.translate(
-          offset: Offset(dx, 0),
-          child: Transform.scale(
-            scale: scale,
-            child: Opacity(
-              opacity: opacity.clamp(0.0, 1.0).toDouble(),
-              child: _CardVisual(
-                tx: tx,
-                isNewest: index == 0,
-                onTap: () => _onCardTap(tx),
+      child: Transform.translate(
+        offset: Offset(transform.dx, 0),
+        child: Transform.scale(
+          scale: transform.scale,
+          child: Opacity(
+            opacity: transform.opacity.clamp(0.0, 1.0),
+            child: Center(
+              child: SizedBox(
+                // Keyed here (not on the ancestor `Positioned`, which always
+                // spans the full `left:0, right:0` width regardless of this
+                // card's actual transformed/scaled position) so tests can
+                // find the centered card's true on-screen bounds.
+                key: isActive
+                    ? ValueKey('receipt-carousel-active-${slot.index}')
+                    : null,
+                width: cardSlotWidth(width),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _onCardTap(slot.index, tx),
+                  child: _CardVisual(
+                    tx: tx,
+                    // Gated on `isActive`, not just index 0: the badge's
+                    // bottom-edge overflow only has reserved room when its
+                    // card is centered (see the viewportHeight calc above),
+                    // so showing it on a merely-peeking neighbor would let
+                    // it bleed into the CTA button below.
+                    isNewest: slot.index == 0 && isActive,
+                    onTap: () => _onCardTap(slot.index, tx),
+                  ),
+                ),
               ),
             ),
           ),
@@ -674,8 +567,6 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     );
   }
 }
-
-enum _FlingRole { outgoing, incoming }
 
 class _DepthBlob extends StatelessWidget {
   const _DepthBlob({required this.visible});
