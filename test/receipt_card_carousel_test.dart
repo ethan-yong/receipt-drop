@@ -51,6 +51,10 @@ Widget _harness(Widget child) {
   );
 }
 
+/// Finds the currently-centered card slot, keyed by the carousel itself.
+Finder _activeCard(int index) =>
+    find.byKey(ValueKey('receipt-carousel-active-$index'));
+
 List<TransactionView> _threeReceipts() => [
       _tx(
         id: 'a',
@@ -78,15 +82,16 @@ List<TransactionView> _fiveReceipts() => [
         ),
     ];
 
-Future<void> _settleFling(WidgetTester tester) async {
-  // SpringSimulation can take ~600–900ms; pump past it without binding to
-  // infinite auto-rotate timers.
+Future<void> _settle(WidgetTester tester) async {
+  // Friction glide + spring settle can take up to ~2s for a hard flick;
+  // pump past it without binding to infinite auto-rotate timers.
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 100));
   await tester.pump(const Duration(milliseconds: 200));
   await tester.pump(const Duration(milliseconds: 400));
   await tester.pump(const Duration(milliseconds: 600));
-  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pump(const Duration(milliseconds: 600));
+  await tester.pump(const Duration(milliseconds: 300));
 }
 
 void main() {
@@ -118,18 +123,33 @@ void main() {
     expect(find.byKey(const ValueKey('receipt-carousel-dots')), findsNothing);
   });
 
-  testWidgets('multiple receipts show one dot per receipt and only one card', (
+  testWidgets(
+    'multiple receipts show one dot per receipt and mark the centered card active',
+    (tester) async {
+      final txs = _threeReceipts();
+
+      await tester.pumpWidget(_harness(ReceiptCardCarousel(transactions: txs)));
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('receipt-carousel-dots')), findsOneWidget);
+      // Starts centered on the newest receipt (index 0).
+      expect(_activeCard(0), findsOneWidget);
+      expect(find.textContaining('Latest Spending'), findsOneWidget);
+    },
+  );
+
+  testWidgets('neighbor receipts peek in at rest, not just the active card', (
     tester,
   ) async {
-    final txs = _threeReceipts();
+    final txs = _fiveReceipts();
 
     await tester.pumpWidget(_harness(ReceiptCardCarousel(transactions: txs)));
     await tester.pump();
 
-    // Only the active (newest) card's content should be visible at rest.
-    expect(find.text('Newest Spot'), findsWidgets);
-    expect(find.text('Older Spot'), findsNothing);
-    expect(find.textContaining('Latest Spending'), findsOneWidget);
+    expect(_activeCard(0), findsOneWidget);
+    // Immediate neighbors are legitimately visible (peeking), unlike the old
+    // single-card-at-rest model.
+    expect(find.text('Receipt 1'), findsWidgets);
   });
 
   testWidgets('tapping a dot advances the carousel to that receipt', (
@@ -146,12 +166,11 @@ void main() {
     // Tap the right side of the dots row → last index ("Oldest Spot").
     final box = tester.getRect(dots);
     await tester.tapAt(Offset(box.right - 4, box.center.dy));
-    await _settleFling(tester);
+    await _settle(tester);
 
-    expect(find.text('Oldest Spot'), findsWidgets);
-    expect(find.text('Newest Spot'), findsNothing);
+    expect(_activeCard(2), findsOneWidget);
     // Only the newest receipt (index 0) ever gets the badge, regardless of
-    // which card is currently active.
+    // which card is currently centered.
     expect(find.textContaining('Latest Spending'), findsNothing);
   });
 
@@ -177,8 +196,8 @@ void main() {
     final dots = find.byKey(const ValueKey('receipt-carousel-dots'));
     final box = tester.getRect(dots);
     await tester.tapAt(Offset(box.right - 4, box.center.dy));
-    await _settleFling(tester);
-    expect(find.text('Oldest Spot'), findsWidgets);
+    await _settle(tester);
+    expect(_activeCard(1), findsOneWidget);
 
     // A new receipt is prepended (the list is newest-first): the carousel
     // must snap back so the user immediately sees what they just scanned.
@@ -193,8 +212,7 @@ void main() {
     await tester.pumpWidget(_harness(ReceiptCardCarousel(transactions: grown)));
     await tester.pump();
 
-    expect(find.text('Newest Spot'), findsWidgets);
-    expect(find.text('Oldest Spot'), findsNothing);
+    expect(_activeCard(0), findsOneWidget);
     expect(find.textContaining('Latest Spending'), findsOneWidget);
   });
 
@@ -204,17 +222,14 @@ void main() {
     );
     await tester.pump();
 
-    // Drag left past the 56px commit threshold with a gentle fling.
     await tester.fling(
       find.text('Newest Spot').first,
-      const Offset(-120, 0),
-      400,
+      const Offset(-500, 0),
+      600,
     );
-    await _settleFling(tester);
+    await _settle(tester);
 
-    expect(find.text('Older Spot'), findsWidgets);
-    expect(find.text('Newest Spot'), findsNothing);
-    expect(find.text('Oldest Spot'), findsNothing);
+    expect(_activeCard(1), findsOneWidget);
   });
 
   testWidgets('fast left fling can skip past the next receipt', (tester) async {
@@ -225,22 +240,60 @@ void main() {
 
     await tester.fling(
       find.text('Receipt 0').first,
-      const Offset(-180, 0),
-      3500,
+      const Offset(-300, 0),
+      4000,
     );
-    await _settleFling(tester);
+    await _settle(tester);
 
-    // Should have advanced at least two pages (not stuck on Receipt 0 or 1).
-    expect(find.text('Receipt 0'), findsNothing);
-    final landedOnOne = find.text('Receipt 1').evaluate().isNotEmpty;
-    final landedOnTwo = find.text('Receipt 2').evaluate().isNotEmpty;
-    final landedOnThree = find.text('Receipt 3').evaluate().isNotEmpty;
-    final landedOnFour = find.text('Receipt 4').evaluate().isNotEmpty;
-    expect(
-      !landedOnOne && (landedOnTwo || landedOnThree || landedOnFour),
-      isTrue,
-      reason: 'fast fling should skip Receipt 1',
+    // Should have advanced at least two pages (not stuck on 0 or 1).
+    expect(_activeCard(0), findsNothing);
+    expect(_activeCard(1), findsNothing);
+  });
+
+  testWidgets('hard flick decelerates and settles centered on one receipt', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(ReceiptCardCarousel(transactions: _fiveReceipts())),
     );
+    await tester.pump();
+
+    await tester.fling(
+      find.text('Receipt 0').first,
+      const Offset(-300, 0),
+      4000,
+    );
+    await _settle(tester);
+
+    // Exactly one card is centered after settling.
+    final activeKeys = List.generate(5, _activeCard);
+    final activeCount = activeKeys.where((f) => f.evaluate().isNotEmpty).length;
+    expect(activeCount, 1);
+  });
+
+  testWidgets('tapping a peeking neighbor recenters it instead of opening detail', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(ReceiptCardCarousel(transactions: _fiveReceipts())),
+    );
+    await tester.pump();
+
+    expect(_activeCard(0), findsOneWidget);
+
+    // A peeking neighbor only shows a sliver of its edge (its own text may
+    // be off-screen), so tap just past the active card's visible edge
+    // rather than by finding the neighbor's text.
+    final activeRect = tester.getRect(_activeCard(0));
+    // The neighbor is both translated out and scaled down around its own
+    // (pre-translation) center, so its visible sliver starts noticeably
+    // further right than the active card's raw edge — tap well inside it.
+    await tester.tapAt(Offset(activeRect.right + 55, activeRect.center.dy));
+    await _settle(tester);
+
+    expect(_activeCard(1), findsOneWidget);
+    // Recentering, not navigation — the detail route was never pushed.
+    expect(find.textContaining('detail-'), findsNothing);
   });
 
   testWidgets('under-threshold drag springs back to the same receipt', (
@@ -253,13 +306,11 @@ void main() {
 
     await tester.fling(
       find.text('Newest Spot').first,
-      const Offset(-30, 0),
-      50,
+      const Offset(-40, 0),
+      80,
     );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
+    await _settle(tester);
 
-    expect(find.text('Newest Spot'), findsWidgets);
-    expect(find.text('Older Spot'), findsNothing);
+    expect(_activeCard(0), findsOneWidget);
   });
 }

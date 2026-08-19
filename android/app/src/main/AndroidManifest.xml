@@ -8,6 +8,9 @@
     <!-- Android 13+ (API 33) requires runtime request for this; used by the
          post-share receipt notification (flutter_local_notifications). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- "Display over other apps" — required to show the payment-detected
+         floating overlay card on top of whatever app the user is in. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <application
         android:label="Receipt Drop"
         android:name="${applicationName}"
@@ -57,6 +60,21 @@
                     android:host="login-callback"/>
             </intent-filter>
         </activity>
+        <!-- Detects payment notifications (Google Wallet, later banking apps)
+             so a category-picker overlay can be shown without opening the
+             full Flutter UI. See lib/core/payment_detection/. -->
+        <service
+            android:name=".paymentdetect.PaymentNotificationListenerService"
+            android:exported="true"
+            android:label="Receipt Drop payment detection"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
+        <service
+            android:name=".paymentdetect.PaymentOverlayService"
+            android:exported="false"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

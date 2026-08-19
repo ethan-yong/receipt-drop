@@ -12,16 +12,21 @@ import '../features/share/receipt_capture_flow.dart';
 
 /// Bottom navigation: Home, Map, Ranks, Profile — with a center capture FAB on
 /// Map, Ranks, and Profile (Home uses the in-page Drop Receipt CTA instead).
-class MainShell extends StatelessWidget {
+class MainShell extends StatefulWidget {
   const MainShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
 
+  @override
+  State<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<MainShell> {
   void _goBranch(int index) {
     PlatformFeedback.selectionTap();
-    navigationShell.goBranch(
+    widget.navigationShell.goBranch(
       index,
-      initialLocation: index == navigationShell.currentIndex,
+      initialLocation: index == widget.navigationShell.currentIndex,
     );
   }
 
@@ -32,7 +37,7 @@ class MainShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final index = navigationShell.currentIndex;
+    final index = widget.navigationShell.currentIndex;
     // Capture FAB on Map / Ranks / Profile — Home already has Drop Receipt.
     final tabWantsFab = index != 0;
 
@@ -47,7 +52,7 @@ class MainShell extends StatelessWidget {
 
         return Scaffold(
           backgroundColor: AppColors.scaffold,
-          body: navigationShell,
+          body: widget.navigationShell,
           extendBody: true,
           floatingActionButton: showFab
               ? Transform.translate(

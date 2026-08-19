@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
+import '../../core/payment_detection/payment_event_bridge.dart';
+import '../../core/payment_detection/payment_permission_prompt.dart';
 import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
@@ -20,7 +22,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   static const _version = '1.0.0';
 
   // Optimistic default (matches the server column default) while loading.
@@ -30,11 +33,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _avatarUrl;
   Uint8List? _pendingAvatarBytes;
 
+  PaymentListenerStatus _listenerStatus =
+      const PaymentListenerStatus.unavailable();
+  bool _overlayPermissionGranted = false;
+  bool _paymentDetectionEnabled = false;
+
   String? get _userId => Supabase.instance.client.auth.currentUser?.id;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     SocialRepository.getShareMapLocation().then((value) {
       if (mounted) setState(() => _shareMapLocation = value);
     });
@@ -49,6 +58,100 @@ class _SettingsScreenState extends State<SettingsScreen> {
           });
         }
       });
+    }
+    _refreshPaymentDetectionPermissions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The two permissions below are granted from a separate system Settings
+    // screen with no callback into the app — re-check on resume so the
+    // Granted/Not granted labels reflect what the user just did.
+    if (state == AppLifecycleState.resumed) {
+      _refreshPaymentDetectionPermissions();
+    }
+  }
+
+  Future<void> _refreshPaymentDetectionPermissions() async {
+    final enabled = await PaymentEventBridge.isPaymentDetectionEnabled();
+    final listenerStatus = await PaymentEventBridge.notificationListenerStatus();
+    final overlayPermission =
+        await PaymentEventBridge.isOverlayPermissionGranted();
+    if (mounted) {
+      setState(() {
+        _paymentDetectionEnabled = enabled;
+        _listenerStatus = listenerStatus;
+        _overlayPermissionGranted = overlayPermission;
+      });
+    }
+  }
+
+  /// Master switch. Turning it on persists the choice natively (so the
+  /// listener honours it) and walks the user through any missing permission;
+  /// turning it off leaves the listener bound but inert.
+  Future<void> _setPaymentDetectionEnabled(bool enabled) async {
+    setState(() => _paymentDetectionEnabled = enabled);
+    await PaymentEventBridge.setPaymentDetectionEnabled(enabled);
+    if (enabled && mounted) {
+      await PaymentPermissionPrompt.runSetupWalkthrough(context);
+      await _refreshPaymentDetectionPermissions();
+    }
+  }
+
+  String get _notificationAccessLabel => switch (_listenerStatus.state) {
+    PaymentListenerState.active => 'Granted',
+    PaymentListenerState.grantedButInactive => 'Inactive',
+    PaymentListenerState.notGranted => 'Not granted',
+  };
+
+  void _onNotificationAccessTap() {
+    if (_listenerStatus.state == PaymentListenerState.grantedButInactive) {
+      _showListenerInactiveDialog();
+      return;
+    }
+    PaymentEventBridge.openNotificationAccessSettings();
+  }
+
+  /// The permission is on but the OS never started the listener — almost
+  /// always an OEM background-autostart block. Say so explicitly, because
+  /// the system Settings screen the user would otherwise check will keep
+  /// insisting the permission is granted.
+  Future<void> _showListenerInactiveDialog() async {
+    final openAutostart = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Payment detection is not running'),
+        content: const Text(
+          'Notification access is allowed, but your phone has not started '
+          'Receipt Drop\'s listener, so payments are not being detected.\n\n'
+          'This is usually the separate "Autostart" (or "Allow background '
+          'activity") setting that Xiaomi, Oppo, Vivo and Huawei phones add '
+          'on top of the standard permission. Turn it on for Receipt Drop, '
+          'then reopen the app.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Notification settings'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Open autostart'),
+          ),
+        ],
+      ),
+    );
+    if (openAutostart == null) return;
+    if (openAutostart) {
+      await PaymentEventBridge.openAutostartSettings();
+    } else {
+      await PaymentEventBridge.openNotificationAccessSettings();
     }
   }
 
@@ -368,6 +471,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _SettingsGroup(
                     rows: [
                       _SettingsRow(
+                        icon: Icons.auto_awesome_outlined,
+                        title: 'Payment detection',
+                        subtitle:
+                            'Auto-capture spending from your banking & '
+                            'e-wallet notifications',
+                        toggleValue: _paymentDetectionEnabled,
+                        onToggleChanged: _setPaymentDetectionEnabled,
+                      ),
+                      if (_paymentDetectionEnabled) ...[
+                        _SettingsRow(
+                          icon: Icons.notifications_active_outlined,
+                          title: 'Notification access',
+                          subtitle:
+                              _listenerStatus.state ==
+                                  PaymentListenerState.grantedButInactive
+                              ? 'Allowed, but your phone is blocking it from '
+                                    'running — tap to fix'
+                              : 'Lets Receipt Drop detect payments from '
+                                    'supported banking/payment apps',
+                          trailing: _notificationAccessLabel,
+                          trailingWarning:
+                              _listenerStatus.state ==
+                                  PaymentListenerState.grantedButInactive ||
+                              _listenerStatus.state ==
+                                  PaymentListenerState.notGranted,
+                          onTap: _onNotificationAccessTap,
+                        ),
+                        _SettingsRow(
+                          icon: Icons.layers_outlined,
+                          title: 'Display over other apps',
+                          subtitle:
+                              _listenerStatus.granted &&
+                                  !_overlayPermissionGranted
+                              ? 'Required to show the picker — payments are '
+                                    'detected but nothing can appear until '
+                                    'this is on'
+                              : 'Shows the category picker on top of other apps',
+                          trailing: _overlayPermissionGranted
+                              ? 'Granted'
+                              : 'Not granted',
+                          trailingWarning:
+                              _listenerStatus.granted &&
+                              !_overlayPermissionGranted,
+                          onTap: () =>
+                              PaymentEventBridge.openOverlayPermissionSettings(),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  _SettingsGroup(
+                    rows: [
+                      _SettingsRow(
                         icon: Icons.people_outline,
                         title: 'Friends',
                         onTap: () => context.pushNamed('friends'),
@@ -438,6 +594,7 @@ class _SettingsRow extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.trailing,
+    this.trailingWarning = false,
     this.onTap,
     this.danger = false,
     this.disabled = false,
@@ -449,6 +606,7 @@ class _SettingsRow extends StatelessWidget {
   final String title;
   final String? subtitle;
   final String? trailing;
+  final bool trailingWarning;
   final VoidCallback? onTap;
   final bool danger;
   final bool disabled;
@@ -517,13 +675,28 @@ class _SettingsRow extends StatelessWidget {
             if (_isToggle)
               _ToggleSwitch(value: toggleValue!, onChanged: onToggleChanged)
             else if (trailing != null)
-              Text(
-                trailing!,
-                style: balooText(
-                  13,
-                  FontWeight.w700,
-                  color: ReceiptSheetColors.subLight,
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (trailingWarning) ...[
+                    const Icon(
+                      Icons.error_outline,
+                      size: 16,
+                      color: ReceiptSheetColors.error,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Text(
+                    trailing!,
+                    style: balooText(
+                      13,
+                      FontWeight.w700,
+                      color: trailingWarning
+                          ? ReceiptSheetColors.error
+                          : ReceiptSheetColors.subLight,
+                    ),
+                  ),
+                ],
               )
             else if (onTap != null)
               const Icon(

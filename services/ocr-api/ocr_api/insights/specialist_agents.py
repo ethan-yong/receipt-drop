@@ -20,12 +20,8 @@ from ocr_api.insight_curator import (
     InsightCandidateIn,
     _extract_json_object,
 )
-from ocr_api.receipt_understanding import (
-    LLM_TIMEOUT_SECONDS,
-    ReceiptUnderstandingError,
-    _chat_completions_url,
-    resolve_llm_config,
-)
+from ocr_api.llm_gateway import chat_completions_url, resolve_llm_config
+from ocr_api.receipt_understanding import LLM_TIMEOUT_SECONDS, ReceiptUnderstandingError
 
 logger = logging.getLogger("ocr_api.insights.specialist_agents")
 
@@ -195,7 +191,7 @@ async def _call_specialist_llm(
     http_client: httpx.AsyncClient,
 ) -> str:
     cfg = resolve_llm_config()
-    url = _chat_completions_url(cfg.base_url)
+    url = chat_completions_url(cfg.base_url)
     headers = {"Content-Type": "application/json"}
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"

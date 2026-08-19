@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Transparent, edge-to-edge wrapper. The window itself spans the full
+     screen width; the actual card underneath is inset via layout_margin on
+     its LinearLayout child, which a FrameLayout parent (unlike the raw
+     WindowManager root) does honor. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:orientation="vertical"
+        android:background="@drawable/overlay_card_bg"
+        android:elevation="8dp"
+        android:padding="18dp">
+
+        <TextView
+            android:id="@+id/overlay_header"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="New payment"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#8A7D63"
+            android:letterSpacing="0.03"/>
+
+        <TextView
+            android:id="@+id/overlay_merchant"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textSize="19sp"
+            android:textStyle="bold"
+            android:textColor="#2E2717"/>
+
+        <TextView
+            android:id="@+id/overlay_amount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="16sp"
+            android:textColor="#5C5241"/>
+
+        <TextView
+            android:id="@+id/overlay_category_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="Category?"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="#8A7D63"/>
+
+        <com.receiptdrop.receipt_drop.paymentdetect.FlowLayout
+            android:id="@+id/overlay_category_chips"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"/>
+
+        <TextView
+            android:id="@+id/overlay_not_now"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="end"
+            android:layout_marginTop="12dp"
+            android:padding="8dp"
+            android:text="Not now"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="#8A7D63"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackground"/>
+
+    </LinearLayout>
+</FrameLayout>

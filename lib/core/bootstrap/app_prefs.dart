@@ -4,7 +4,6 @@ const _kOnboardingComplete = 'onboarding_complete';
 const _kProfileSetupComplete = 'profile_setup_complete';
 const _kInsightsLastGeneratedAt = 'insights_last_generated_at';
 const _kInsightsSyncedTxSinceLastCycle = 'insights_synced_tx_since_last_cycle';
-
 /// Persisted first-run flags (onboarding) + insights generation guard state.
 class AppPrefs {
   AppPrefs._();

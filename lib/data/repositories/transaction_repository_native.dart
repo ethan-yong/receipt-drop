@@ -161,17 +161,24 @@ class TransactionRepository {
           ),
         );
 
-    await _db
-        .into(_db.outboxArtifacts)
-        .insert(
-          OutboxArtifactsCompanion.insert(
-            id: artifactId,
-            userId: request.userId,
-            transactionId: id,
-            mimeType: request.mimeType,
-            localFilePath: request.localFilePath,
-          ),
-        );
+    // Artifact-less transactions (e.g. captured from a payment notification,
+    // no receipt image) are a supported state — SyncWorker.run treats a
+    // missing outbox_artifacts row as "nothing to upload", not "not synced".
+    final localFilePath = request.localFilePath;
+    final mimeType = request.mimeType;
+    if (localFilePath != null && mimeType != null) {
+      await _db
+          .into(_db.outboxArtifacts)
+          .insert(
+            OutboxArtifactsCompanion.insert(
+              id: artifactId,
+              userId: request.userId,
+              transactionId: id,
+              mimeType: mimeType,
+              localFilePath: localFilePath,
+            ),
+          );
+    }
 
     if (request.lineItems.isNotEmpty) {
       await _insertLineItems(id, request.userId, request.lineItems);
@@ -237,6 +244,10 @@ class TransactionRepository {
         )..where((a) => a.id.equals(oldArtifact.id))).go();
       }
 
+      // A retake always supplies a real file — this method's contract
+      // ("always leaves exactly one outbox_artifacts row") predates and is
+      // unaffected by the artifact-less-transaction support added to
+      // ingestReceipt above; asserting non-null here just documents that.
       await _db
           .into(_db.outboxArtifacts)
           .insert(
@@ -244,8 +255,8 @@ class TransactionRepository {
               id: newArtifactId,
               userId: request.userId.isEmpty ? existing.userId : request.userId,
               transactionId: transactionId,
-              mimeType: request.mimeType,
-              localFilePath: request.localFilePath,
+              mimeType: request.mimeType!,
+              localFilePath: request.localFilePath!,
             ),
           );
 
