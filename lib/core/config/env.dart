@@ -117,6 +117,26 @@ class Env {
     return '';
   }
 
+  /// RevenueCat's public "app-specific" Android SDK key (Project Settings →
+  /// API keys → App specific keys). Not a secret by RevenueCat's own
+  /// classification, but routed through Env like [googleWebClientId] rather
+  /// than hardcoded.
+  static String get revenueCatAndroidApiKey {
+    const fromDefine = String.fromEnvironment('REVENUECAT_ANDROID_API_KEY');
+    if (fromDefine.isNotEmpty) return fromDefine;
+    if (kDebugMode) {
+      try {
+        final v = dotenv.maybeGet('REVENUECAT_ANDROID_API_KEY');
+        if (v != null && v.isNotEmpty) return v.trim();
+      } on Object {
+        // dotenv not loaded yet.
+      }
+    }
+    return '';
+  }
+
+  static bool get hasRevenueCatConfig => revenueCatAndroidApiKey.isNotEmpty;
+
   /// Skip onboarding + auth redirects while building features (debug only by default).
   ///
   /// Enabled when `SKIP_AUTH=true` in `.env` or `--dart-define=SKIP_AUTH=true`,

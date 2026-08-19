@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## RevenueCat ad-monetization tracking on the AdMob test banner (2026-08-19)
+
+**Decision**: Added `purchases_flutter` and wired the existing Android-only AdMob test banner (`lib/features/receipt_saved/ad_banner_slot_io.dart`) into RevenueCat's (beta, `@experimental`) ad-tracking API via `Purchases.adTracker`. New `lib/core/ads/` files: `revenue_cat_service*.dart` (SDK init, conditional `io`/`web` export like `ads_service.dart`) and `ad_revenue_tracker*.dart` (translation layer — maps `BannerAdListener`'s `onAdLoaded`/`onAdImpression`/`onAdFailedToLoad`/`onPaidEvent` callbacks to `trackAdLoaded`/`trackAdDisplayed`/`trackAdFailedToLoad`/`trackAdRevenue`). A per-ad-instance UUID (`impressionId`, generated once in `_loadAd()`) is reused across all tracking calls for that instance so widget rebuilds can't produce duplicate events. New `Env.revenueCatAndroidApiKey`/`hasRevenueCatConfig` follow the existing `Env` pattern; missing config is a silent no-op, not a crash. No UI, ad-loading, or ad-format changes — purely an event-tracking pipe.
+
+**Reason**: Track ad revenue alongside subscription revenue in RevenueCat ahead of a later subscriptions/paywall stage. RevenueCat's native `loadAndTrack` AdMob wrapper only exists for iOS/Android (Kotlin/Swift); Flutter only has the lower-level "Manual Integration" (`Purchases.adTracker`), so events are forwarded by hand from `google_mobile_ads`' own callbacks rather than via an automatic wrapper.
+
+**Alternatives considered**: (1) wait for a native `loadAndTrack`-equivalent Flutter API (rejected — doesn't exist yet, and manual integration is RevenueCat's own documented path for Flutter); (2) call `Purchases.adTracker` directly from the ad widget (rejected — mixes RevenueCat types into UI code; a dedicated `AdRevenueTracker` keeps the widget AdMob-only); (3) skip `onPaidEvent`/`trackRevenue` entirely (rejected — cheap to wire even though Google's test ad unit rarely fires real paid events, so it's ready once a production ad unit + AdMob's "impression-level ad revenue" toggle are live).
+
+**Tradeoffs**: The whole `Purchases.adTracker` surface is `@experimental` (suppressed file-wide via `ignore_for_file: experimental_member_use` in `ad_revenue_tracker_io.dart`) and could change before RevenueCat's ad-monetization beta stabilizes. `trackAdRevenue` will likely never fire during dev/test-ad usage — that's expected AdMob test-ad behavior, not a bug. Requires a real per-project `REVENUECAT_ANDROID_API_KEY` (from the user's own RevenueCat dashboard) to do anything at all; without it, `RevenueCatService.init()` no-ops.
+
+---
+
 ## Spend-map overlap: unify own + friend pins (2026-08-14)
 
 **Decision**: At individual-pin zoom, friend avatar markers participate in the same screen-space `groupOverlappingKeys` / spiderfy pipeline as own place pins (`_placeAndFriendOverlays` in `SpendMapScreen`). Prefixed keys (`place:<placeKey>` / `friend:<userId>`) share one union-find pass; singletons still render their normal marker (`SpendPlaceMarker` / `FriendMapMarker`); groups of 2+ collapse to `OverlapStackMarker` and expand all members (including friends) on tap. The collapsed badge counts **own receipts only** — friend markers contribute `receiptCount: 0` so they are visual overlap participants without inflating the user's receipt total. Bucket-mode zoom and the "you are here" avatar stay out of this grouping (friends still render via plain `_friendOverlays` in heatmap/bucket modes).

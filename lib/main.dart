@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'core/ads/ads_service.dart';
+import 'core/ads/revenue_cat_service.dart';
 import 'core/bootstrap/app_prefs.dart';
 import 'core/bootstrap/app_services.dart';
 import 'core/config/env.dart';
@@ -26,6 +27,7 @@ Future<void> main() async {
   unawaited(PaymentEventDrainService.drainAndIngest());
   await ReceiptNotificationService.init();
   await AdsService.init();
+  await RevenueCatService.init();
 
   if (!Env.hasSupabaseConfig) {
     runApp(const MissingSupabaseConfigApp());
@@ -33,6 +35,11 @@ Future<void> main() async {
   }
 
   await initializeSupabase(url: Env.supabaseUrl, anonKey: Env.supabaseAnonKey);
+
+  // Startup drain (above) may have run before Supabase restored the session.
+  if (Supabase.instance.client.auth.currentUser != null) {
+    unawaited(PaymentEventDrainService.drainAndIngest());
+  }
 
   final authRefresh = AuthRefreshNotifier();
 
@@ -45,6 +52,9 @@ Future<void> main() async {
     debugPrint('onAuthStateChange: event=${state.event} userId=${user?.id}');
     if (user != null) {
       unawaited(AppServices.transactions.hydrateFromCloudIfEmpty(user.id));
+      // Session may restore after the first startup drain — pick up any
+      // payment events that were left queued waiting for a user id.
+      unawaited(PaymentEventDrainService.drainAndIngest());
       // The router's redirect reads AppPrefs synchronously; refresh it once
       // this lands so a reinstall on an already-set-up account skips
       // /profile-setup instead of getting stuck on a stale local flag.

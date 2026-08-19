@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../core/ads/ad_revenue_tracker.dart';
 import '../../core/config/ads_config.dart';
 
 /// Reserved AdMob banner slot below the receipt summary card. Android only
@@ -25,6 +28,11 @@ class _AdBannerSlotState extends State<AdBannerSlot> {
   bool _loaded = false;
   bool _failed = false;
 
+  // Generated once per ad instance and reused across every RevenueCat
+  // tracking call for it, so rebuilds (which never call _loadAd again)
+  // can't produce duplicate/mismatched tracking events.
+  late final String _impressionId;
+
   bool get _supported => Platform.isAndroid;
 
   @override
@@ -34,19 +42,52 @@ class _AdBannerSlotState extends State<AdBannerSlot> {
   }
 
   void _loadAd() {
+    _impressionId = const Uuid().v4();
     final ad = BannerAd(
       adUnitId: AdsConfig.androidBannerAdUnitId,
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (_) {
+          unawaited(
+            AdRevenueTracker.trackLoaded(
+              impressionId: _impressionId,
+              adUnitId: AdsConfig.androidBannerAdUnitId,
+            ),
+          );
           if (!mounted) return;
           setState(() => _loaded = true);
         },
         onAdFailedToLoad: (ad, error) {
+          unawaited(
+            AdRevenueTracker.trackFailedToLoad(
+              impressionId: _impressionId,
+              adUnitId: AdsConfig.androidBannerAdUnitId,
+              errorCode: error.code,
+            ),
+          );
           ad.dispose();
           if (!mounted) return;
           setState(() => _failed = true);
+        },
+        onAdImpression: (_) {
+          unawaited(
+            AdRevenueTracker.trackDisplayed(
+              impressionId: _impressionId,
+              adUnitId: AdsConfig.androidBannerAdUnitId,
+            ),
+          );
+        },
+        onPaidEvent: (ad, valueMicros, precision, currencyCode) {
+          unawaited(
+            AdRevenueTracker.trackRevenue(
+              impressionId: _impressionId,
+              adUnitId: AdsConfig.androidBannerAdUnitId,
+              valueMicros: valueMicros,
+              precision: precision,
+              currencyCode: currencyCode,
+            ),
+          );
         },
       ),
     );
