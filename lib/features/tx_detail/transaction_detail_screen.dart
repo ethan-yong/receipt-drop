@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -536,7 +537,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     final image = _displayImage;
     final available = image?.isAvailable ?? false;
 
-    Widget thumb;
+    final Widget thumb;
     if (_resolvingImage) {
       thumb = const Skeleton(
         child: AspectRatio(
@@ -548,6 +549,8 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
           ),
         ),
       );
+    } else if (!available) {
+      thumb = _AddPhotoPlaceholder(onTap: _startRetake);
     } else {
       thumb = AspectRatio(
         aspectRatio: 1 / 0.86,
@@ -561,40 +564,32 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
       );
     }
 
-    thumb = Container(
-      decoration: BoxDecoration(
-        borderRadius: AppSpacing.heroBorderRadius,
-        border: Border.all(color: AppColors.divider, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.textPrimary.withValues(alpha: 0.10),
-            blurRadius: 26,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: thumb,
-    );
+    final framed = available || _resolvingImage
+        ? Container(
+            decoration: BoxDecoration(
+              borderRadius: AppSpacing.heroBorderRadius,
+              border: Border.all(color: AppColors.divider, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.textPrimary.withValues(alpha: 0.10),
+                  blurRadius: 26,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: thumb,
+          )
+        : thumb;
 
     return Column(
       children: [
         if (available)
           GestureDetector(
             onTap: _openViewer,
-            child: thumb,
+            child: framed,
           )
         else
-          thumb,
-        if (!available && !_resolvingImage) ...[
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            'Photo not available on this device yet',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.textMuted,
-                ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+          framed,
         if (_needsReview) ...[
           const SizedBox(height: AppSpacing.sm),
           GestureDetector(
@@ -674,7 +669,6 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                 child: AmountField(
                   controller: _amountController,
                   onChanged: editable ? _onAmountChanged : null,
-                  bordered: true,
                   readOnly: !editable,
                 ),
               ),
@@ -1065,6 +1059,82 @@ class _TxDetailSkeleton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AddPhotoPlaceholder extends StatelessWidget {
+  const _AddPhotoPlaceholder({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Add receipt photo',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: AppSpacing.heroBorderRadius,
+          child: CustomPaint(
+            painter: _DottedRRectPainter(
+              color: AppColors.divider,
+              borderRadius: AppSpacing.heroRadius,
+            ),
+            child: const AspectRatio(
+              aspectRatio: 1 / 0.86,
+              child: Center(
+                child: Icon(
+                  Icons.add_rounded,
+                  size: 48,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DottedRRectPainter extends CustomPainter {
+  const _DottedRRectPainter({
+    required this.color,
+    required this.borderRadius,
+  });
+
+  final Color color;
+  final double borderRadius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(borderRadius),
+    );
+    final path = Path()..addRRect(rect);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    const dashLength = 3.0;
+    const gapLength = 4.0;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final next = math.min(distance + dashLength, metric.length);
+        canvas.drawPath(metric.extractPath(distance, next), paint);
+        distance += dashLength + gapLength;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DottedRRectPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.borderRadius != borderRadius;
 }
 
 class _ImpactChip extends StatelessWidget {

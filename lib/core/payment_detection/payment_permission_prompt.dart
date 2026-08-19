@@ -2,21 +2,28 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../widgets/receipt_sheet_widgets.dart';
-import '../bootstrap/app_prefs.dart';
 import '../theme/receipt_sheet_theme.dart';
 import 'payment_event_bridge.dart';
 
-/// First-run Android prompt for the two payment-detection permissions that
-/// have no system runtime dialog (unlike POST_NOTIFICATIONS / location).
+/// User-initiated setup walkthrough for the two payment-detection permissions
+/// that have no system runtime dialog (unlike POST_NOTIFICATIONS / location).
 ///
 /// Android only allows these via a Settings toggle, so this shows an in-app
 /// rationale then opens that toggle — the same pattern as "Allow" for
-/// notifications, just one extra tap. No-ops on iOS/web. Each permission is
-/// asked at most once per install; Profile still has the Settings rows.
+/// notifications, just one extra tap. No-ops on iOS/web.
+///
+/// This is only ever triggered by the user explicitly turning on the Profile →
+/// "Payment detection" toggle — there is no automatic/lifecycle prompting. It
+/// walks the two permissions in order (notification access, then the overlay
+/// that renders the category picker), prompting for whichever is still
+/// missing. Opening a system Settings screen ends the walk for that tap; the
+/// Settings rows (with their warning state) cover any step the user didn't
+/// complete in one pass.
 abstract final class PaymentPermissionPrompt {
   static bool _inFlight = false;
 
-  static Future<void> maybeShow(BuildContext context) async {
+  /// Runs the permission walkthrough. Call after enabling payment detection.
+  static Future<void> runSetupWalkthrough(BuildContext context) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     if (_inFlight) return;
     _inFlight = true;
@@ -29,14 +36,10 @@ abstract final class PaymentPermissionPrompt {
     }
   }
 
-  /// Returns true when the system Settings screen was opened, so the
-  /// overlay prompt can wait until the next resume.
+  /// Returns true when a system Settings screen was opened, so the overlay
+  /// step waits (the user has left the app to grant notification access).
   static Future<bool> _promptNotificationAccess(BuildContext context) async {
-    if (AppPrefs.paymentNotificationAccessPrompted) return false;
-    if (await PaymentEventBridge.isNotificationAccessGranted()) {
-      await AppPrefs.setPaymentNotificationAccessPrompted();
-      return false;
-    }
+    if (await PaymentEventBridge.isNotificationAccessGranted()) return false;
     if (!context.mounted) return false;
 
     final allow = await _showRationale(
@@ -49,7 +52,6 @@ abstract final class PaymentPermissionPrompt {
           "Google Wallet. Android will open the settings screen next — "
           "just turn on Receipt Drop.",
     );
-    await AppPrefs.setPaymentNotificationAccessPrompted();
     if (allow == true) {
       await PaymentEventBridge.openNotificationAccessSettings();
       return true;
@@ -58,11 +60,7 @@ abstract final class PaymentPermissionPrompt {
   }
 
   static Future<void> _promptOverlay(BuildContext context) async {
-    if (AppPrefs.paymentOverlayPrompted) return;
-    if (await PaymentEventBridge.isOverlayPermissionGranted()) {
-      await AppPrefs.setPaymentOverlayPrompted();
-      return;
-    }
+    if (await PaymentEventBridge.isOverlayPermissionGranted()) return;
     if (!context.mounted) return;
 
     final allow = await _showRationale(
@@ -74,7 +72,6 @@ abstract final class PaymentPermissionPrompt {
           'payment, without opening Receipt Drop. Android will open a '
           'settings screen — turn on Receipt Drop.',
     );
-    await AppPrefs.setPaymentOverlayPrompted();
     if (allow == true) {
       await PaymentEventBridge.openOverlayPermissionSettings();
     }

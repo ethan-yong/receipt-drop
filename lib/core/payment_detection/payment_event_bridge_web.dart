@@ -45,6 +45,10 @@ class PaymentListenerStatus {
 }
 
 abstract final class PaymentEventBridge {
+  static Future<bool> isPaymentDetectionEnabled() async => false;
+
+  static Future<void> setPaymentDetectionEnabled(bool enabled) async {}
+
   static Future<bool> isNotificationAccessGranted() async => false;
 
   static Future<PaymentListenerStatus> notificationListenerStatus() async =>

@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/payment_detection/payment_permission_prompt.dart';
 import '../core/platform/adaptive_sheet.dart';
 import '../core/platform/platform_feedback.dart';
 import '../core/platform/platform_utils.dart';
@@ -23,7 +21,7 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
+class _MainShellState extends State<MainShell> {
   void _goBranch(int index) {
     PlatformFeedback.selectionTap();
     widget.navigationShell.goBranch(
@@ -35,28 +33,6 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void _onFabTap(BuildContext context) {
     PlatformFeedback.lightTap();
     ReceiptCaptureFlow.start(context);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(PaymentPermissionPrompt.maybeShow(context));
-    });
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && mounted) {
-      unawaited(PaymentPermissionPrompt.maybeShow(context));
-    }
   }
 
   @override

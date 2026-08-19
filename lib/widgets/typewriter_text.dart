@@ -12,8 +12,8 @@ class TypewriterText extends StatefulWidget {
     required this.text,
     this.style,
     this.startDelay = Duration.zero,
-    this.minStepDelayMs = 60,
-    this.maxStepDelayMs = 100,
+    this.minStepDelayMs = 40,
+    this.maxStepDelayMs = 70,
   });
 
   final String text;

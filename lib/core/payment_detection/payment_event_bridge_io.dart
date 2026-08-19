@@ -100,6 +100,30 @@ abstract final class PaymentEventBridge {
     'com.receiptdrop.receipt_drop/payment_events',
   );
 
+  /// Master on/off for the whole feature (Profile → "Payment detection").
+  /// Persisted natively so the listener honours it even when the Flutter
+  /// engine isn't running. Defaults to true on the native side.
+  static Future<bool> isPaymentDetectionEnabled() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return false;
+    try {
+      final enabled = await _channel.invokeMethod<bool>(
+        'isPaymentDetectionEnabled',
+      );
+      return enabled ?? false;
+    } on Object {
+      return false;
+    }
+  }
+
+  static Future<void> setPaymentDetectionEnabled(bool enabled) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await _channel.invokeMethod<void>('setPaymentDetectionEnabled', enabled);
+    } on Object {
+      // Best-effort — the toggle state re-reads from native on next resume.
+    }
+  }
+
   static Future<bool> isNotificationAccessGranted() async {
     if (defaultTargetPlatform != TargetPlatform.android) return false;
     try {

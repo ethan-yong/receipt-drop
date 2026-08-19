@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/bootstrap/app_services.dart';
 import '../../core/config/env.dart';
 import '../../core/payment_detection/payment_event_bridge.dart';
+import '../../core/payment_detection/payment_permission_prompt.dart';
 import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
@@ -35,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   PaymentListenerStatus _listenerStatus =
       const PaymentListenerStatus.unavailable();
   bool _overlayPermissionGranted = false;
+  bool _paymentDetectionEnabled = false;
 
   String? get _userId => Supabase.instance.client.auth.currentUser?.id;
 
@@ -77,14 +79,28 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _refreshPaymentDetectionPermissions() async {
+    final enabled = await PaymentEventBridge.isPaymentDetectionEnabled();
     final listenerStatus = await PaymentEventBridge.notificationListenerStatus();
     final overlayPermission =
         await PaymentEventBridge.isOverlayPermissionGranted();
     if (mounted) {
       setState(() {
+        _paymentDetectionEnabled = enabled;
         _listenerStatus = listenerStatus;
         _overlayPermissionGranted = overlayPermission;
       });
+    }
+  }
+
+  /// Master switch. Turning it on persists the choice natively (so the
+  /// listener honours it) and walks the user through any missing permission;
+  /// turning it off leaves the listener bound but inert.
+  Future<void> _setPaymentDetectionEnabled(bool enabled) async {
+    setState(() => _paymentDetectionEnabled = enabled);
+    await PaymentEventBridge.setPaymentDetectionEnabled(enabled);
+    if (enabled && mounted) {
+      await PaymentPermissionPrompt.runSetupWalkthrough(context);
+      await _refreshPaymentDetectionPermissions();
     }
   }
 
@@ -455,32 +471,53 @@ class _SettingsScreenState extends State<SettingsScreen>
                   _SettingsGroup(
                     rows: [
                       _SettingsRow(
-                        icon: Icons.notifications_active_outlined,
-                        title: 'Notification access',
+                        icon: Icons.auto_awesome_outlined,
+                        title: 'Payment detection',
                         subtitle:
-                            _listenerStatus.state ==
-                                PaymentListenerState.grantedButInactive
-                            ? 'Allowed, but your phone is blocking it from '
-                                  'running — tap to fix'
-                            : 'Lets Receipt Drop detect payments from '
-                                  'supported banking/payment apps',
-                        trailing: _notificationAccessLabel,
-                        trailingWarning:
-                            _listenerStatus.state ==
-                            PaymentListenerState.grantedButInactive,
-                        onTap: _onNotificationAccessTap,
+                            'Auto-capture spending from your banking & '
+                            'e-wallet notifications',
+                        toggleValue: _paymentDetectionEnabled,
+                        onToggleChanged: _setPaymentDetectionEnabled,
                       ),
-                      _SettingsRow(
-                        icon: Icons.layers_outlined,
-                        title: 'Display over other apps',
-                        subtitle:
-                            'Shows the category picker on top of other apps',
-                        trailing: _overlayPermissionGranted
-                            ? 'Granted'
-                            : 'Not granted',
-                        onTap: () =>
-                            PaymentEventBridge.openOverlayPermissionSettings(),
-                      ),
+                      if (_paymentDetectionEnabled) ...[
+                        _SettingsRow(
+                          icon: Icons.notifications_active_outlined,
+                          title: 'Notification access',
+                          subtitle:
+                              _listenerStatus.state ==
+                                  PaymentListenerState.grantedButInactive
+                              ? 'Allowed, but your phone is blocking it from '
+                                    'running — tap to fix'
+                              : 'Lets Receipt Drop detect payments from '
+                                    'supported banking/payment apps',
+                          trailing: _notificationAccessLabel,
+                          trailingWarning:
+                              _listenerStatus.state ==
+                                  PaymentListenerState.grantedButInactive ||
+                              _listenerStatus.state ==
+                                  PaymentListenerState.notGranted,
+                          onTap: _onNotificationAccessTap,
+                        ),
+                        _SettingsRow(
+                          icon: Icons.layers_outlined,
+                          title: 'Display over other apps',
+                          subtitle:
+                              _listenerStatus.granted &&
+                                  !_overlayPermissionGranted
+                              ? 'Required to show the picker — payments are '
+                                    'detected but nothing can appear until '
+                                    'this is on'
+                              : 'Shows the category picker on top of other apps',
+                          trailing: _overlayPermissionGranted
+                              ? 'Granted'
+                              : 'Not granted',
+                          trailingWarning:
+                              _listenerStatus.granted &&
+                              !_overlayPermissionGranted,
+                          onTap: () =>
+                              PaymentEventBridge.openOverlayPermissionSettings(),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 16),

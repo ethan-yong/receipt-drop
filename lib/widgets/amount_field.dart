@@ -9,17 +9,12 @@ class AmountField extends StatelessWidget {
     required this.controller,
     this.label = 'Amount (MYR)',
     this.onChanged,
-    this.bordered = false,
     this.readOnly = false,
   });
 
   final TextEditingController controller;
   final String label;
   final ValueChanged<String>? onChanged;
-
-  /// Wraps the field in a bordered box, separate from the label above it.
-  final bool bordered;
-
   final bool readOnly;
 
   @override
@@ -46,6 +41,8 @@ class AmountField extends StatelessWidget {
         ),
         border: InputBorder.none,
         filled: false,
+        isDense: true,
+        contentPadding: EdgeInsets.zero,
       ),
     );
 
@@ -57,20 +54,7 @@ class AmountField extends StatelessWidget {
           style: Theme.of(context).textTheme.labelMedium,
         ),
         const SizedBox(height: AppSpacing.sm),
-        if (bordered)
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppSpacing.inputRadius),
-              border: Border.all(color: AppColors.divider, width: 1.5),
-            ),
-            child: field,
-          )
-        else
-          field,
+        field,
       ],
     );
   }

@@ -20,6 +20,7 @@ class PaymentNotificationListenerService : NotificationListenerService() {
     private lateinit var dedupCache: PaymentEventDedupCache
     private lateinit var client: PaymentNotificationClient
     private lateinit var heartbeat: PaymentListenerHeartbeat
+    private lateinit var settings: PaymentDetectionSettings
     private var categoryMatcher: CategoryMatcher? = null
     private val executor: ExecutorService = Executors.newCachedThreadPool()
 
@@ -28,6 +29,7 @@ class PaymentNotificationListenerService : NotificationListenerService() {
         dedupCache = PaymentEventDedupCache(applicationContext)
         client = PaymentNotificationClient()
         heartbeat = PaymentListenerHeartbeat(applicationContext)
+        settings = PaymentDetectionSettings(applicationContext)
         categoryMatcher = CategoryMatcher.loadFromAssets(applicationContext)
     }
 
@@ -45,6 +47,12 @@ class PaymentNotificationListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         heartbeat.recordNotificationSeen()
+
+        // Master switch (Profile → "Payment detection"): when off, the listener
+        // stays bound (so re-enabling is instant) but does nothing — no LLM
+        // call, no overlay. Checked first so a disabled feature is truly inert.
+        if (!settings.isEnabled()) return
+
         val payload = buildPayload(sbn)
         PaymentLogger.notificationReceived(payload)
 

@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
+import com.receiptdrop.receipt_drop.paymentdetect.PaymentDetectionSettings
 import com.receiptdrop.receipt_drop.paymentdetect.PaymentEventQueueStore
 import com.receiptdrop.receipt_drop.paymentdetect.PaymentListenerHeartbeat
 import com.receiptdrop.receipt_drop.paymentdetect.PaymentNotificationListenerService
@@ -48,6 +49,13 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, paymentEventsChannel)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "isPaymentDetectionEnabled" ->
+                        result.success(PaymentDetectionSettings(applicationContext).isEnabled())
+                    "setPaymentDetectionEnabled" -> {
+                        val enabled = call.arguments as? Boolean ?: true
+                        PaymentDetectionSettings(applicationContext).setEnabled(enabled)
+                        result.success(null)
+                    }
                     "isNotificationAccessGranted" -> result.success(isNotificationAccessGranted())
                     "getNotificationListenerStatus" -> result.success(notificationListenerStatus())
                     "openNotificationAccessSettings" -> {
