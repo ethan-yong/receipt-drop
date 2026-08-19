@@ -6,6 +6,7 @@ import '../../core/platform/platform_feedback.dart';
 import '../../core/theme/receipt_sheet_theme.dart';
 import '../../domain/models/transaction_view.dart';
 import '../bill_split/bill_split_sheet.dart';
+import 'ad_banner_slot.dart';
 
 /// Full-screen route shown right after a single receipt is saved — sits
 /// between the pigeon `SaveSuccessScreen` and Insights (the scan reward).
@@ -126,6 +127,8 @@ class _ReceiptSavedScreenState extends State<ReceiptSavedScreen>
                           ),
                           child: _ReceiptSummaryCard(receipt: widget.receipt),
                         ),
+                        const SizedBox(height: 16),
+                        const AdBannerSlot(),
                       ],
                     ),
                   ),

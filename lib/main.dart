@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
+import 'core/ads/ads_service.dart';
 import 'core/bootstrap/app_prefs.dart';
 import 'core/bootstrap/app_services.dart';
 import 'core/config/env.dart';
@@ -24,6 +25,7 @@ Future<void> main() async {
   // wasn't running (see lib/core/payment_detection/). Never blocks startup.
   unawaited(PaymentEventDrainService.drainAndIngest());
   await ReceiptNotificationService.init();
+  await AdsService.init();
 
   if (!Env.hasSupabaseConfig) {
     runApp(const MissingSupabaseConfigApp());
