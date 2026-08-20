@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../core/theme/app_theme.dart';
 import '../domain/models/receipt_line_item.dart';
 import '../domain/models/transaction_view.dart';
 
@@ -285,6 +286,49 @@ String _receiptNumber(String id) {
 /// viewport adds 10px for the newest-card gold frame (5px per side).
 const kReceiptCardHeight = 450.0;
 const kReceiptCardBorderRadius = 24.0;
+
+/// Invitation placeholder shown when the home carousel has no receipts for
+/// today. Matches [ReceiptCard] height and corner radius; outline only — no
+/// merchant/amount chrome.
+class EmptyReceiptCard extends StatelessWidget {
+  const EmptyReceiptCard({super.key, this.onTap});
+
+  final VoidCallback? onTap;
+
+  static const invitationCopy = 'Upload a receipt for today';
+
+  @override
+  Widget build(BuildContext context) {
+    final card = Container(
+      height: kReceiptCardHeight,
+      decoration: BoxDecoration(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(kReceiptCardBorderRadius),
+        border: Border.all(color: AppColors.divider, width: 1.5),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        invitationCopy,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppColors.textMuted,
+            ),
+      ),
+    );
+
+    if (onTap == null) return card;
+
+    return Semantics(
+      button: true,
+      label: invitationCopy,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: card,
+      ),
+    );
+  }
+}
 
 const _illustrationHeight = 168.0;
 

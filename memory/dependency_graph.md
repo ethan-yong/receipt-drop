@@ -304,7 +304,7 @@ Format: Responsibility / Imports / Used by / Risk / Reason. "Used by" counts are
 ### `lib/domain/models/transaction_view.dart`
 **Responsibility**: unified UI-facing receipt row; merges outbox fields with derived getters (`effectiveCategory`, `effectiveImpactLevel`, `includeInCharts`, `needsReview`).
 **Imports**: `lib/domain/logic/impact_level.dart`, `receipt_line_item.dart`.
-**Used by** (24 files): nearly every feature screen (`tx_detail`, `map`, `review`, `home`, `avatar`, `badges`, `summary`, `save_success`) plus several `widgets/*` and `domain/logic/*` files (`map_aggregates.dart`, `feed_line_generator.dart`, `badge_progress.dart`, `avatar_mood.dart`, `awareness.dart`) and both repository variants.
+**Used by** (24 files): nearly every feature screen (`tx_detail`, `map`, `review`, `home`, `avatar`, `badges`, `summary`, `receipt_saved`) plus several `widgets/*` and `domain/logic/*` files (`map_aggregates.dart`, `feed_line_generator.dart`, `badge_progress.dart`, `avatar_mood.dart`, `awareness.dart`) and both repository variants.
 **Risk**: High.
 **Reason**: single highest blast-radius file in the repo — any shape change here needs a sweep across nearly every feature.
 

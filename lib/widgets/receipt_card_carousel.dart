@@ -29,9 +29,17 @@ import 'receipt_carousel_physics.dart';
 /// use a plain eased tween instead of that spring — see [_animateToIndex] —
 /// so bounce stays exclusive to genuine flicks.
 class ReceiptCardCarousel extends StatefulWidget {
-  const ReceiptCardCarousel({super.key, required this.transactions});
+  const ReceiptCardCarousel({
+    super.key,
+    required this.transactions,
+    this.onEmptyTap,
+  });
 
   final List<TransactionView> transactions;
+
+  /// Fired when the empty placeholder card is tapped. Wired by Home to
+  /// [ReceiptCaptureFlow.start]; null keeps the placeholder non-interactive.
+  final VoidCallback? onEmptyTap;
 
   @override
   State<ReceiptCardCarousel> createState() => _ReceiptCardCarouselState();
@@ -414,16 +422,18 @@ class _ReceiptCardCarouselState extends State<ReceiptCardCarousel>
     final txs = widget.transactions;
 
     if (txs.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-        child: Center(
-          child: Text(
-            'No receipts today yet',
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: AppColors.textMuted),
-          ),
-        ),
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return SizedBox(
+            height: kReceiptCardHeight,
+            child: Center(
+              child: SizedBox(
+                width: cardSlotWidth(constraints.maxWidth),
+                child: EmptyReceiptCard(onTap: widget.onEmptyTap),
+              ),
+            ),
+          );
+        },
       );
     }
 

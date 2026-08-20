@@ -31,7 +31,7 @@ Files:
 - `services/ocr-api/ocr_api/*.py`
 - Downstream consumer: `lib/domain/models/transaction_view.dart` (every other feature reads through this)
 
-**Fan-out**: nearly everything else (map, feed, badges, save-success, history, insights) consumes `TransactionView` rows produced here. Changing `TransactionView`'s shape or `ingestReceipt`'s side effects (feed post creation, sync trigger) has wide blast radius.
+**Fan-out**: nearly everything else (map, feed, badges, receipt-saved, history, insights) consumes `TransactionView` rows produced here. Changing `TransactionView`'s shape or `ingestReceipt`'s side effects (feed post creation, sync trigger) has wide blast radius.
 
 ---
 

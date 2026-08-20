@@ -23,7 +23,6 @@ import '../../domain/models/transaction_view.dart';
 import '../../features/pending_imports/pending_imports_screen.dart';
 import '../../features/receipt_saved/receipt_saved_screen.dart';
 import '../../features/review/receipt_review_screen.dart';
-import '../../features/save_success/save_success_screen.dart';
 import '../../features/bill_split/split_requests_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/share/share_hint_screen.dart';
@@ -158,15 +157,6 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         path: '/history',
         name: 'history',
         builder: (context, state) => const ReceiptHistoryScreen(),
-      ),
-      GoRoute(
-        parentNavigatorKey: rootNavigatorKey,
-        path: '/save-success',
-        name: 'save-success',
-        builder: (context, state) {
-          final txs = state.extra as List<TransactionView>?;
-          return SaveSuccessScreen(savedTxs: txs ?? const []);
-        },
       ),
       GoRoute(
         parentNavigatorKey: rootNavigatorKey,

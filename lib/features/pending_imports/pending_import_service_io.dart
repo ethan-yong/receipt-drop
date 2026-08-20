@@ -87,16 +87,16 @@ abstract final class PendingImportService {
   /// footer stays accurate across the sequence, returned in the result's
   /// `progress` field for the caller to pass into the next call in the loop.
   ///
-  /// By default a successful save navigates straight to the save-success
-  /// screen. Pass [deferSaveSuccessNav] true to suppress that (e.g. a batch
-  /// loop that wants to show one consolidated celebration at the end
-  /// instead of one per receipt) — the saved transaction is always
-  /// returned in the result's `savedTx` field so the caller can collect it.
+  /// By default a successful save navigates to the receipt-saved screen. Pass
+  /// [deferPostSaveNav] true to suppress that (e.g. a batch loop that wants
+  /// one consolidated handoff at the end instead of one per receipt) — the
+  /// saved transaction is always returned in the result's `savedTx` field
+  /// so the caller can collect it.
   static Future<ProcessImportResult> processImport(
     BuildContext context,
     PendingImportModel import, {
     BatchScanProgress? batchProgress,
-    bool deferSaveSuccessNav = false,
+    bool deferPostSaveNav = false,
   }) async {
     await AppServices.pendingImports.updateStatus(import.id, 'processing');
     var savedSuccessfully = false;
@@ -203,8 +203,8 @@ abstract final class PendingImportService {
         AppServices.pendingImports.markSupabaseCompleted(import.id, tx.id),
       );
 
-      if (context.mounted && !deferSaveSuccessNav) {
-        context.pushNamed('save-success', extra: [tx]);
+      if (context.mounted && !deferPostSaveNav) {
+        context.goNamed('receipt-saved', extra: tx);
       }
       return (progress: nextProgress, savedTx: tx);
     } finally {

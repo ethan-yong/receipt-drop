@@ -11,7 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 abstract final class ReceiptSheetColors {
   static const background = Color(0xFFFAF3E7);
 
-  /// Post-save screen background (`#FCF6EA`) — also used by SaveSuccessScreen.
+  /// Post-save screen background (`#FCF6EA`) — used by ReceiptSavedScreen.
   static const screenBackground = Color(0xFFFCF6EA);
   static const surface = Color(0xFFFFFDF8);
   static const ink = Color(0xFF4F2D23);

@@ -16,7 +16,7 @@ abstract final class PendingImportService {
     BuildContext context,
     PendingImportModel import, {
     BatchScanProgress? batchProgress,
-    bool deferSaveSuccessNav = false,
+    bool deferPostSaveNav = false,
   }) async {
     throw UnsupportedError('Pending imports are not supported on web');
   }

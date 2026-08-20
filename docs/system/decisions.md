@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Pigeon save-success animation removed (2026-08-20)
+
+**Decision**: Deleted `SaveSuccessScreen`, its painters (`PigeonPainter`, `MailboxPainter`, scene/cargo artists), the `/save-success` route, and `test/save_success_variant_test.dart`. After a confirmed save, the app navigates directly to `ReceiptSavedScreen` (single receipt) or Insights (batch of 2+). Renamed `deferSaveSuccessNav` → `deferPostSaveNav` on `PendingImportService.processImport`.
+
+**Reason**: The pigeon + mailbox celebration added friction between save and the receipt-saved / insights handoff with no remaining product need.
+
+**Alternatives considered**: Keep the screen but strip only the pigeon (rejected — mailbox/scene/cargo timeline existed solely for that delivery beat); replace with a shorter non-bird celebration (rejected — `ReceiptSavedScreen` already covers the post-save moment for singles).
+
+**Tradeoffs**: Batch saves of 2+ skip any intermediate celebration and land on Insights immediately. The deferred "grouped Home-carousel card for 6+ batches" task that referenced the bag variant is obsolete and removed from `pending-tasks.md`.
+
+---
+
 ## Spend-map overlap: unify own + friend pins (2026-08-14)
 
 **Decision**: At individual-pin zoom, friend avatar markers participate in the same screen-space `groupOverlappingKeys` / spiderfy pipeline as own place pins (`_placeAndFriendOverlays` in `SpendMapScreen`). Prefixed keys (`place:<placeKey>` / `friend:<userId>`) share one union-find pass; singletons still render their normal marker (`SpendPlaceMarker` / `FriendMapMarker`); groups of 2+ collapse to `OverlapStackMarker` and expand all members (including friends) on tap. The collapsed badge counts **own receipts only** — friend markers contribute `receiptCount: 0` so they are visual overlap participants without inflating the user's receipt total. Bucket-mode zoom and the "you are here" avatar stay out of this grouping (friends still render via plain `_friendOverlays` in heatmap/bucket modes).

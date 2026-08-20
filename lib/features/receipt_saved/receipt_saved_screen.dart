@@ -8,8 +8,8 @@ import '../../domain/models/transaction_view.dart';
 import '../bill_split/bill_split_sheet.dart';
 
 /// Full-screen route shown right after a single receipt is saved — sits
-/// between the pigeon `SaveSuccessScreen` and Insights (the scan reward).
-/// Split / Done for now land on Insights; View receipt is the only bypass.
+/// before Insights (the scan reward). Split / Done for now land on Insights;
+/// View receipt is the only bypass.
 /// From the Claude Design handoff "Receipt Saved Screen.dc.html".
 class ReceiptSavedScreen extends StatefulWidget {
   const ReceiptSavedScreen({super.key, required this.receipt});
@@ -158,9 +158,7 @@ class _ReceiptSavedScreenState extends State<ReceiptSavedScreen>
   }
 }
 
-/// Green "Receipt saved!" pill — same check-in-circle motif as the pigeon
-/// animation's `_SavedBadge`, but this screen's own copy: different label,
-/// and a smaller pill (14px text / 16px icon) per the handoff spec.
+/// Green "Receipt saved!" pill — check-in-circle motif matching the handoff.
 class _SavedPill extends StatelessWidget {
   const _SavedPill();
 

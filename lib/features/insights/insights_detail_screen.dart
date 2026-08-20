@@ -33,7 +33,7 @@ class InsightsDetailScreen extends StatelessWidget {
           'Insights',
           style: Theme.of(context).textTheme.displayMedium,
         ),
-        // After save-success we `goNamed` here (no stack to pop) — land home.
+        // After post-save we `goNamed` here (no stack to pop) — land home.
         leading: BackButton(
           onPressed: () {
             if (context.canPop()) {

@@ -52,18 +52,6 @@ Port the sync / processing motion from the Claude design handoff into the pendin
 
 ---
 
-## Grouped Home-carousel card for 6+ receipt batches
-
-The save-success screen's "bag" variant (6+ receipts saved in one "Process
-all" batch) shows one grouped "N receipts saved" badge, but the Home
-carousel and `_TodayStrip` (`lib/features/save_success/save_success_screen.dart`)
-still list each transaction individually — a known, intentional
-inconsistency. Needs a grouped-card design (likely keyed by a shared
-batch/import-session id) before it's resolved. See `docs/system/decisions.md`,
-2026-07-22 "Save-success animation gets count-based variants" entry.
-
----
-
 ## Home screen spend statistics
 
 **Future.** Add a lightweight statistics strip or section on Home (totals, trends, or category mix) so the first screen answers “how am I spending?” without opening another tab.

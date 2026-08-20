@@ -122,13 +122,17 @@ class _PendingImportsScreenState extends State<PendingImportsScreen> {
         context,
         import,
         batchProgress: progress,
-        deferSaveSuccessNav: true,
+        deferPostSaveNav: true,
       );
       progress = result.progress ?? progress;
       if (result.savedTx != null) savedTxs.add(result.savedTx!);
     }
     if (savedTxs.isNotEmpty && context.mounted) {
-      context.pushNamed('save-success', extra: savedTxs);
+      if (savedTxs.length == 1) {
+        context.goNamed('receipt-saved', extra: savedTxs.first);
+      } else {
+        context.goNamed('insights');
+      }
     }
   }
 }

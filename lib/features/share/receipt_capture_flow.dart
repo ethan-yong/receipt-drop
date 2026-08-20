@@ -171,6 +171,6 @@ class ReceiptCaptureFlow {
 
     if (!saved || savedTx == null || !context.mounted) return;
 
-    context.pushNamed('save-success', extra: <TransactionView>[savedTx!]);
+    context.goNamed('receipt-saved', extra: savedTx!);
   }
 }

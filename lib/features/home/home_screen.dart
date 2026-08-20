@@ -116,7 +116,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                         const SizedBox(height: AppSpacing.sm),
-                        ReceiptCardCarousel(transactions: today),
+                        ReceiptCardCarousel(
+                          transactions: today,
+                          onEmptyTap: () => ReceiptCaptureFlow.start(context),
+                        ),
                         const SizedBox(height: AppSpacing.sm),
                         SizedBox(
                           width: double.infinity,

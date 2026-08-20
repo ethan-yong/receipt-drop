@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:receipt_drop/core/theme/app_theme.dart';
 import 'package:receipt_drop/domain/models/transaction_view.dart';
+import 'package:receipt_drop/widgets/receipt_card.dart';
 import 'package:receipt_drop/widgets/receipt_card_carousel.dart';
+import 'package:receipt_drop/widgets/receipt_carousel_physics.dart';
 
 TransactionView _tx({
   required String id,
@@ -95,7 +97,7 @@ Future<void> _settle(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('shows an empty state when there are no receipts', (
+  testWidgets('shows an empty receipt placeholder when there are no receipts', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -103,7 +105,33 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('No receipts today yet'), findsOneWidget);
+    expect(find.text(EmptyReceiptCard.invitationCopy), findsOneWidget);
+    expect(find.text('No receipts today yet'), findsNothing);
+
+    final placeholder = find.byType(EmptyReceiptCard);
+    expect(placeholder, findsOneWidget);
+    final size = tester.getSize(placeholder);
+    expect(size.height, kReceiptCardHeight);
+    // Default test viewport is 800 wide; card is kCardWidthFraction of that.
+    expect(size.width, closeTo(800 * kCardWidthFraction, 0.5));
+  });
+
+  testWidgets('tapping the empty placeholder fires onEmptyTap', (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(
+      _harness(
+        ReceiptCardCarousel(
+          transactions: const [],
+          onEmptyTap: () => tapped = true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text(EmptyReceiptCard.invitationCopy));
+    await tester.pump();
+
+    expect(tapped, isTrue);
   });
 
   testWidgets('a single receipt renders the newest badge and hides the dots', (
