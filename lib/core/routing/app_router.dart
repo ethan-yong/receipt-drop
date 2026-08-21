@@ -21,6 +21,7 @@ import '../../features/profile_setup/profile_setup_screen.dart';
 import '../../domain/logic/merchant_extractor.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../features/pending_imports/pending_imports_screen.dart';
+import '../../features/receipt_saved/batch_receipt_saved_screen.dart';
 import '../../features/receipt_saved/receipt_saved_screen.dart';
 import '../../features/review/receipt_review_screen.dart';
 import '../../features/bill_split/split_requests_screen.dart';
@@ -165,6 +166,15 @@ GoRouter createAppRouter(AuthRefreshNotifier refresh) {
         builder: (context, state) {
           final tx = state.extra as TransactionView?;
           return ReceiptSavedScreen(receipt: tx!);
+        },
+      ),
+      GoRoute(
+        parentNavigatorKey: rootNavigatorKey,
+        path: '/batch-saved',
+        name: 'batch-saved',
+        builder: (context, state) {
+          final txs = state.extra as List<TransactionView>;
+          return BatchReceiptSavedScreen(receipts: txs);
         },
       ),
       GoRoute(

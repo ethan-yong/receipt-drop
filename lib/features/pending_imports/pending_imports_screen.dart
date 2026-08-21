@@ -131,7 +131,7 @@ class _PendingImportsScreenState extends State<PendingImportsScreen> {
       if (savedTxs.length == 1) {
         context.goNamed('receipt-saved', extra: savedTxs.first);
       } else {
-        context.goNamed('insights');
+        context.goNamed('batch-saved', extra: savedTxs);
       }
     }
   }

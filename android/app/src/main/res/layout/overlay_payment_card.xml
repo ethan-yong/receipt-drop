@@ -17,63 +17,123 @@
         android:elevation="8dp"
         android:padding="18dp">
 
-        <TextView
-            android:id="@+id/overlay_header"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="New payment"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:textColor="#8A7D63"
-            android:letterSpacing="0.03"/>
-
-        <TextView
-            android:id="@+id/overlay_merchant"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:textSize="19sp"
-            android:textStyle="bold"
-            android:textColor="#2E2717"/>
-
-        <TextView
-            android:id="@+id/overlay_amount"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:textSize="16sp"
-            android:textColor="#5C5241"/>
-
-        <TextView
-            android:id="@+id/overlay_category_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:text="Category?"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:textColor="#8A7D63"/>
-
-        <com.receiptdrop.receipt_drop.paymentdetect.FlowLayout
-            android:id="@+id/overlay_category_chips"
+        <!-- FrameLayout stacks both layers in the same space so the card
+             height stays stable during the main→success crossfade. -->
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"/>
+            android:layout_height="wrap_content">
 
-        <TextView
-            android:id="@+id/overlay_not_now"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="end"
-            android:layout_marginTop="12dp"
-            android:padding="8dp"
-            android:text="Not now"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="#8A7D63"
-            android:clickable="true"
-            android:focusable="true"
-            android:background="?android:attr/selectableItemBackground"/>
+            <!-- Main payment content: header, merchant, amount, category picker -->
+            <LinearLayout
+                android:id="@+id/overlay_main_content"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/overlay_header"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="New payment"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="#8A7D63"
+                    android:letterSpacing="0.03"/>
+
+                <TextView
+                    android:id="@+id/overlay_merchant"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    android:textColor="#2E2717"/>
+
+                <TextView
+                    android:id="@+id/overlay_amount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textSize="16sp"
+                    android:textColor="#5C5241"/>
+
+                <TextView
+                    android:id="@+id/overlay_category_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Category?"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="#8A7D63"/>
+
+                <com.receiptdrop.receipt_drop.paymentdetect.FlowLayout
+                    android:id="@+id/overlay_category_chips"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"/>
+
+                <TextView
+                    android:id="@+id/overlay_not_now"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="end"
+                    android:layout_marginTop="12dp"
+                    android:padding="8dp"
+                    android:text="Not now"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="#8A7D63"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?android:attr/selectableItemBackground"/>
+
+            </LinearLayout>
+
+            <!-- Success state: shown after user picks a category.
+                 INVISIBLE (not GONE) so it contributes to FrameLayout height
+                 measurement, preventing a height jump during the crossfade. -->
+            <LinearLayout
+                android:id="@+id/overlay_success_content"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingTop="12dp"
+                android:paddingBottom="12dp"
+                android:visibility="invisible">
+
+                <FrameLayout
+                    android:id="@+id/overlay_success_circle"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:background="@drawable/overlay_success_circle">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="✔"
+                        android:textSize="26sp"
+                        android:textStyle="bold"
+                        android:textColor="#FFFFFF"/>
+
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/overlay_success_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Receipt saved"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="#2E2717"/>
+
+            </LinearLayout>
+
+        </FrameLayout>
 
     </LinearLayout>
 </FrameLayout>

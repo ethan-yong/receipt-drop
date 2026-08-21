@@ -16,6 +16,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import com.receiptdrop.receipt_drop.R
 import java.util.Locale
@@ -215,6 +216,7 @@ class PaymentOverlayService : Service() {
         fingerprint: String,
     ) {
         if (dismissing) return
+        dismissing = true  // lock immediately so neither chips nor timeout can re-enter
         cancelTimeout()
         PaymentLogger.categorySelected(category)
 
@@ -230,13 +232,64 @@ class PaymentOverlayService : Service() {
         PaymentEventQueueStore(applicationContext).enqueue(event)
         PaymentLogger.eventQueued(event.id)
 
-        dismissOverlay("category_selected")
+        showSuccessAndDismiss()
+    }
+
+    private fun showSuccessAndDismiss() {
+        val view = overlayView ?: run { stopSelf(); return }
+        val mainContent = view.findViewById<View>(R.id.overlay_main_content)
+        val successContent = view.findViewById<View>(R.id.overlay_success_content)
+        val successCircle = view.findViewById<View>(R.id.overlay_success_circle)
+        val successLabel = view.findViewById<View>(R.id.overlay_success_label)
+
+        // Fade out the payment content
+        mainContent.animate()
+            .alpha(0f)
+            .setDuration(150)
+            .withLayer()
+            .start()
+
+        // Pop the circle in: scale 0.4→1 with overshoot + fade the whole block
+        successContent.visibility = View.VISIBLE
+        successContent.alpha = 0f
+        successCircle.scaleX = 0.4f
+        successCircle.scaleY = 0.4f
+        successLabel.alpha = 0f
+
+        successContent.animate()
+            .alpha(1f)
+            .setDuration(250)
+            .withLayer()
+            .start()
+
+        successCircle.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(400)
+            .setInterpolator(OvershootInterpolator(1.5f))
+            .start()
+
+        // Label fades in slightly after the circle lands
+        successLabel.animate()
+            .alpha(1f)
+            .setStartDelay(180)
+            .setDuration(260)
+            .start()
+
+        // Hold the success state briefly, then exit
+        val runnable = Runnable { performDismiss("category_selected") }
+        timeoutRunnable = runnable
+        timeoutHandler.postDelayed(runnable, 1100L)
     }
 
     private fun dismissOverlay(reason: String) {
         if (dismissing) return
         dismissing = true
         cancelTimeout()
+        performDismiss(reason)
+    }
+
+    private fun performDismiss(reason: String) {
         val view = overlayView
         if (view == null) {
             stopSelf()
