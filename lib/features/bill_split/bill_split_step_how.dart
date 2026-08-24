@@ -16,6 +16,7 @@ class BillSplitStepHow extends StatelessWidget {
     super.key,
     required this.transaction,
     required this.friends,
+    this.contacts = const {},
     required this.ownerId,
     this.ownerAvatarUrl,
     required this.includedPersonIds,
@@ -30,6 +31,7 @@ class BillSplitStepHow extends StatelessWidget {
 
   final TransactionView transaction;
   final List<FriendshipView> friends;
+  final Map<String, ExternalContactDraft> contacts;
   final String? ownerId;
   final String? ownerAvatarUrl;
   final List<String> includedPersonIds;
@@ -43,12 +45,15 @@ class BillSplitStepHow extends StatelessWidget {
 
   String _nameFor(String personId) {
     if (personId == ownerId) return 'You';
+    final contact = contacts[personId];
+    if (contact != null) return contact.name;
     final f = friends.where((f) => f.otherUserId == personId).firstOrNull;
     return f?.otherDisplayName ?? 'Friend';
   }
 
   String? _avatarFor(String personId) {
     if (personId == ownerId) return ownerAvatarUrl;
+    if (contacts.containsKey(personId)) return null;
     final f = friends.where((f) => f.otherUserId == personId).firstOrNull;
     return f?.otherAvatarUrl;
   }

@@ -768,6 +768,12 @@ class _SplitRow extends StatelessWidget {
     return null;
   }
 
+  String? _avatarFor(BillSplitParticipant p) =>
+      p.isExternalContact ? null : _friendFor(p.friendUserId!)?.otherAvatarUrl;
+
+  String? _nameFor(BillSplitParticipant p) =>
+      p.isExternalContact ? p.contactName : _friendFor(p.friendUserId!)?.otherDisplayName;
+
   @override
   Widget build(BuildContext context) {
     final s = split;
@@ -788,9 +794,9 @@ class _SplitRow extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: -8),
                   child: PersonAvatar(
-                    avatarUrl: _friendFor(p.friendUserId)?.otherAvatarUrl,
-                    displayName: _friendFor(p.friendUserId)?.otherDisplayName,
-                    userId: p.friendUserId,
+                    avatarUrl: _avatarFor(p),
+                    displayName: _nameFor(p),
+                    userId: p.personKey,
                     size: 22,
                   ),
                 ),
@@ -799,7 +805,7 @@ class _SplitRow extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(
-          'Split with $n ${n == 1 ? 'friend' : 'friends'}',
+          'Split with $n ${n == 1 ? 'person' : 'people'}',
           style: balooText(12, FontWeight.w600, color: MapSheetColors.sub),
         ),
       ],

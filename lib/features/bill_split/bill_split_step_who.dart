@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 
+import '../../core/platform/platform_utils.dart';
 import '../../core/theme/bill_split_theme.dart';
 import '../../data/repositories/social_repository.dart';
+import '../../domain/models/bill_split.dart';
 import '../../domain/models/friend_group.dart';
 import '../../domain/models/transaction_view.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
+import 'contact_picker_sheet.dart';
 import 'person_avatar.dart';
 
-/// Step 0: receipt summary, group quick-select, and the friend
-/// checkbox list ("You" is always included and non-toggleable).
+/// Step 0: receipt summary, group quick-select, the friend checkbox list
+/// ("You" is always included and non-toggleable), and — on mobile — an
+/// "add from phone contacts" section for people without a Receipt Drop
+/// account (see `contact_picker_sheet.dart`).
 class BillSplitStepWho extends StatelessWidget {
   const BillSplitStepWho({
     super.key,
@@ -16,8 +21,11 @@ class BillSplitStepWho extends StatelessWidget {
     required this.friends,
     required this.groups,
     required this.selectedFriendIds,
+    required this.selectedContacts,
     required this.onToggleFriend,
     required this.onSelectGroup,
+    required this.onAddContacts,
+    required this.onRemoveContact,
     required this.onCreateGroup,
     required this.onContinue,
     this.ownerAvatarUrl,
@@ -29,8 +37,11 @@ class BillSplitStepWho extends StatelessWidget {
   final List<FriendshipView> friends;
   final List<FriendGroupView> groups;
   final Set<String> selectedFriendIds;
+  final Map<String, ExternalContactDraft> selectedContacts;
   final ValueChanged<String> onToggleFriend;
   final ValueChanged<FriendGroupView> onSelectGroup;
+  final ValueChanged<List<ExternalContactDraft>> onAddContacts;
+  final ValueChanged<String> onRemoveContact;
   final VoidCallback onCreateGroup;
   final VoidCallback? onContinue;
   final String? ownerAvatarUrl;
@@ -140,6 +151,26 @@ class BillSplitStepWho extends StatelessWidget {
                     selected: selectedFriendIds.contains(f.otherUserId),
                     onTap: () => onToggleFriend(f.otherUserId),
                   ),
+              if (PlatformUtils.isMobile) ...[
+                const SizedBox(height: 20),
+                const _SectionLabel('Or add from phone contacts'),
+                const SizedBox(height: 6),
+                for (final contact in selectedContacts.values)
+                  _ContactRow(
+                    contact: contact,
+                    onRemove: () => onRemoveContact(contact.id),
+                  ),
+                _AddContactButton(
+                  onTap: () async {
+                    final picked = await ContactPickerSheet.show(
+                      context,
+                      alreadySelectedPhones:
+                          selectedContacts.values.map((c) => c.phoneDigits).toSet(),
+                    );
+                    if (picked != null && picked.isNotEmpty) onAddContacts(picked);
+                  },
+                ),
+              ],
               const SizedBox(height: 8),
             ],
           ),
@@ -150,7 +181,8 @@ class BillSplitStepWho extends StatelessWidget {
             border: Border(top: BorderSide(color: BillSplitColors.tile, width: 1.5)),
           ),
           child: ReceiptSheetCta(
-            label: 'Continue with ${selectedFriendIds.length + 1} people',
+            label:
+                'Continue with ${selectedFriendIds.length + selectedContacts.length + 1} people',
             onPressed: onContinue,
           ),
         ),
@@ -270,6 +302,93 @@ class _FriendRow extends StatelessWidget {
               child: selected
                   ? const Icon(Icons.check, size: 15, color: Colors.white)
                   : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ContactRow extends StatelessWidget {
+  const _ContactRow({required this.contact, required this.onRemove});
+
+  final ExternalContactDraft contact;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          PersonAvatar(
+            avatarUrl: null,
+            displayName: contact.name,
+            userId: contact.id,
+            size: 40,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  contact.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: balooText(15, FontWeight.w800, color: BillSplitColors.ink),
+                ),
+                Text(
+                  'Phone contact · +${contact.phoneDigits}',
+                  style: balooText(12, FontWeight.w600, color: BillSplitColors.subLight),
+                ),
+              ],
+            ),
+          ),
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: onRemove,
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.close, size: 18, color: BillSplitColors.subLight),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddContactButton extends StatelessWidget {
+  const _AddContactButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFE9DDCA), width: 1.5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.person_add_alt, size: 18, color: BillSplitColors.body),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Add from contacts',
+              style: balooText(15, FontWeight.w800, color: BillSplitColors.body),
             ),
           ],
         ),

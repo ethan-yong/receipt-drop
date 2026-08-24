@@ -5,6 +5,9 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Bill Split "add from phone contacts" (external, non-Receipt-Drop
+         participants) — see lib/features/bill_split/contact_picker_sheet.dart. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <!-- Android 13+ (API 33) requires runtime request for this; used by the
          post-share receipt notification (flutter_local_notifications). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>

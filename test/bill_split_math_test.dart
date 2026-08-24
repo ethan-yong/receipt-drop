@@ -122,5 +122,22 @@ void main() {
       final actualTotal = totals.values.fold(0.0, (s, v) => s + v);
       expect(actualTotal, closeTo(expectedTotal, 0.001));
     });
+
+    // Bill Split's external-contacts feature keys some person ids by a
+    // friend's real profiles.id UUID and others by an external contact's
+    // pre-minted draft UUID — this layer treats both as plain opaque
+    // strings, so a mixed key space needs no special handling here.
+    test('a mixed friend-UUID / external-contact-UUID key space splits identically', () {
+      const friendId = '11111111-1111-1111-1111-111111111111';
+      const contactId = '22222222-2222-2222-2222-222222222222';
+      final totals = splitByItems([
+        const ItemAssignmentInput(
+          lineItemId: 'i1',
+          priceMyr: 10.00,
+          assignedPersonIds: [friendId, contactId],
+        ),
+      ]);
+      expect(totals, {friendId: 5.00, contactId: 5.00});
+    });
   });
 }

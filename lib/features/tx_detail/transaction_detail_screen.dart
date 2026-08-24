@@ -155,20 +155,26 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     return split.assigneeIdsForLineItem(item.id);
   }
 
-  String? _displayNameFor(String userId) {
-    if (userId == _ownerId) return _ownerDisplayName ?? 'You';
+  /// [personKey] is a [BillSplitParticipant.personKey] — a friend's
+  /// `profiles.id`, or (for an external phone contact) that participant's
+  /// own row id, resolved below via `_split.participants`.
+  String? _displayNameFor(String personKey) {
+    if (personKey == _ownerId) return _ownerDisplayName ?? 'You';
     for (final f in _friends) {
-      if (f.otherUserId == userId) return f.otherDisplayName;
+      if (f.otherUserId == personKey) return f.otherDisplayName;
     }
-    return null;
+    return _split?.participants
+        .where((p) => p.isExternalContact && p.id == personKey)
+        .firstOrNull
+        ?.contactName;
   }
 
-  String? _avatarUrlFor(String userId) {
-    if (userId == _ownerId) return _ownerAvatarUrl;
+  String? _avatarUrlFor(String personKey) {
+    if (personKey == _ownerId) return _ownerAvatarUrl;
     for (final f in _friends) {
-      if (f.otherUserId == userId) return f.otherAvatarUrl;
+      if (f.otherUserId == personKey) return f.otherAvatarUrl;
     }
-    return null;
+    return null; // external contacts have no avatar
   }
 
   Future<void> _resolveImage() async {
@@ -929,7 +935,8 @@ class _SplitSharesSummary extends StatelessWidget {
             for (final p in split.participants)
               _shareRow(
                 context,
-                label: displayNameFor(p.friendUserId) ?? 'Friend',
+                label: displayNameFor(p.personKey) ??
+                    (p.isExternalContact ? (p.contactName ?? 'Contact') : 'Friend'),
                 amount: p.shareMyr,
                 paid: p.paid,
               ),

@@ -11,6 +11,7 @@ import '../../data/repositories/bill_split_repository.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/bill_split_math.dart';
+import '../../domain/logic/bill_split_reminder_message.dart';
 import '../../domain/models/bill_split.dart';
 import '../../domain/models/friend_group.dart';
 import '../../domain/models/transaction_view.dart';
@@ -18,6 +19,7 @@ import 'bill_split_step_how.dart';
 import 'bill_split_step_review.dart';
 import 'bill_split_step_who.dart';
 import 'create_group_sheet.dart';
+import 'whatsapp_launcher.dart';
 
 /// Where Remind / Done land after the split sheet commits.
 enum BillSplitAfterCommit {
@@ -89,6 +91,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   bool _persisting = false;
   int _step = 0;
   final Set<String> _selectedFriendIds = {};
+  final Map<String, ExternalContactDraft> _selectedContacts = {};
   BillSplitMode _mode = BillSplitMode.equal;
   final Map<String, Set<String>> _itemAssignments = {};
   bool _remindersJustSent = false;
@@ -150,7 +153,25 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
         // way to create a second one anyway).
         _selectedFriendIds
           ..clear()
-          ..addAll(existingSplit.participants.map((p) => p.friendUserId));
+          ..addAll(
+            existingSplit.participants
+                .where((p) => !p.isExternalContact)
+                .map((p) => p.friendUserId!),
+          );
+        _selectedContacts
+          ..clear()
+          ..addEntries(
+            existingSplit.participants.where((p) => p.isExternalContact).map(
+                  (p) => MapEntry(
+                    p.id,
+                    ExternalContactDraft(
+                      id: p.id,
+                      name: p.contactName!,
+                      phoneDigits: p.contactPhone!,
+                    ),
+                  ),
+                ),
+          );
         _mode = existingSplit.mode;
         _split = existingSplit;
         _persisted = true;
@@ -167,7 +188,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   }
 
   List<String> _includedPersonIds() {
-    return [?_ownerId, ..._selectedFriendIds];
+    return [?_ownerId, ..._selectedFriendIds, ..._selectedContacts.keys];
   }
 
   void _toggleFriend(String friendId) {
@@ -186,6 +207,30 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
       _selectedFriendIds
         ..clear()
         ..addAll(group.members.map((m) => m.userId));
+      _pruneItemAssignments();
+    });
+  }
+
+  /// Adds contacts picked from [ContactPickerSheet], skipping any whose
+  /// phone number matches one already added to this split (best-effort
+  /// dedup — see the plan's "Known limitations": this never cross-checks
+  /// against friends, who have no stored phone number).
+  void _addContacts(List<ExternalContactDraft> contacts) {
+    if (_compositionLocked) return;
+    setState(() {
+      final existingPhones = _selectedContacts.values.map((c) => c.phoneDigits).toSet();
+      for (final contact in contacts) {
+        if (existingPhones.contains(contact.phoneDigits)) continue;
+        _selectedContacts[contact.id] = contact;
+        existingPhones.add(contact.phoneDigits);
+      }
+    });
+  }
+
+  void _removeContact(String id) {
+    if (_compositionLocked) return;
+    setState(() {
+      _selectedContacts.remove(id);
       _pruneItemAssignments();
     });
   }
@@ -233,18 +278,24 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     return items.every((i) => i.id != null);
   }
 
-  ({Map<String, double> friendShares, List<ItemAssignmentInput> assignments})
+  /// Whether at least one friend or external contact is selected — the
+  /// minimum needed to proceed past "Who's splitting?" or to persist a split.
+  bool get _hasAnyParticipants =>
+      _selectedFriendIds.isNotEmpty || _selectedContacts.isNotEmpty;
+
+  ({Map<String, double> participantShareMyr, List<ItemAssignmentInput> assignments})
       _computeShares() {
     final tx = _tx!;
     final ownerId = _ownerId!;
-    final friendShares = <String, double>{};
+    final participantShareMyr = <String, double>{};
     var assignmentInputs = const <ItemAssignmentInput>[];
+    final participantKeys = {..._selectedFriendIds, ..._selectedContacts.keys};
 
     if (_mode == BillSplitMode.equal) {
       final shares =
           splitEqual(totalMyr: tx.amountMyr!, personIds: _includedPersonIds());
-      for (final friendId in _selectedFriendIds) {
-        friendShares[friendId] = shares[friendId] ?? 0;
+      for (final key in participantKeys) {
+        participantShareMyr[key] = shares[key] ?? 0;
       }
     } else {
       _ensureItemDefaults();
@@ -259,20 +310,17 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
             ),
       ];
       final shares = splitByItems(assignmentInputs);
-      for (final friendId in _selectedFriendIds) {
-        friendShares[friendId] = shares[friendId] ?? 0;
+      for (final key in participantKeys) {
+        participantShareMyr[key] = shares[key] ?? 0;
       }
     }
-    return (friendShares: friendShares, assignments: assignmentInputs);
+    return (participantShareMyr: participantShareMyr, assignments: assignmentInputs);
   }
 
   BillSplitView? _buildDraftSplit() {
     final tx = _tx;
     final ownerId = _ownerId;
-    if (tx == null ||
-        ownerId == null ||
-        tx.amountMyr == null ||
-        _selectedFriendIds.isEmpty) {
+    if (tx == null || ownerId == null || tx.amountMyr == null || !_hasAnyParticipants) {
       return null;
     }
     final computed = _computeShares();
@@ -284,22 +332,38 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
       totalMyr: tx.amountMyr!,
       createdAt: DateTime.now(),
       participants: [
-        for (final e in computed.friendShares.entries)
-          BillSplitParticipant(
-            id: 'draft-${e.key}',
-            friendUserId: e.key,
-            shareMyr: e.value,
-            paid: false,
-            paidAt: null,
-            lastRemindedAt: null,
-          ),
+        for (final e in computed.participantShareMyr.entries)
+          _selectedContacts.containsKey(e.key)
+              ? BillSplitParticipant(
+                  // Unlike a friend's synthetic 'draft-<id>' placeholder
+                  // below, a contact's id IS its final persisted row id
+                  // (pre-minted at pick time — see ExternalContactDraft),
+                  // so _setParticipantPaid's draft->real lookup needs no
+                  // special-casing for contacts.
+                  id: e.key,
+                  friendUserId: null,
+                  contactName: _selectedContacts[e.key]!.name,
+                  contactPhone: _selectedContacts[e.key]!.phoneDigits,
+                  shareMyr: e.value,
+                  paid: false,
+                  paidAt: null,
+                  lastRemindedAt: null,
+                )
+              : BillSplitParticipant(
+                  id: 'draft-${e.key}',
+                  friendUserId: e.key,
+                  shareMyr: e.value,
+                  paid: false,
+                  paidAt: null,
+                  lastRemindedAt: null,
+                ),
       ],
       itemAssignments: [
         for (final a in computed.assignments)
           for (final personId in a.assignedPersonIds)
             BillSplitItemAssignment(
               lineItemId: a.lineItemId,
-              assignedUserId: personId,
+              assignedKey: personId,
             ),
       ],
     );
@@ -308,7 +372,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   void _goToPage(int page) {
     if (_compositionLocked && page != 2) return;
     if (page < 0 || page > 2) return;
-    if (page == 2 && _selectedFriendIds.isEmpty) return;
+    if (page == 2 && !_hasAnyParticipants) return;
     if (page == 1) _ensureItemDefaults();
     if (page == 2 && !_persisted) {
       final draft = _buildDraftSplit();
@@ -340,7 +404,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
       return;
     }
 
-    if (page == 2 && _selectedFriendIds.isEmpty) {
+    if (page == 2 && !_hasAnyParticipants) {
       _pageController.animateToPage(
         1,
         duration: const Duration(milliseconds: 220),
@@ -363,10 +427,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     if (_persisting) return false;
     final tx = _tx;
     final ownerId = _ownerId;
-    if (tx == null ||
-        ownerId == null ||
-        tx.amountMyr == null ||
-        _selectedFriendIds.isEmpty) {
+    if (tx == null || ownerId == null || tx.amountMyr == null || !_hasAnyParticipants) {
       return false;
     }
 
@@ -376,7 +437,8 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
       transactionId: widget.transactionId,
       totalMyr: tx.amountMyr!,
       mode: _mode,
-      friendShareMyr: computed.friendShares,
+      participantShareMyr: computed.participantShareMyr,
+      externalContacts: _selectedContacts,
       itemAssignments: computed.assignments,
     );
     if (!mounted) return false;
@@ -441,6 +503,10 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     _exitAfterCommit();
   }
 
+  /// Legacy friends-only path (no external contacts on this split): bulk
+  /// stamp every pending participant, dwell on "✓ Reminders sent", then
+  /// auto-exit — exactly today's behavior, unchanged, so friends-only
+  /// splits see zero difference.
   Future<void> _sendReminders() async {
     if (_remindersJustSent || _exiting) return;
     final ok = await _ensurePersisted();
@@ -453,6 +519,117 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     _reminderTimer?.cancel();
     _reminderTimer = Timer(_remindersSentDwell, _exitAfterCommit);
     await Future.wait(pending.map((p) => BillSplitRepository.sendReminder(p.id)));
+  }
+
+  /// Mixed-split path (≥1 external contact): stamps a single friend's
+  /// `last_reminded_at` and updates local state — no dwell/auto-exit, the
+  /// user stays on Review to keep working through the list (see spec's
+  /// per-participant reminder mockups).
+  Future<void> _remindFriend(String participantId) async {
+    final ok = await _ensurePersisted();
+    if (!ok || !mounted) return;
+    await BillSplitRepository.sendReminder(participantId);
+    _markReminded(participantId);
+  }
+
+  /// This participant's assigned line items with their *share* of each
+  /// item's price (not the full item price) — empty for equal-split mode,
+  /// where the WhatsApp message just states the flat total instead.
+  List<ReminderLineItem> _assignedItemsFor(BillSplitParticipant participant, BillSplitView split) {
+    if (split.mode == BillSplitMode.equal) return const [];
+    final lineItemsById = {
+      for (final li in _tx?.lineItems ?? const []) if (li.id != null) li.id!: li,
+    };
+    final byLine = <String, List<String>>{};
+    for (final a in split.itemAssignments) {
+      (byLine[a.lineItemId] ??= []).add(a.assignedKey);
+    }
+    final items = <ReminderLineItem>[];
+    for (final entry in byLine.entries) {
+      final item = lineItemsById[entry.key];
+      if (item == null || !entry.value.contains(participant.personKey)) continue;
+      final shareCents =
+          splitCentsEvenly((item.priceMyr * 100).round(), entry.value)[participant.personKey] ?? 0;
+      items.add((label: item.displayLabel, priceMyr: shareCents / 100));
+    }
+    return items;
+  }
+
+  /// Opens WhatsApp with a deterministic, receipt-specific reminder for one
+  /// external contact, then stamps the same `last_reminded_at` a friend
+  /// reminder would — the UI alone decides the label ("Opened WhatsApp" vs
+  /// "Reminder sent") based on [BillSplitParticipant.isExternalContact].
+  Future<void> _remindContactViaWhatsApp(BillSplitParticipant participant) async {
+    final tx = _tx;
+    final phone = participant.contactPhone;
+    if (tx == null || phone == null) return;
+    final ok = await _ensurePersisted();
+    if (!ok || !mounted) return;
+    final split = _split;
+    if (split == null) return;
+    final message = buildWhatsAppReminderMessage(
+      recipientName: participant.contactName ?? 'there',
+      merchantOrPlace: tx.displayPlace,
+      receiptDate: tx.occurredAt,
+      assignedItems: _assignedItemsFor(participant, split),
+      totalOwedMyr: participant.shareMyr,
+    );
+    await openWhatsAppReminder(phoneDigits: phone, message: message);
+    if (!mounted) return;
+    await BillSplitRepository.sendReminder(participant.id);
+    _markReminded(participant.id);
+  }
+
+  void _markReminded(String participantId) {
+    final split = _split;
+    if (!mounted || split == null) return;
+    setState(() {
+      _split = split.copyWith(
+        participants: [
+          for (final p in split.participants)
+            p.id == participantId
+                ? p.copyWith(paid: p.paid, paidAt: p.paidAt, lastRemindedAt: DateTime.now())
+                : p,
+        ],
+      );
+    });
+  }
+
+  /// "Remind all (N)": stamps every pending, not-yet-reminded friend in one
+  /// batch (same bulk semantics as [_sendReminders]) and opens WhatsApp for
+  /// just the first pending, not-yet-reminded contact — the spec forbids
+  /// firing multiple WhatsApp intents back to back, so the rest wait for
+  /// individual taps (surfaced as "Remind next: `<name>`" in the review step).
+  Future<void> _remindAllMixed() async {
+    final ok = await _ensurePersisted();
+    if (!ok || !mounted) return;
+    final split = _split;
+    if (split == null) return;
+    final pendingFriends = split.participants
+        .where((p) => !p.paid && !p.isExternalContact && p.lastRemindedAt == null)
+        .toList();
+    if (pendingFriends.isNotEmpty) {
+      await Future.wait(pendingFriends.map((p) => BillSplitRepository.sendReminder(p.id)));
+      if (!mounted) return;
+      final remindedIds = pendingFriends.map((p) => p.id).toSet();
+      setState(() {
+        _split = split.copyWith(
+          participants: [
+            for (final p in split.participants)
+              remindedIds.contains(p.id)
+                  ? p.copyWith(paid: p.paid, paidAt: p.paidAt, lastRemindedAt: DateTime.now())
+                  : p,
+          ],
+        );
+      });
+    }
+    final nextContact = (_split ?? split)
+        .participants
+        .where((p) => !p.paid && p.isExternalContact && p.lastRemindedAt == null)
+        .firstOrNull;
+    if (nextContact != null) {
+      await _remindContactViaWhatsApp(nextContact);
+    }
   }
 
   Future<void> _createGroupAndRefresh() async {
@@ -519,10 +696,13 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
           friends: _friends,
           groups: _groups,
           selectedFriendIds: _selectedFriendIds,
+          selectedContacts: _selectedContacts,
           onToggleFriend: _toggleFriend,
           onSelectGroup: _selectGroup,
+          onAddContacts: _addContacts,
+          onRemoveContact: _removeContact,
           onCreateGroup: _createGroupAndRefresh,
-          onContinue: _selectedFriendIds.isNotEmpty ? _goToStep1 : null,
+          onContinue: _hasAnyParticipants ? _goToStep1 : null,
           ownerAvatarUrl: _ownerAvatarUrl,
           ownerDisplayName: _ownerDisplayName,
           ownerUserId: _ownerId,
@@ -530,6 +710,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
         BillSplitStepHow(
           transaction: tx,
           friends: _friends,
+          contacts: _selectedContacts,
           ownerId: _ownerId,
           ownerAvatarUrl: _ownerAvatarUrl,
           includedPersonIds: _includedPersonIds(),
@@ -554,6 +735,9 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
                 remindersJustSent: _remindersJustSent,
                 onSetParticipantPaid: _setParticipantPaid,
                 onSendReminders: _sendReminders,
+                onRemindFriend: _remindFriend,
+                onRemindContact: _remindContactViaWhatsApp,
+                onRemindAllMixed: _remindAllMixed,
                 onDone: _onDone,
               ),
       ],

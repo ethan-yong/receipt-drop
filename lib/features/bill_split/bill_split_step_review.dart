@@ -7,11 +7,23 @@ import '../../domain/models/transaction_view.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
 import 'person_avatar.dart';
 
-/// Step 2: total paid, a collection progress bar, each friend's owed
-/// amount with a tappable paid/pending status pill, and a best-effort
-/// "remind" action (see `BillSplitRepository.sendReminder` — there is no
-/// push-notification delivery; this only stamps a timestamp and flips the
-/// button label optimistically before navigating to Insights).
+/// Step 2: total paid, a collection progress bar, each participant's owed
+/// amount with a tappable paid/pending status pill, and a reminder action.
+///
+/// Two reminder UIs, chosen by whether this split has any external
+/// (non-Receipt-Drop) contacts:
+/// - Friends-only split: the original single aggregate "Remind N friends"
+///   CTA (see `BillSplitRepository.sendReminder` — there is no push-
+///   notification delivery; this only stamps a timestamp and flips the
+///   button label optimistically before navigating to Insights). Unchanged
+///   from before this feature existed.
+/// - Mixed split (≥1 external contact): per-participant reminder pills —
+///   "Remind" (friend, in-app stamp) or "WhatsApp" (contact, deep link) —
+///   plus a "Remind all" CTA that bulk-stamps friends and opens WhatsApp
+///   for one contact at a time (never several at once). No auto-exit: the
+///   user stays on Review and taps "Done for now" when finished, so
+///   reminder progress (persisted via `last_reminded_at`) is resumable
+///   simply by reopening the split.
 class BillSplitStepReview extends StatelessWidget {
   const BillSplitStepReview({
     super.key,
@@ -22,6 +34,9 @@ class BillSplitStepReview extends StatelessWidget {
     required this.remindersJustSent,
     required this.onSetParticipantPaid,
     required this.onSendReminders,
+    required this.onRemindFriend,
+    required this.onRemindContact,
+    required this.onRemindAllMixed,
     required this.onDone,
   });
 
@@ -32,7 +47,12 @@ class BillSplitStepReview extends StatelessWidget {
   final bool remindersJustSent;
   final Future<void> Function(String participantId, bool paid) onSetParticipantPaid;
   final VoidCallback onSendReminders;
+  final Future<void> Function(String participantId) onRemindFriend;
+  final Future<void> Function(BillSplitParticipant participant) onRemindContact;
+  final Future<void> Function() onRemindAllMixed;
   final VoidCallback onDone;
+
+  bool get _hasExternalContacts => split.participants.any((p) => p.isExternalContact);
 
   FriendshipView? _friendFor(String userId) =>
       friends.where((f) => f.otherUserId == userId).firstOrNull;
@@ -43,6 +63,7 @@ class BillSplitStepReview extends StatelessWidget {
     final owed = split.owedTotalMyr;
     final collected = split.collectedMyr;
     final progressPct = owed > 0 ? (collected / owed).clamp(0.0, 1.0) : 0.0;
+    final mixed = _hasExternalContacts;
 
     return Column(
       children: [
@@ -105,9 +126,10 @@ class BillSplitStepReview extends StatelessWidget {
               const SizedBox(height: 14),
               for (final p in split.participants)
                 _ParticipantRow(
-                  friendship: _friendFor(p.friendUserId),
+                  friendship: p.isExternalContact ? null : _friendFor(p.friendUserId!),
                   participant: p,
                   onToggle: () => onSetParticipantPaid(p.id, !p.paid),
+                  reminderAction: (mixed && !p.paid) ? _reminderPillFor(p) : null,
                 ),
               const SizedBox(height: 8),
             ],
@@ -118,26 +140,109 @@ class BillSplitStepReview extends StatelessWidget {
           decoration: const BoxDecoration(
             border: Border(top: BorderSide(color: BillSplitColors.tile, width: 1.5)),
           ),
-          child: Column(
-            children: [
-              ReceiptSheetCta(
-                label: remindersJustSent
-                    ? '✓ Reminders sent'
-                    : split.allSettled
-                        ? 'All settled 🎉'
-                        : 'Remind ${split.pendingCount} ${split.pendingCount == 1 ? 'friend' : 'friends'}',
-                onPressed:
-                    (!split.allSettled && !remindersJustSent) ? onSendReminders : null,
-              ),
-              ReceiptSheetLink(
-                label: 'Done for now',
-                color: BillSplitColors.subLight,
-                onTap: remindersJustSent ? null : onDone,
-              ),
-            ],
-          ),
+          child: mixed ? _buildMixedFooter(context) : _buildLegacyFooter(),
         ),
       ],
+    );
+  }
+
+  Widget _reminderPillFor(BillSplitParticipant p) {
+    final alreadyReminded = p.lastRemindedAt != null;
+    if (p.isExternalContact) {
+      return _ReminderPill(
+        label: alreadyReminded ? '✓ Opened WhatsApp' : 'WhatsApp',
+        done: alreadyReminded,
+        onTap: alreadyReminded ? null : () => onRemindContact(p),
+      );
+    }
+    return _ReminderPill(
+      label: alreadyReminded ? '✓ Reminder sent' : 'Remind',
+      done: alreadyReminded,
+      onTap: alreadyReminded ? null : () => onRemindFriend(p.id),
+    );
+  }
+
+  Widget _buildLegacyFooter() {
+    return Column(
+      children: [
+        ReceiptSheetCta(
+          label: remindersJustSent
+              ? '✓ Reminders sent'
+              : split.allSettled
+                  ? 'All settled 🎉'
+                  : 'Remind ${split.pendingCount} ${split.pendingCount == 1 ? 'friend' : 'friends'}',
+          onPressed: (!split.allSettled && !remindersJustSent) ? onSendReminders : null,
+        ),
+        ReceiptSheetLink(
+          label: 'Done for now',
+          color: BillSplitColors.subLight,
+          onTap: remindersJustSent ? null : onDone,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMixedFooter(BuildContext context) {
+    final unreminded = split.participants.where((p) => !p.paid && p.lastRemindedAt == null);
+    final unremindedFriends = unreminded.where((p) => !p.isExternalContact).toList();
+    final unremindedContacts = unreminded.where((p) => p.isExternalContact).toList();
+    final remainingCount = unremindedFriends.length + unremindedContacts.length;
+
+    String label;
+    VoidCallback? onPressed;
+    if (split.allSettled) {
+      label = 'All settled 🎉';
+      onPressed = null;
+    } else if (remainingCount == 0) {
+      label = 'All reminded';
+      onPressed = null;
+    } else if (unremindedFriends.isNotEmpty) {
+      label = 'Remind all ($remainingCount)';
+      onPressed = () => onRemindAllMixed();
+    } else {
+      label = 'Remind next: ${unremindedContacts.first.contactName ?? 'contact'}';
+      onPressed = () => onRemindAllMixed();
+    }
+
+    return Column(
+      children: [
+        ReceiptSheetCta(label: label, onPressed: onPressed),
+        ReceiptSheetLink(
+          label: 'Done for now',
+          color: BillSplitColors.subLight,
+          onTap: onDone,
+        ),
+      ],
+    );
+  }
+}
+
+class _ReminderPill extends StatelessWidget {
+  const _ReminderPill({required this.label, required this.done, required this.onTap});
+
+  final String label;
+  final bool done;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: done ? BillSplitColors.paidBg : BillSplitColors.gold.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: balooText(
+            12,
+            FontWeight.w800,
+            color: done ? BillSplitColors.paidText : BillSplitColors.ink,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -147,68 +252,83 @@ class _ParticipantRow extends StatelessWidget {
     required this.friendship,
     required this.participant,
     required this.onToggle,
+    this.reminderAction,
   });
 
   final FriendshipView? friendship;
   final BillSplitParticipant participant;
   final VoidCallback onToggle;
+  final Widget? reminderAction;
 
   @override
   Widget build(BuildContext context) {
     final paid = participant.paid;
+    final displayName = participant.isExternalContact
+        ? (participant.contactName ?? 'Contact')
+        : (friendship?.otherDisplayName ?? 'Friend');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          PersonAvatar(
-            avatarUrl: friendship?.otherAvatarUrl,
-            displayName: friendship?.otherDisplayName,
-            userId: friendship?.otherUserId ?? participant.friendUserId,
-            size: 38,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  friendship?.otherDisplayName ?? 'Friend',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: balooText(15, FontWeight.w800, color: BillSplitColors.ink),
+          Row(
+            children: [
+              PersonAvatar(
+                avatarUrl: participant.isExternalContact ? null : friendship?.otherAvatarUrl,
+                displayName: displayName,
+                userId: friendship?.otherUserId ?? participant.id,
+                size: 38,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: balooText(15, FontWeight.w800, color: BillSplitColors.ink),
+                    ),
+                    Text(
+                      'owes you RM ${participant.shareMyr.toStringAsFixed(2)}',
+                      style: balooText(12.5, FontWeight.w600, color: BillSplitColors.sub),
+                    ),
+                  ],
                 ),
-                Text(
-                  'owes you RM ${participant.shareMyr.toStringAsFixed(2)}',
-                  style: balooText(12.5, FontWeight.w600, color: BillSplitColors.sub),
-                ),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: onToggle,
-            child: TweenAnimationBuilder<double>(
-              key: ValueKey(paid),
-              tween: Tween(begin: paid ? 1.16 : 1.0, end: 1.0),
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOut,
-              builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  color: paid ? BillSplitColors.paidBg : BillSplitColors.tile,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  paid ? 'Paid ✓' : 'Pending',
-                  style: balooText(
-                    12.5,
-                    FontWeight.w800,
-                    color: paid ? BillSplitColors.paidText : BillSplitColors.sub,
+              ),
+              GestureDetector(
+                onTap: onToggle,
+                child: TweenAnimationBuilder<double>(
+                  key: ValueKey(paid),
+                  tween: Tween(begin: paid ? 1.16 : 1.0, end: 1.0),
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOut,
+                  builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: paid ? BillSplitColors.paidBg : BillSplitColors.tile,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      paid ? 'Paid ✓' : 'Pending',
+                      style: balooText(
+                        12.5,
+                        FontWeight.w800,
+                        color: paid ? BillSplitColors.paidText : BillSplitColors.sub,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ),
+          if (reminderAction != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 50, top: 6),
+              child: reminderAction!,
+            ),
         ],
       ),
     );

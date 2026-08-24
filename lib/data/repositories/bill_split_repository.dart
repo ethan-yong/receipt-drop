@@ -128,12 +128,16 @@ class BillSplitRepository {
           .from('bill_split_item_assignments')
           .select()
           .eq('split_id', splitId) as List;
+      // assigned_user_id (profiles.id, owner or friend) and
+      // assigned_participant_id (an external contact's own participants
+      // row) are mutually exclusive per bsia_assignee_pair_check — exactly
+      // one is populated per row.
       itemAssignments = assignmentRows
           .map((r) {
             final row = r as Map<String, dynamic>;
             return BillSplitItemAssignment(
               lineItemId: row['line_item_id'] as String,
-              assignedUserId: row['assigned_user_id'] as String,
+              assignedKey: (row['assigned_user_id'] ?? row['assigned_participant_id']) as String,
             );
           })
           .toList();
@@ -154,7 +158,9 @@ class BillSplitRepository {
   static BillSplitParticipant _participantFromRow(Map<String, dynamic> row) {
     return BillSplitParticipant(
       id: row['id'] as String,
-      friendUserId: row['friend_user_id'] as String,
+      friendUserId: row['friend_user_id'] as String?,
+      contactName: row['contact_name'] as String?,
+      contactPhone: row['contact_phone'] as String?,
       shareMyr: (row['share_myr'] as num).toDouble(),
       paid: row['paid'] as bool,
       paidAt: row['paid_at'] != null ? DateTime.parse(row['paid_at'] as String) : null,
@@ -167,15 +173,21 @@ class BillSplitRepository {
   /// Creates a split header + participants + (for `by_item`) item
   /// assignments, then re-reads it via [getSplitForTransaction] so the
   /// read/write paths always share one assembly point.
+  ///
+  /// [participantShareMyr] is keyed by [BillSplitParticipant.personKey] —
+  /// either a friend's `profiles.id`, or (for a key present in
+  /// [externalContacts]) an [ExternalContactDraft.id], which becomes that
+  /// participant's own `bill_split_participants.id`.
   static Future<BillSplitView?> createSplit({
     required String transactionId,
     required double totalMyr,
     required BillSplitMode mode,
-    required Map<String, double> friendShareMyr,
+    required Map<String, double> participantShareMyr,
+    Map<String, ExternalContactDraft> externalContacts = const {},
     List<ItemAssignmentInput> itemAssignments = const [],
   }) async {
     final userId = _userId;
-    if (userId == null || friendShareMyr.isEmpty) return null;
+    if (userId == null || participantShareMyr.isEmpty) return null;
     try {
       final splitId = _uuid.v4();
       await Supabase.instance.client.from('bill_splits').insert({
@@ -187,27 +199,33 @@ class BillSplitRepository {
       });
 
       await Supabase.instance.client.from('bill_split_participants').insert(
-            friendShareMyr.entries
-                .map(
-                  (e) => {
-                    'id': _uuid.v4(),
-                    'split_id': splitId,
-                    'friend_user_id': e.key,
-                    'share_myr': e.value,
-                  },
-                )
-                .toList(),
+            participantShareMyr.entries.map((e) {
+              final contact = externalContacts[e.key];
+              return {
+                // An external contact's row id is the pre-minted draft id
+                // (so it matches the assigned_participant_id FK used
+                // below); a friend row gets a fresh id, same as before.
+                'id': contact != null ? contact.id : _uuid.v4(),
+                'split_id': splitId,
+                if (contact == null) 'friend_user_id': e.key,
+                if (contact != null) 'contact_name': contact.name,
+                if (contact != null) 'contact_phone': contact.phoneDigits,
+                'share_myr': e.value,
+              };
+            }).toList(),
           );
 
       if (mode == BillSplitMode.byItem && itemAssignments.isNotEmpty) {
         final rows = <Map<String, dynamic>>[];
         for (final item in itemAssignments) {
           for (final personId in item.assignedPersonIds) {
+            final contact = externalContacts[personId];
             rows.add({
               'id': _uuid.v4(),
               'split_id': splitId,
               'line_item_id': item.lineItemId,
-              'assigned_user_id': personId,
+              if (contact == null) 'assigned_user_id': personId,
+              if (contact != null) 'assigned_participant_id': contact.id,
             });
           }
         }
@@ -248,22 +266,22 @@ class BillSplitRepository {
       final existing = await getSplitForTransaction(transactionId);
       if (existing == null || existing.ownerId != userId) return null;
 
-      final Map<String, double> friendShares;
+      final Map<String, double> sharesByKey;
       if (existing.mode == BillSplitMode.equal) {
         final personIds = [
           existing.ownerId,
-          ...existing.participants.map((p) => p.friendUserId),
+          ...existing.participants.map((p) => p.personKey),
         ];
         final shares = splitEqual(totalMyr: totalMyr, personIds: personIds);
-        friendShares = {
+        sharesByKey = {
           for (final p in existing.participants)
-            p.friendUserId: shares[p.friendUserId] ?? 0,
+            p.personKey: shares[p.personKey] ?? 0,
         };
       } else {
         final priceById = {for (final li in lineItems) li.id: li.priceMyr};
         final byLine = <String, List<String>>{};
         for (final a in existing.itemAssignments) {
-          (byLine[a.lineItemId] ??= []).add(a.assignedUserId);
+          (byLine[a.lineItemId] ??= []).add(a.assignedKey);
         }
         final assignmentInputs = [
           for (final e in byLine.entries)
@@ -275,9 +293,9 @@ class BillSplitRepository {
               ),
         ];
         final shares = splitByItems(assignmentInputs);
-        friendShares = {
+        sharesByKey = {
           for (final p in existing.participants)
-            p.friendUserId: shares[p.friendUserId] ?? 0,
+            p.personKey: shares[p.personKey] ?? 0,
         };
       }
 
@@ -286,7 +304,7 @@ class BillSplitRepository {
       }).eq('id', existing.id);
 
       for (final p in existing.participants) {
-        final share = friendShares[p.friendUserId];
+        final share = sharesByKey[p.personKey];
         if (share == null) continue;
         await Supabase.instance.client.from('bill_split_participants').update({
           'share_myr': share,
