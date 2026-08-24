@@ -98,6 +98,44 @@ class ProfileRepository {
         .eq('id', userId);
   }
 
+  /// The caller's own phone number (normalized digits, see
+  /// `lib/domain/logic/phone_number.dart`). Read via `get_my_phone_e164()`
+  /// since direct column-level SELECT on `phone_e164` is revoked — see
+  /// `20260824010000_profile_phone_identity.sql`. Null if unset or on
+  /// failure (Settings just shows an empty field either way).
+  static Future<String?> fetchMyPhoneE164() async {
+    try {
+      final result = await Supabase.instance.client.rpc('get_my_phone_e164');
+      return result as String?;
+    } on Object {
+      return null;
+    }
+  }
+
+  /// Sets or clears (pass null) the caller's phone number. [normalized]
+  /// must already be in `normalizePhoneForWhatsApp` output shape — this
+  /// method does no normalization itself. Returns a human-readable error on
+  /// failure (most commonly a duplicate-phone conflict, Postgres `23505`
+  /// against `profiles_phone_e164_unique_idx`), or null on success.
+  static Future<String?> updateMyPhoneE164({
+    required String userId,
+    required String? normalized,
+  }) async {
+    try {
+      await Supabase.instance.client
+          .from('profiles')
+          .update({'phone_e164': normalized})
+          .eq('id', userId);
+      return null;
+    } on PostgrestException catch (e) {
+      return e.code == '23505'
+          ? 'That number is already linked to another account.'
+          : 'Could not save phone number.';
+    } on Object {
+      return 'Could not save phone number.';
+    }
+  }
+
   /// Best-effort: if the server already has this account marked as having
   /// completed profile setup (e.g. it was done on another device), syncs
   /// that into the local pref so a reinstall doesn't re-show the screen.

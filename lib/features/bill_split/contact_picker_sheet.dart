@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart' as ph;
@@ -5,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/platform/adaptive_sheet.dart';
 import '../../core/theme/bill_split_theme.dart';
+import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/phone_number.dart';
 import '../../domain/models/bill_split.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
@@ -13,34 +16,54 @@ import 'person_avatar.dart';
 enum _PickerStatus { loading, needsPermission, permanentlyDenied, ready }
 
 /// Lets the payer pick people from their phone's own contacts to split a
-/// bill with, without requiring a Receipt Drop account. Launched from
-/// "Add from contacts" in [BillSplitStepWho] (mobile only — device contact
-/// access has no meaningful Web/Desktop equivalent here).
+/// bill with. A picked number is resolved against existing Receipt Drop
+/// accounts ([SocialRepository.findUsersByPhones]) — a match (friend or
+/// not) is returned as a [MatchedContactResolution] so the caller adds them
+/// as a normal friend-shaped participant with in-app reminders; no match
+/// falls back to Phase 1's [UnmatchedContactResolution] (a plain
+/// [ExternalContactDraft], WhatsApp reminder). Launched from "Add from
+/// contacts" in [BillSplitStepWho] (mobile only — device contact access has
+/// no meaningful Web/Desktop equivalent here).
 abstract final class ContactPickerSheet {
-  /// Returns the newly picked contacts, or null if the sheet was dismissed
-  /// without confirming. [alreadySelectedPhones] (normalized digits) are
-  /// excluded from the list — best-effort dedup against contacts already
-  /// added to this split (see the plan's "Known limitations": this never
-  /// cross-checks against Receipt Drop friends, who have no stored phone).
-  static Future<List<ExternalContactDraft>?> show(
+  /// Returns the resolved selections, or null if the sheet was dismissed
+  /// without confirming. [alreadySelectedPhones] (normalized digits) dedupes
+  /// against unmatched contacts already added to this split.
+  /// [alreadySelectedFriendIds] dedupes a phone match against friend rows
+  /// already picked (manually or via an earlier match). [friendUserIds] is
+  /// the caller's already-loaded accepted-friend id set, used only to badge
+  /// a match as "Already your friend" vs. "Receipt Drop user" — it never
+  /// gates whether a match can be selected.
+  static Future<List<ContactResolution>?> show(
     BuildContext context, {
     required Set<String> alreadySelectedPhones,
+    required Set<String> alreadySelectedFriendIds,
+    required Set<String> friendUserIds,
   }) {
-    return AdaptiveSheet.showForm<List<ExternalContactDraft>>(
+    return AdaptiveSheet.showForm<List<ContactResolution>>(
       context: context,
       isScrollControlled: true,
       backgroundColor: BillSplitColors.surface,
       topRadius: kReceiptSheetRadius,
       showDragHandle: false,
-      child: _ContactPickerBody(alreadySelectedPhones: alreadySelectedPhones),
+      child: _ContactPickerBody(
+        alreadySelectedPhones: alreadySelectedPhones,
+        alreadySelectedFriendIds: alreadySelectedFriendIds,
+        friendUserIds: friendUserIds,
+      ),
     );
   }
 }
 
 class _ContactPickerBody extends StatefulWidget {
-  const _ContactPickerBody({required this.alreadySelectedPhones});
+  const _ContactPickerBody({
+    required this.alreadySelectedPhones,
+    required this.alreadySelectedFriendIds,
+    required this.friendUserIds,
+  });
 
   final Set<String> alreadySelectedPhones;
+  final Set<String> alreadySelectedFriendIds;
+  final Set<String> friendUserIds;
 
   @override
   State<_ContactPickerBody> createState() => _ContactPickerBodyState();
@@ -53,6 +76,11 @@ class _ContactPickerBodyState extends State<_ContactPickerBody> {
   List<Contact> _contacts = const [];
   String _query = '';
   final Map<String, String> _selectedPhoneById = {}; // contact.id -> chosen phone digits
+
+  /// normalized phone digits -> resolved Receipt Drop match. Sheet-lifetime
+  /// only (a plain State field, discarded on close) — no persistent
+  /// client-side phone directory.
+  Map<String, PhoneMatchedUser> _matchByPhone = {};
 
   @override
   void initState() {
@@ -94,6 +122,25 @@ class _ContactPickerBodyState extends State<_ContactPickerBody> {
       _contacts = contacts;
       _status = _PickerStatus.ready;
     });
+    // Fired after the list is already rendered, so badges pop in once
+    // resolved rather than blocking the whole sheet on network.
+    unawaited(_resolveMatches(contacts));
+  }
+
+  Future<void> _resolveMatches(List<Contact> contacts) async {
+    final normalized = <String>{};
+    for (final contact in contacts) {
+      for (final phone in contact.phones) {
+        final n = normalizePhoneForWhatsApp(phone.number);
+        if (n != null) normalized.add(n);
+      }
+    }
+    if (normalized.isEmpty) return;
+    final matches = await SocialRepository.findUsersByPhones(normalized.toList());
+    if (!mounted || matches.isEmpty) return;
+    setState(() {
+      _matchByPhone = {for (final m in matches) m.phoneDigits: m};
+    });
   }
 
   List<Contact> get _filtered {
@@ -119,21 +166,34 @@ class _ContactPickerBodyState extends State<_ContactPickerBody> {
   }
 
   void _confirm() {
-    final drafts = <ExternalContactDraft>[];
+    final results = <ContactResolution>[];
     final seenPhones = {...widget.alreadySelectedPhones};
+    final seenUserIds = {...widget.alreadySelectedFriendIds};
     for (final contact in _contacts) {
       final rawPhone = _selectedPhoneById[contact.id];
       if (rawPhone == null) continue;
       final normalized = normalizePhoneForWhatsApp(rawPhone);
-      if (normalized == null || seenPhones.contains(normalized)) continue;
-      seenPhones.add(normalized);
-      drafts.add(ExternalContactDraft(
-        id: _uuid.v4(),
-        name: contact.displayName,
-        phoneDigits: normalized,
-      ));
+      if (normalized == null) continue;
+      final match = _matchByPhone[normalized];
+      if (match != null) {
+        if (seenUserIds.contains(match.userId)) continue;
+        seenUserIds.add(match.userId);
+        results.add(MatchedContactResolution(
+          userId: match.userId,
+          displayName: match.displayName,
+          avatarUrl: match.avatarUrl,
+        ));
+      } else {
+        if (seenPhones.contains(normalized)) continue;
+        seenPhones.add(normalized);
+        results.add(UnmatchedContactResolution(ExternalContactDraft(
+          id: _uuid.v4(),
+          name: contact.displayName,
+          phoneDigits: normalized,
+        )));
+      }
     }
-    Navigator.of(context).pop(drafts);
+    Navigator.of(context).pop(results);
   }
 
   @override
@@ -207,6 +267,8 @@ class _ContactPickerBodyState extends State<_ContactPickerBody> {
                         contact: contact,
                         selected: _selectedPhoneById.containsKey(contact.id),
                         selectedPhone: _selectedPhoneById[contact.id],
+                        matchByPhone: _matchByPhone,
+                        friendUserIds: widget.friendUserIds,
                         onTap: () => _toggle(contact),
                         onPhoneChanged: (phone) => _setPhoneFor(contact, phone),
                       ),
@@ -260,6 +322,8 @@ class _ContactPickRow extends StatelessWidget {
     required this.contact,
     required this.selected,
     required this.selectedPhone,
+    required this.matchByPhone,
+    required this.friendUserIds,
     required this.onTap,
     required this.onPhoneChanged,
   });
@@ -267,12 +331,26 @@ class _ContactPickRow extends StatelessWidget {
   final Contact contact;
   final bool selected;
   final String? selectedPhone;
+  final Map<String, PhoneMatchedUser> matchByPhone;
+  final Set<String> friendUserIds;
   final VoidCallback onTap;
   final ValueChanged<String> onPhoneChanged;
+
+  /// "Already your friend" / "Receipt Drop user" / null (no match) for one
+  /// raw device-contact number.
+  String? _badgeFor(String rawPhoneNumber) {
+    final normalized = normalizePhoneForWhatsApp(rawPhoneNumber);
+    if (normalized == null) return null;
+    final match = matchByPhone[normalized];
+    if (match == null) return null;
+    return friendUserIds.contains(match.userId) ? 'Already your friend' : 'Receipt Drop user';
+  }
 
   @override
   Widget build(BuildContext context) {
     final phones = contact.phones;
+    final currentPhone = selectedPhone ?? (phones.isNotEmpty ? phones.first.number : null);
+    final currentBadge = currentPhone != null ? _badgeFor(currentPhone) : null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
@@ -299,12 +377,22 @@ class _ContactPickRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: balooText(15, FontWeight.w800, color: BillSplitColors.ink),
                       ),
-                      if (phones.isNotEmpty)
-                        Text(
-                          selectedPhone ?? phones.first.number,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: balooText(12.5, FontWeight.w600, color: BillSplitColors.subLight),
+                      if (currentPhone != null)
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                currentPhone,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: balooText(12.5, FontWeight.w600, color: BillSplitColors.subLight),
+                              ),
+                            ),
+                            if (currentBadge != null) ...[
+                              const SizedBox(width: 6),
+                              _MatchBadge(label: currentBadge),
+                            ],
+                          ],
                         ),
                     ],
                   ),
@@ -328,8 +416,9 @@ class _ContactPickRow extends StatelessWidget {
             ),
           ),
           // A contact with multiple numbers gets an inline chip picker so
-          // the right one ends up in the WhatsApp reminder — otherwise the
-          // first number is used by default.
+          // the right one ends up as the participant — each chip shows its
+          // own match badge so the choice can be informed before picking,
+          // not just after.
           if (selected && phones.length > 1)
             Padding(
               padding: const EdgeInsets.only(left: 52, top: 6),
@@ -339,7 +428,9 @@ class _ContactPickRow extends StatelessWidget {
                 children: [
                   for (final phone in phones)
                     ChoiceChip(
-                      label: Text(phone.number),
+                      label: Text(
+                        [phone.number, ?_badgeFor(phone.number)].join(' · '),
+                      ),
                       selected: selectedPhone == phone.number,
                       onSelected: (_) => onPhoneChanged(phone.number),
                     ),
@@ -347,6 +438,29 @@ class _ContactPickRow extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _MatchBadge extends StatelessWidget {
+  const _MatchBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: BillSplitColors.gold.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: balooText(10.5, FontWeight.w800, color: BillSplitColors.ink),
       ),
     );
   }

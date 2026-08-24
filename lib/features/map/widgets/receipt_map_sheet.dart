@@ -768,11 +768,17 @@ class _SplitRow extends StatelessWidget {
     return null;
   }
 
-  String? _avatarFor(BillSplitParticipant p) =>
-      p.isExternalContact ? null : _friendFor(p.friendUserId!)?.otherAvatarUrl;
+  // resolvedAvatarUrl/resolvedDisplayName (batch-resolved in
+  // BillSplitRepository, friend or not) are checked first — `friends` only
+  // contains accepted friendships, so it alone would show a phone-matched
+  // non-friend as a blank avatar / generic name.
+  String? _avatarFor(BillSplitParticipant p) => p.isExternalContact
+      ? null
+      : (p.resolvedAvatarUrl ?? _friendFor(p.friendUserId!)?.otherAvatarUrl);
 
-  String? _nameFor(BillSplitParticipant p) =>
-      p.isExternalContact ? p.contactName : _friendFor(p.friendUserId!)?.otherDisplayName;
+  String? _nameFor(BillSplitParticipant p) => p.isExternalContact
+      ? p.contactName
+      : (p.resolvedDisplayName ?? _friendFor(p.friendUserId!)?.otherDisplayName);
 
   @override
   Widget build(BuildContext context) {

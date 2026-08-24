@@ -12,6 +12,7 @@ import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
 import '../../domain/logic/bill_split_math.dart';
 import '../../domain/logic/bill_split_reminder_message.dart';
+import '../../domain/logic/contact_resolution_merge.dart';
 import '../../domain/models/bill_split.dart';
 import '../../domain/models/friend_group.dart';
 import '../../domain/models/transaction_view.dart';
@@ -211,19 +212,29 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
     });
   }
 
-  /// Adds contacts picked from [ContactPickerSheet], skipping any whose
-  /// phone number matches one already added to this split (best-effort
-  /// dedup — see the plan's "Known limitations": this never cross-checks
-  /// against friends, who have no stored phone number).
-  void _addContacts(List<ExternalContactDraft> contacts) {
+  /// Adds resolved selections from [ContactPickerSheet]: a
+  /// [MatchedContactResolution] (the number matched an existing Receipt
+  /// Drop account, friend or not) merges into the same friend-id set used
+  /// by manually-picked friends — which is exactly why "picked as a friend
+  /// row and separately phone-matched" collapses to one entry for free
+  /// (`Set.add` on an already-present id is a no-op). An
+  /// [UnmatchedContactResolution] merges into the external-contacts map
+  /// exactly as Phase 1's `_addContacts` did, deduped by phone.
+  void _addResolvedContacts(List<ContactResolution> results) {
     if (_compositionLocked) return;
     setState(() {
-      final existingPhones = _selectedContacts.values.map((c) => c.phoneDigits).toSet();
-      for (final contact in contacts) {
-        if (existingPhones.contains(contact.phoneDigits)) continue;
-        _selectedContacts[contact.id] = contact;
-        existingPhones.add(contact.phoneDigits);
-      }
+      final merged = mergeContactResolutions(
+        friendIds: _selectedFriendIds,
+        contacts: _selectedContacts,
+        results: results,
+      );
+      _selectedFriendIds
+        ..clear()
+        ..addAll(merged.friendIds);
+      _selectedContacts
+        ..clear()
+        ..addAll(merged.contacts);
+      _pruneItemAssignments();
     });
   }
 
@@ -699,7 +710,7 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
           selectedContacts: _selectedContacts,
           onToggleFriend: _toggleFriend,
           onSelectGroup: _selectGroup,
-          onAddContacts: _addContacts,
+          onAddResolvedContacts: _addResolvedContacts,
           onRemoveContact: _removeContact,
           onCreateGroup: _createGroupAndRefresh,
           onContinue: _hasAnyParticipants ? _goToStep1 : null,

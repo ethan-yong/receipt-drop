@@ -158,23 +158,38 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   /// [personKey] is a [BillSplitParticipant.personKey] — a friend's
   /// `profiles.id`, or (for an external phone contact) that participant's
   /// own row id, resolved below via `_split.participants`.
+  ///
+  /// A friend-shaped participant's `resolvedDisplayName`/`resolvedAvatarUrl`
+  /// (batch-resolved in `BillSplitRepository`, friend or not) is checked
+  /// first — the local `_friends` list only contains accepted friendships,
+  /// so it alone would show a phone-matched non-friend as generic 'Friend'.
+  BillSplitParticipant? _participantFor(String personKey) =>
+      _split?.participants.where((p) => p.personKey == personKey).firstOrNull;
+
   String? _displayNameFor(String personKey) {
     if (personKey == _ownerId) return _ownerDisplayName ?? 'You';
+    final participant = _participantFor(personKey);
+    if (participant != null) {
+      if (participant.isExternalContact) return participant.contactName;
+      if (participant.resolvedDisplayName != null) return participant.resolvedDisplayName;
+    }
     for (final f in _friends) {
       if (f.otherUserId == personKey) return f.otherDisplayName;
     }
-    return _split?.participants
-        .where((p) => p.isExternalContact && p.id == personKey)
-        .firstOrNull
-        ?.contactName;
+    return null;
   }
 
   String? _avatarUrlFor(String personKey) {
     if (personKey == _ownerId) return _ownerAvatarUrl;
+    final participant = _participantFor(personKey);
+    if (participant != null) {
+      if (participant.isExternalContact) return null; // external contacts have no avatar
+      if (participant.resolvedAvatarUrl != null) return participant.resolvedAvatarUrl;
+    }
     for (final f in _friends) {
       if (f.otherUserId == personKey) return f.otherAvatarUrl;
     }
-    return null; // external contacts have no avatar
+    return null;
   }
 
   Future<void> _resolveImage() async {

@@ -24,7 +24,7 @@ class BillSplitStepWho extends StatelessWidget {
     required this.selectedContacts,
     required this.onToggleFriend,
     required this.onSelectGroup,
-    required this.onAddContacts,
+    required this.onAddResolvedContacts,
     required this.onRemoveContact,
     required this.onCreateGroup,
     required this.onContinue,
@@ -40,7 +40,7 @@ class BillSplitStepWho extends StatelessWidget {
   final Map<String, ExternalContactDraft> selectedContacts;
   final ValueChanged<String> onToggleFriend;
   final ValueChanged<FriendGroupView> onSelectGroup;
-  final ValueChanged<List<ExternalContactDraft>> onAddContacts;
+  final ValueChanged<List<ContactResolution>> onAddResolvedContacts;
   final ValueChanged<String> onRemoveContact;
   final VoidCallback onCreateGroup;
   final VoidCallback? onContinue;
@@ -166,8 +166,10 @@ class BillSplitStepWho extends StatelessWidget {
                       context,
                       alreadySelectedPhones:
                           selectedContacts.values.map((c) => c.phoneDigits).toSet(),
+                      alreadySelectedFriendIds: selectedFriendIds,
+                      friendUserIds: friends.map((f) => f.otherUserId).toSet(),
                     );
-                    if (picked != null && picked.isNotEmpty) onAddContacts(picked);
+                    if (picked != null && picked.isNotEmpty) onAddResolvedContacts(picked);
                   },
                 ),
               ],

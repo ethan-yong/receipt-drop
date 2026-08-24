@@ -11,6 +11,7 @@ import '../../core/payment_detection/payment_permission_prompt.dart';
 import '../../core/theme/receipt_sheet_theme.dart';
 import '../../data/repositories/profile_repository.dart';
 import '../../data/repositories/social_repository.dart';
+import 'phone_number_sheet.dart';
 
 /// Profile / settings tab (approved design, `Settings.dc.html`) — restyled
 /// onto the same warm cream/gold Baloo 2 system as the profile-setup screen,
@@ -428,7 +429,12 @@ class _SettingsScreenState extends State<SettingsScreen>
                         icon: Icons.person_outline,
                         title: 'Account',
                         subtitle: email,
-                        onTap: () {},
+                        onTap: () {
+                          final userId = _userId;
+                          if (userId != null) {
+                            PhoneNumberSheet.show(context, userId: userId);
+                          }
+                        },
                       ),
                       _SettingsRow(
                         icon: Icons.logout,

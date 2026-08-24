@@ -148,6 +148,24 @@ class LeaderboardEntry {
   int get rankScore => currentStreak * 100 + badgeScore;
 }
 
+/// One Receipt Drop user matched to a device-contact phone number via
+/// `find_users_by_phones()`. Never carries any other profile column — in
+/// particular, never the matched user's own phone number.
+class PhoneMatchedUser {
+  const PhoneMatchedUser({
+    required this.phoneDigits,
+    required this.userId,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+
+  /// Echoes one of the caller's own input numbers — not new information.
+  final String phoneDigits;
+  final String userId;
+  final String? displayName;
+  final String? avatarUrl;
+}
+
 /// Friends/feed/reactions. Mirrors `BadgeRepository`'s shape: a thin,
 /// single-file (no `_io`/`_web` split) wrapper over direct Supabase calls
 /// and the social `security definer` RPCs from
@@ -177,10 +195,29 @@ class SocialRepository {
               as List;
       if (rows.isEmpty) return 'No user found with that email.';
       final targetId = (rows.first as Map<String, dynamic>)['id'] as String;
+      return requestFriendByUserId(targetId);
+    } on PostgrestException catch (e) {
+      return e.code == '23505'
+          ? 'Already requested.'
+          : 'Could not send request.';
+    } on Object {
+      return 'Could not send request.';
+    }
+  }
+
+  /// Sends a friend request to an already-known user id — used by the Bill
+  /// Split contact picker's "Add Friend" action once a phone number has
+  /// been resolved to a Receipt Drop user via [findUsersByPhones]. Extracted
+  /// from [requestFriend] so that flow doesn't need a second email lookup.
+  /// Returns a human-readable error on failure, or null on success.
+  static Future<String?> requestFriendByUserId(String targetUserId) async {
+    final userId = _userId;
+    if (userId == null) return 'Sign in required.';
+    try {
       await Supabase.instance.client.from('friendships').insert({
         'id': _uuid.v4(),
         'requester_id': userId,
-        'addressee_id': targetId,
+        'addressee_id': targetUserId,
       });
       return null;
     } on PostgrestException catch (e) {
@@ -189,6 +226,61 @@ class SocialRepository {
           : 'Could not send request.';
     } on Object {
       return 'Could not send request.';
+    }
+  }
+
+  /// One phone number, resolved to an existing Receipt Drop account via
+  /// [findUsersByPhones]. [phoneDigits] echoes back one of the caller's own
+  /// input numbers (not new information) so results can be correlated to
+  /// the device contact they came from.
+  static Future<List<PhoneMatchedUser>> findUsersByPhones(
+    List<String> normalizedPhones,
+  ) async {
+    if (_userId == null || normalizedPhones.isEmpty) return const [];
+    try {
+      final rows =
+          await Supabase.instance.client.rpc(
+                'find_users_by_phones',
+                params: {'lookup_phones': normalizedPhones},
+              )
+              as List;
+      return rows.map((r) {
+        final row = r as Map<String, dynamic>;
+        return PhoneMatchedUser(
+          phoneDigits: row['phone_e164'] as String,
+          userId: row['user_id'] as String,
+          displayName: row['display_name'] as String?,
+          avatarUrl: row['avatar_url'] as String?,
+        );
+      }).toList();
+    } on Object {
+      return const [];
+    }
+  }
+
+  /// Narrow `(id, display_name, avatar_url)` lookup for known user ids, used
+  /// by `BillSplitRepository` to resolve a `friend_user_id` participant's
+  /// current display info even when they aren't an accepted friend (a
+  /// phone-matched non-friend). Best-effort: an empty map on failure.
+  static Future<Map<String, ({String? displayName, String? avatarUrl})>>
+  fetchProfileSnippets(List<String> userIds) async {
+    if (userIds.isEmpty) return const {};
+    try {
+      final rows =
+          await Supabase.instance.client.rpc(
+                'get_profile_snippets',
+                params: {'lookup_user_ids': userIds},
+              )
+              as List;
+      return {
+        for (final r in rows)
+          (r as Map<String, dynamic>)['id'] as String: (
+            displayName: r['display_name'] as String?,
+            avatarUrl: r['avatar_url'] as String?,
+          ),
+      };
+    } on Object {
+      return const {};
     }
   }
 

@@ -263,9 +263,16 @@ class _ParticipantRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final paid = participant.paid;
+    // resolvedDisplayName/resolvedAvatarUrl (BillSplitRepository, batched
+    // via get_profile_snippets()) cover any friend-shaped participant,
+    // friend or not; the local friendship lookup is a secondary fallback
+    // for a stale/failed resolution, not the primary source anymore.
     final displayName = participant.isExternalContact
         ? (participant.contactName ?? 'Contact')
-        : (friendship?.otherDisplayName ?? 'Friend');
+        : (participant.resolvedDisplayName ?? friendship?.otherDisplayName ?? 'Friend');
+    final avatarUrl = participant.isExternalContact
+        ? null
+        : (participant.resolvedAvatarUrl ?? friendship?.otherAvatarUrl);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
@@ -274,7 +281,7 @@ class _ParticipantRow extends StatelessWidget {
           Row(
             children: [
               PersonAvatar(
-                avatarUrl: participant.isExternalContact ? null : friendship?.otherAvatarUrl,
+                avatarUrl: avatarUrl,
                 displayName: displayName,
                 userId: friendship?.otherUserId ?? participant.id,
                 size: 38,

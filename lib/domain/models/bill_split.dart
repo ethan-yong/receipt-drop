@@ -25,6 +25,8 @@ class BillSplitParticipant {
     required this.friendUserId,
     this.contactName,
     this.contactPhone,
+    this.resolvedDisplayName,
+    this.resolvedAvatarUrl,
     required this.shareMyr,
     required this.paid,
     required this.paidAt,
@@ -35,6 +37,16 @@ class BillSplitParticipant {
   final String? friendUserId;
   final String? contactName;
   final String? contactPhone;
+
+  /// Populated by `BillSplitRepository._assembleSplit()` via
+  /// `SocialRepository.fetchProfileSnippets()` for every friend-shaped
+  /// participant — friend or not. Null for external contacts (use
+  /// [contactName] instead) or if resolution failed. This is what lets a
+  /// phone-matched non-friend show their real name/avatar everywhere a
+  /// split is displayed, not just immediately after being picked, since a
+  /// local "friends" list lookup alone would never find them.
+  final String? resolvedDisplayName;
+  final String? resolvedAvatarUrl;
   final double shareMyr;
   final bool paid;
   final DateTime? paidAt;
@@ -63,6 +75,8 @@ class BillSplitParticipant {
         friendUserId: friendUserId,
         contactName: contactName,
         contactPhone: contactPhone,
+        resolvedDisplayName: resolvedDisplayName,
+        resolvedAvatarUrl: resolvedAvatarUrl,
         shareMyr: shareMyr,
         paid: paid,
         paidAt: paidAt,
@@ -205,4 +219,37 @@ class ExternalContactDraft {
   /// Normalized via `lib/domain/logic/phone_number.dart` — bare digits,
   /// wa.me-ready, no leading '+'.
   final String phoneDigits;
+}
+
+/// Result of resolving one picked device-contact phone number against
+/// existing Receipt Drop accounts (`SocialRepository.findUsersByPhones`).
+/// Either it matched a user (friend or not — friendship status is a
+/// separate concept, checked by the caller against the already-loaded
+/// friend list, never implied by a match) or it didn't and becomes a plain
+/// [ExternalContactDraft], exactly as in the phone-matching-free flow.
+sealed class ContactResolution {
+  const ContactResolution();
+}
+
+/// The contact's chosen number matched an existing Receipt Drop account.
+/// The caller should add [userId] to the friend-id selection set — never to
+/// the external-contacts map — so it persists as a normal `friend_user_id`
+/// participant regardless of friendship status.
+class MatchedContactResolution extends ContactResolution {
+  const MatchedContactResolution({
+    required this.userId,
+    required this.displayName,
+    required this.avatarUrl,
+  });
+
+  final String userId;
+  final String? displayName;
+  final String? avatarUrl;
+}
+
+/// No match — becomes a normal external-contact draft, exactly Phase 1.
+class UnmatchedContactResolution extends ContactResolution {
+  const UnmatchedContactResolution(this.draft);
+
+  final ExternalContactDraft draft;
 }

@@ -5,6 +5,7 @@ import '../../core/config/env.dart';
 import '../../domain/logic/bill_split_math.dart';
 import '../../domain/models/bill_split.dart';
 import '../../domain/models/friend_group.dart';
+import 'social_repository.dart';
 
 /// Friend groups + Bill Split. Mirrors `SocialRepository`'s shape: a thin,
 /// single-file (no `_io`/`_web` split) wrapper over direct Supabase calls
@@ -118,8 +119,21 @@ class BillSplitRepository {
         .from('bill_split_participants')
         .select()
         .eq('split_id', splitId) as List;
+
+    // Resolve every friend-shaped participant's current display name/avatar
+    // in one batched call — friend or not, since a phone-matched non-friend
+    // has no entry in the caller's locally-loaded friends list to fall back
+    // on. Best-effort: an empty map just means callers fall back to their
+    // own friends-list lookup / 'Friend', same as before this existed.
+    final friendUserIds = participantRows
+        .map((r) => (r as Map<String, dynamic>)['friend_user_id'] as String?)
+        .whereType<String>()
+        .toSet()
+        .toList();
+    final snippets = await SocialRepository.fetchProfileSnippets(friendUserIds);
+
     final participants = participantRows
-        .map((r) => _participantFromRow(r as Map<String, dynamic>))
+        .map((r) => _participantFromRow(r as Map<String, dynamic>, snippets))
         .toList();
 
     var itemAssignments = const <BillSplitItemAssignment>[];
@@ -155,12 +169,19 @@ class BillSplitRepository {
     );
   }
 
-  static BillSplitParticipant _participantFromRow(Map<String, dynamic> row) {
+  static BillSplitParticipant _participantFromRow(
+    Map<String, dynamic> row,
+    Map<String, ({String? displayName, String? avatarUrl})> snippets,
+  ) {
+    final friendUserId = row['friend_user_id'] as String?;
+    final snippet = friendUserId != null ? snippets[friendUserId] : null;
     return BillSplitParticipant(
       id: row['id'] as String,
-      friendUserId: row['friend_user_id'] as String?,
+      friendUserId: friendUserId,
       contactName: row['contact_name'] as String?,
       contactPhone: row['contact_phone'] as String?,
+      resolvedDisplayName: snippet?.displayName,
+      resolvedAvatarUrl: snippet?.avatarUrl,
       shareMyr: (row['share_myr'] as num).toDouble(),
       paid: row['paid'] as bool,
       paidAt: row['paid_at'] != null ? DateTime.parse(row['paid_at'] as String) : null,
