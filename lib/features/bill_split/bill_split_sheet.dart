@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/bootstrap/app_services.dart';
 import '../../core/platform/adaptive_sheet.dart';
+import '../../core/platform/platform_feedback.dart';
 import '../../core/theme/bill_split_theme.dart';
 import '../../data/repositories/bill_split_repository.dart';
 import '../../data/repositories/profile_repository.dart';
@@ -570,10 +572,23 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
   /// external contact, then stamps the same `last_reminded_at` a friend
   /// reminder would — the UI alone decides the label ("Opened WhatsApp" vs
   /// "Reminder sent") based on [BillSplitParticipant.isExternalContact].
+  ///
+  /// If WhatsApp isn't installed, falls back to the OS share sheet instead
+  /// and does NOT stamp a reminder — we can't confirm WhatsApp actually
+  /// opened, so the pill stays tappable for a retry rather than falsely
+  /// claiming "Opened WhatsApp". An invalid/missing phone number is a
+  /// client-side validation failure and never touches the split at all.
   Future<void> _remindContactViaWhatsApp(BillSplitParticipant participant) async {
     final tx = _tx;
     final phone = participant.contactPhone;
-    if (tx == null || phone == null) return;
+    if (tx == null) return;
+    if (phone == null) {
+      PlatformFeedback.showError(
+        context,
+        "This contact doesn't have a valid phone number for WhatsApp.",
+      );
+      return;
+    }
     final ok = await _ensurePersisted();
     if (!ok || !mounted) return;
     final split = _split;
@@ -585,10 +600,20 @@ class _BillSplitSheetState extends State<BillSplitSheet> {
       assignedItems: _assignedItemsFor(participant, split),
       totalOwedMyr: participant.shareMyr,
     );
-    await openWhatsAppReminder(phoneDigits: phone, message: message);
+    final installed = await isWhatsAppInstalled();
     if (!mounted) return;
-    await BillSplitRepository.sendReminder(participant.id);
-    _markReminded(participant.id);
+    if (installed) {
+      await openWhatsAppReminder(phoneDigits: phone, message: message);
+      if (!mounted) return;
+      await BillSplitRepository.sendReminder(participant.id);
+      _markReminded(participant.id);
+    } else {
+      PlatformFeedback.showMessage(
+        context,
+        "WhatsApp isn't installed — sharing the reminder instead.",
+      );
+      await SharePlus.instance.share(ShareParams(text: message));
+    }
   }
 
   void _markReminded(String participantId) {

@@ -97,5 +97,9 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- WhatsApp install-detection probe (`whatsapp://send`) used to
+             decide between opening WhatsApp directly and falling back to the
+             OS share sheet — see lib/features/bill_split/whatsapp_launcher_io.dart. -->
+        <package android:name="com.whatsapp"/>
     </queries>
 </manifest>

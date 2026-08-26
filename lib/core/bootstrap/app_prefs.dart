@@ -4,6 +4,8 @@ const _kOnboardingComplete = 'onboarding_complete';
 const _kProfileSetupComplete = 'profile_setup_complete';
 const _kInsightsLastGeneratedAt = 'insights_last_generated_at';
 const _kInsightsSyncedTxSinceLastCycle = 'insights_synced_tx_since_last_cycle';
+const _kPaymentPermissionPromptDone = 'payment_permission_prompt_done';
+
 /// Persisted first-run flags (onboarding) + insights generation guard state.
 class AppPrefs {
   AppPrefs._();
@@ -28,6 +30,15 @@ class AppPrefs {
     await _prefs?.setBool(_kProfileSetupComplete, true);
   }
 
+  /// Once-per-install gate for the auto payment-permission walkthrough.
+  /// Manual Profile → Payment detection still prompts regardless of this flag.
+  static bool get paymentPermissionPromptDone =>
+      _prefs?.getBool(_kPaymentPermissionPromptDone) ?? false;
+
+  static Future<void> setPaymentPermissionPromptDone() async {
+    await _prefs?.setBool(_kPaymentPermissionPromptDone, true);
+  }
+
   static DateTime? get insightsLastGeneratedAt {
     final ms = _prefs?.getInt(_kInsightsLastGeneratedAt);
     return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
@@ -48,6 +59,7 @@ class AppPrefs {
   static Future<void> clearLocalCache() async {
     await _prefs?.remove(_kOnboardingComplete);
     await _prefs?.remove(_kProfileSetupComplete);
+    await _prefs?.remove(_kPaymentPermissionPromptDone);
   }
 
   /// Test helper: reset stored prefs (widget tests).

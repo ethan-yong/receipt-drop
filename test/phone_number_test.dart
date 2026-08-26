@@ -32,5 +32,21 @@ void main() {
       const raw = '013-987 6543';
       expect(normalizePhoneForWhatsApp(raw), normalizePhoneForWhatsApp(raw));
     });
+
+    test('0123456789 (bare local, no separators) normalizes with the default country code', () {
+      expect(normalizePhoneForWhatsApp('0123456789'), '60123456789');
+    });
+
+    test('+60123456789 (explicit country code, no separators) drops only the plus', () {
+      expect(normalizePhoneForWhatsApp('+60123456789'), '60123456789');
+    });
+
+    test('+60 12 345 6789 (explicit country code, space-separated) normalizes the same way', () {
+      expect(normalizePhoneForWhatsApp('+60 12 345 6789'), '60123456789');
+    });
+
+    test('012-345-6789 (dash-separated local) normalizes the same way', () {
+      expect(normalizePhoneForWhatsApp('012-345-6789'), '60123456789');
+    });
   });
 }

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/payment_detection/payment_permission_prompt.dart';
 import '../core/platform/adaptive_sheet.dart';
 import '../core/platform/platform_feedback.dart';
 import '../core/platform/platform_utils.dart';
@@ -22,6 +24,18 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  @override
+  void initState() {
+    super.initState();
+    // Once-per-install payment-detection permission walk (notification access
+    // + display over other apps). Runs after the first frame so a dialog has
+    // a mounted navigator; no-ops on iOS/web and when already asked.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(PaymentPermissionPrompt.maybeRunOnAppEnter(context));
+    });
+  }
+
   void _goBranch(int index) {
     PlatformFeedback.selectionTap();
     widget.navigationShell.goBranch(

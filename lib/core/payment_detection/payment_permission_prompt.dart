@@ -1,43 +1,108 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../widgets/receipt_sheet_widgets.dart';
+import '../bootstrap/app_prefs.dart';
 import '../theme/receipt_sheet_theme.dart';
 import 'payment_event_bridge.dart';
 
-/// User-initiated setup walkthrough for the two payment-detection permissions
-/// that have no system runtime dialog (unlike POST_NOTIFICATIONS / location).
+/// Setup walkthrough for the two payment-detection permissions that have no
+/// system runtime dialog (unlike POST_NOTIFICATIONS / location).
 ///
 /// Android only allows these via a Settings toggle, so this shows an in-app
 /// rationale then opens that toggle — the same pattern as "Allow" for
 /// notifications, just one extra tap. No-ops on iOS/web.
 ///
-/// This is only ever triggered by the user explicitly turning on the Profile →
-/// "Payment detection" toggle — there is no automatic/lifecycle prompting. It
-/// walks the two permissions in order (notification access, then the overlay
-/// that renders the category picker), prompting for whichever is still
-/// missing. Opening a system Settings screen ends the walk for that tap; the
-/// Settings rows (with their warning state) cover any step the user didn't
-/// complete in one pass.
+/// Triggered:
+/// - Automatically once per install when the user first enters [MainShell]
+///   after login (`maybeRunOnAppEnter`), if payment detection is on and any
+///   permission is still missing.
+/// - Manually when the user turns on Profile → "Payment detection"
+///   (`runSetupWalkthrough`), regardless of the once-per-install flag.
+///
+/// Walks notification access, then overlay, prompting for whichever is still
+/// missing. After opening a Settings screen it waits for the app to resume
+/// before continuing to the next step.
 abstract final class PaymentPermissionPrompt {
   static bool _inFlight = false;
+  static Completer<void>? _resumeCompleter;
 
-  /// Runs the permission walkthrough. Call after enabling payment detection.
+  /// Pure gate for the once-per-install auto-prompt. No I/O — callers supply
+  /// the current platform / prefs / permission snapshot.
+  static bool shouldAutoPrompt({
+    required bool isAndroid,
+    required bool promptAlreadyDone,
+    required bool paymentDetectionEnabled,
+    required bool notificationAccessGranted,
+    required bool overlayPermissionGranted,
+  }) {
+    if (!isAndroid) return false;
+    if (promptAlreadyDone) return false;
+    if (!paymentDetectionEnabled) return false;
+    if (notificationAccessGranted && overlayPermissionGranted) return false;
+    return true;
+  }
+
+  /// Once-per-install auto walkthrough. Call from [MainShell] after the first
+  /// frame. Marks the prompt done whether the user grants, declines, or both
+  /// permissions were already present when checked.
+  static Future<void> maybeRunOnAppEnter(BuildContext context) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    if (AppPrefs.paymentPermissionPromptDone) return;
+
+    final detectionEnabled =
+        await PaymentEventBridge.isPaymentDetectionEnabled();
+    final notificationGranted =
+        await PaymentEventBridge.isNotificationAccessGranted();
+    final overlayGranted =
+        await PaymentEventBridge.isOverlayPermissionGranted();
+
+    final shouldPrompt = shouldAutoPrompt(
+      isAndroid: true,
+      promptAlreadyDone: AppPrefs.paymentPermissionPromptDone,
+      paymentDetectionEnabled: detectionEnabled,
+      notificationAccessGranted: notificationGranted,
+      overlayPermissionGranted: overlayGranted,
+    );
+
+    if (!shouldPrompt) {
+      // Both already granted (or detection off) — never ask again this install.
+      await AppPrefs.setPaymentPermissionPromptDone();
+      return;
+    }
+
+    if (!context.mounted) return;
+    await runSetupWalkthrough(context);
+    await AppPrefs.setPaymentPermissionPromptDone();
+  }
+
+  /// Runs the permission walkthrough. Call after enabling payment detection
+  /// from Settings, or from [maybeRunOnAppEnter].
   static Future<void> runSetupWalkthrough(BuildContext context) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     if (_inFlight) return;
     _inFlight = true;
     try {
-      final openedSettings = await _promptNotificationAccess(context);
-      if (openedSettings || !context.mounted) return;
-      await _promptOverlay(context);
+      final openedNotificationSettings =
+          await _promptNotificationAccess(context);
+      if (!context.mounted) return;
+      if (openedNotificationSettings) {
+        await _waitForResume();
+        if (!context.mounted) return;
+      }
+      final openedOverlaySettings = await _promptOverlay(context);
+      if (!context.mounted) return;
+      if (openedOverlaySettings) {
+        await _waitForResume();
+      }
     } finally {
       _inFlight = false;
     }
   }
 
-  /// Returns true when a system Settings screen was opened, so the overlay
-  /// step waits (the user has left the app to grant notification access).
+  /// Returns true when a system Settings screen was opened.
   static Future<bool> _promptNotificationAccess(BuildContext context) async {
     if (await PaymentEventBridge.isNotificationAccessGranted()) return false;
     if (!context.mounted) return false;
@@ -59,9 +124,10 @@ abstract final class PaymentPermissionPrompt {
     return false;
   }
 
-  static Future<void> _promptOverlay(BuildContext context) async {
-    if (await PaymentEventBridge.isOverlayPermissionGranted()) return;
-    if (!context.mounted) return;
+  /// Returns true when a system Settings screen was opened.
+  static Future<bool> _promptOverlay(BuildContext context) async {
+    if (await PaymentEventBridge.isOverlayPermissionGranted()) return false;
+    if (!context.mounted) return false;
 
     final allow = await _showRationale(
       context,
@@ -74,6 +140,43 @@ abstract final class PaymentPermissionPrompt {
     );
     if (allow == true) {
       await PaymentEventBridge.openOverlayPermissionSettings();
+      return true;
+    }
+    return false;
+  }
+
+  /// Pauses the walk until the app returns from a system Settings screen.
+  static Future<void> _waitForResume() async {
+    if (_resumeCompleter != null) return _resumeCompleter!.future;
+    final completer = Completer<void>();
+    _resumeCompleter = completer;
+
+    final binding = WidgetsBinding.instance;
+    late final _LifecycleObserver observer;
+    observer = _LifecycleObserver((state) {
+      if (state == AppLifecycleState.resumed && !completer.isCompleted) {
+        completer.complete();
+      }
+    });
+    binding.addObserver(observer);
+    try {
+      // Already resumed (e.g. Settings opened and closed instantly, or
+      // platform quirk) — don't hang forever.
+      if (binding.lifecycleState == AppLifecycleState.resumed) {
+        // Give the pause a chance to flip to inactive/paused first.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        if (binding.lifecycleState == AppLifecycleState.resumed &&
+            !completer.isCompleted) {
+          completer.complete();
+        }
+      }
+      await completer.future.timeout(
+        const Duration(minutes: 5),
+        onTimeout: () {},
+      );
+    } finally {
+      binding.removeObserver(observer);
+      _resumeCompleter = null;
     }
   }
 
@@ -90,6 +193,15 @@ abstract final class PaymentPermissionPrompt {
       builder: (ctx) => _RationaleDialog(icon: icon, title: title, body: body),
     );
   }
+}
+
+class _LifecycleObserver with WidgetsBindingObserver {
+  _LifecycleObserver(this._onState);
+
+  final void Function(AppLifecycleState state) _onState;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => _onState(state);
 }
 
 /// The gold-badge / cream-card rationale dialog shared by both

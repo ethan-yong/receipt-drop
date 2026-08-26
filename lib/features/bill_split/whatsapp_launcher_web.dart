@@ -8,3 +8,8 @@ Future<bool> openWhatsAppReminder({
 }) {
   throw UnsupportedError('WhatsApp reminders are not supported on web.');
 }
+
+/// Always false: WhatsApp app-install probing is meaningless on web, and
+/// this branch is unreachable anyway (gated behind `PlatformUtils.isMobile`
+/// upstream).
+Future<bool> isWhatsAppInstalled() => Future.value(false);

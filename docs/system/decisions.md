@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Auto-prompt payment permissions once after login (2026-08-26)
+
+**Decision**: On Android, run the existing `PaymentPermissionPrompt` walkthrough (notification access, then display-over-other-apps) automatically once per install as soon as the user lands in `MainShell` after login / session restore. Persist `AppPrefs.paymentPermissionPromptDone` so "Not now" or a completed walk never auto-asks again. Profile → Payment detection still calls `runSetupWalkthrough` manually and ignores that flag. Opening a Settings screen mid-walk now waits for `AppLifecycleState.resumed` before the next step (previously the overlay step was skipped after notification Settings opened).
+
+**Reason**: Payment detection needs both Settings-based permissions to work; burying the walk behind a Profile toggle meant most users never granted them. Asking immediately on first app enter matches the product ask without re-nagging every launch.
+
+**Alternatives considered**: (1) re-prompt every launch until granted (rejected — too aggressive / Play overlay scrutiny); (2) new onboarding page before `/auth` (rejected — delays login, duplicates rationale copy); (3) fire from `onAuthStateChange` in `main.dart` (rejected — no reliable `BuildContext`, races `/profile-setup`).
+
+**Tradeoffs**: Overlay still requires leaving the app (Android has no runtime dialog). Force-killing while in Settings before the flag is written re-shows the walk next launch (acceptable under once-per-install). iOS/web remain no-ops. Does not cover OEM autostart / "granted but inactive" — Settings still owns that path.
+
+---
+
 ## Pigeon save-success animation removed (2026-08-20)
 
 **Decision**: Deleted `SaveSuccessScreen`, its painters (`PigeonPainter`, `MailboxPainter`, scene/cargo artists), the `/save-success` route, and `test/save_success_variant_test.dart`. After a confirmed save, the app navigates directly to `ReceiptSavedScreen` (single receipt) or Insights (batch of 2+). Renamed `deferSaveSuccessNav` → `deferPostSaveNav` on `PendingImportService.processImport`.

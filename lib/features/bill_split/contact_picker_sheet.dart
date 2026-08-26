@@ -13,7 +13,7 @@ import '../../domain/models/bill_split.dart';
 import '../../widgets/receipt_sheet_widgets.dart';
 import 'person_avatar.dart';
 
-enum _PickerStatus { loading, needsPermission, permanentlyDenied, ready }
+enum _PickerStatus { loading, needsPermission, permanentlyDenied, error, ready }
 
 /// Lets the payer pick people from their phone's own contacts to split a
 /// bill with. A picked number is resolved against existing Receipt Drop
@@ -89,33 +89,61 @@ class _ContactPickerBodyState extends State<_ContactPickerBody> {
   }
 
   Future<void> _load() async {
-    final permission = await ph.Permission.contacts.status;
-    if (permission.isGranted) {
-      await _loadContacts();
-      return;
+    try {
+      final permission = await ph.Permission.contacts.status;
+      if (permission.isGranted) {
+        await _loadContacts();
+        return;
+      }
+      if (permission.isPermanentlyDenied) {
+        if (mounted) setState(() => _status = _PickerStatus.permanentlyDenied);
+        return;
+      }
+      if (mounted) setState(() => _status = _PickerStatus.needsPermission);
+    } catch (_) {
+      if (mounted) setState(() => _status = _PickerStatus.error);
     }
-    if (permission.isPermanentlyDenied) {
-      if (mounted) setState(() => _status = _PickerStatus.permanentlyDenied);
-      return;
-    }
-    if (mounted) setState(() => _status = _PickerStatus.needsPermission);
   }
 
   Future<void> _requestPermission() async {
     setState(() => _status = _PickerStatus.loading);
-    final granted = await FlutterContacts.requestPermission();
-    if (!mounted) return;
-    if (!granted) {
-      final status = await ph.Permission.contacts.status;
-      setState(() => _status =
-          status.isPermanentlyDenied ? _PickerStatus.permanentlyDenied : _PickerStatus.needsPermission);
-      return;
+    try {
+      final granted = await FlutterContacts.requestPermission();
+      if (!mounted) return;
+      if (!granted) {
+        final status = await ph.Permission.contacts.status;
+        setState(() => _status =
+            status.isPermanentlyDenied ? _PickerStatus.permanentlyDenied : _PickerStatus.needsPermission);
+        return;
+      }
+      await _loadContacts();
+    } catch (_) {
+      if (mounted) setState(() => _status = _PickerStatus.error);
     }
-    await _loadContacts();
   }
 
+  /// Loads the device's contacts. Right after a permission grant, Android's
+  /// contacts-provider permission cache can briefly lag behind the actual
+  /// grant, so a call here can transiently throw — without a retry and an
+  /// error state, that unhandled exception used to leave [_status] stuck on
+  /// `loading` forever, only recoverable by closing and reopening the sheet
+  /// (a fresh [State] gets a second, by-then-unraced attempt). One short
+  /// retry clears that race in place; a real failure now surfaces a "Try
+  /// again" prompt instead of an indefinite spinner.
   Future<void> _loadContacts() async {
-    final contacts = await FlutterContacts.getContacts(withProperties: true);
+    List<Contact> contacts;
+    try {
+      contacts = await FlutterContacts.getContacts(withProperties: true);
+    } catch (_) {
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      try {
+        contacts = await FlutterContacts.getContacts(withProperties: true);
+      } catch (_) {
+        if (mounted) setState(() => _status = _PickerStatus.error);
+        return;
+      }
+    }
     if (!mounted) return;
     contacts.sort((a, b) => a.displayName.compareTo(b.displayName));
     setState(() {
@@ -236,6 +264,15 @@ class _ContactPickerBodyState extends State<_ContactPickerBody> {
               'to add people from your phone contacts.',
           ctaLabel: 'Open Settings',
           onTap: ph.openAppSettings,
+        );
+      case _PickerStatus.error:
+        return _PermissionPrompt(
+          message: "Couldn't load your contacts. Please try again.",
+          ctaLabel: 'Try again',
+          onTap: () {
+            setState(() => _status = _PickerStatus.loading);
+            _load();
+          },
         );
       case _PickerStatus.ready:
         return _buildList();
