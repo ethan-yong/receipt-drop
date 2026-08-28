@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/payment_detection/payment_event_drain_listener.dart';
 import 'core/platform/platform_utils.dart';
 import 'core/theme/app_theme.dart';
 import 'features/share/share_intent_listener.dart';
@@ -24,8 +25,10 @@ class ReceiptDropApp extends StatelessWidget {
       theme: theme ?? buildReceiptDropTheme(),
       routerConfig: routerConfig,
       builder: (context, child) {
-        Widget result = ShareIntentListener(
-          child: child ?? const SizedBox.shrink(),
+        Widget result = PaymentEventDrainListener(
+          child: ShareIntentListener(
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
         if (PlatformUtils.isCupertino) {
           result = CupertinoTheme(

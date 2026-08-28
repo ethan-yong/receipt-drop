@@ -11,6 +11,12 @@
     <!-- "Display over other apps" — required to show the payment-detected
          floating overlay card on top of whatever app the user is in. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <!-- Lets the app ask to be exempted from Doze. Without the exemption the
+         OS holds notification-listener callbacks while the device is idle and
+         releases them in a burst on the next wake, so a payment is detected
+         minutes to hours after it happened. The user still has to approve the
+         system dialog; see MainActivity.requestIgnoreBatteryOptimizations. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <application
         android:label="Receipt Drop"
         android:name="${applicationName}"

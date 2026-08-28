@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
@@ -66,6 +67,12 @@ class MainActivity : FlutterActivity() {
                         startActivity(autostartSettingsIntent())
                         result.success(null)
                     }
+                    "isBatteryOptimizationIgnored" ->
+                        result.success(isBatteryOptimizationIgnored())
+                    "requestIgnoreBatteryOptimizations" -> {
+                        requestIgnoreBatteryOptimizations()
+                        result.success(null)
+                    }
                     "isOverlayPermissionGranted" -> result.success(Settings.canDrawOverlays(this))
                     "openOverlayPermissionSettings" -> {
                         startActivity(
@@ -95,6 +102,38 @@ class MainActivity : FlutterActivity() {
 
     private fun isNotificationAccessGranted(): Boolean {
         return NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+    }
+
+    /// Whether the app is exempt from Doze.
+    ///
+    /// This is the difference between payment detection being prompt and
+    /// appearing to fire at random. While the device is idle the OS does not
+    /// deliver notification-listener callbacks at all — it releases them in a
+    /// burst on the next wake — so without the exemption a payment made
+    /// before an idle stretch surfaces minutes to hours later, or seemingly
+    /// only once the user opens the app (which is itself just what wakes the
+    /// process).
+    private fun isBatteryOptimizationIgnored(): Boolean {
+        val powerManager = getSystemService(PowerManager::class.java) ?: return false
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /// Shows the system's exemption dialog, falling back to the all-apps
+    /// battery-optimization list when the direct request doesn't resolve
+    /// (some OEM skins remove that Activity, and Play-distributed builds are
+    /// restricted from the direct intent).
+    private fun requestIgnoreBatteryOptimizations() {
+        if (isBatteryOptimizationIgnored()) return
+        val direct = Intent(
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:$packageName"),
+        )
+        val intent = if (direct.resolveActivity(packageManager) != null) {
+            direct
+        } else {
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        }
+        runCatching { startActivity(intent) }
     }
 
     /// Reports whether notification detection is permitted *and* actually

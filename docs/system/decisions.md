@@ -14,6 +14,23 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## Payment detection: Doze exemption, an overlay queue, and a resume-time drain (2026-08-29)
+
+**Decision**: four changes to the notification payment-detection path, all driven by on-device reproduction rather than inspection:
+
+1. Ask for the Doze exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`), surfaced as an "Unrestricted battery use" row in Profile → Payment detection and as a third step in `PaymentPermissionPrompt`'s walkthrough.
+2. A notification delivered more than `STALE_NOTIFICATION_MS` (2 min) after the payment no longer shows a floating card. It is queued with a null `category` and reaches the user through the existing needs-review banner instead.
+3. `PaymentOverlayService` queues cards (`MAX_PENDING = 4`) instead of tearing the current window down and adding a replacement. Overflow, a destroyed service, and a missing overlay permission all divert to the same durable queue rather than dropping the payment.
+4. `PaymentEventDrainService.drainAndIngest()` runs on every resume (`PaymentEventDrainListener` in `app.dart`), not only from `main()`. It also passes the event's `occurredAt` through to the new `IngestReceiptRequest.occurredAt`, and the dedup cache entry is now written only after the LLM returns a verdict, with up to 3 attempts.
+
+**Reason**: each fixed a separately reproduced failure. Doze does not deliver notification-listener callbacks at all — a notification posted in forced deep idle produced zero listener activity for 36s and fired the instant the device woke, which is what "it appears an hour later, or only when I open the app" actually was. Three notifications posted together showed and destroyed the overlay window three times in 83 ms (`Total frames rendered: 0` while a single card sat idle, so the card itself never flickered — the churn did), and only the last payment survived to be categorized. And because the notification listener keeps the process alive, resuming the app reuses the existing Flutter engine, so a startup-only drain left categorized payments sitting in SharedPreferences indefinitely — confirmed by tapping a category, resuming, seeing nothing, then force-stopping and watching the receipt appear.
+
+**Alternatives considered**: showing the stale card anyway (rejected — it interrupts over an unrelated app about a payment the user has moved on from, which is what read as "glitchy"); showing only the newest card of a burst and discarding the rest (rejected — silently loses real payments); smoothing the replace animation without queueing (rejected — treats the flicker as a rendering problem when it is dropped work); draining on a timer (rejected — resume is the exact moment the queue can change).
+
+**Tradeoffs**: a burst can now hold the screen for up to 4 × 12s of consecutive cards before the rest divert to review. The Doze exemption is a user-approved system dialog that can be declined, so the Settings row keeps a warning state and the feature must stay correct without it — which is precisely what the stale-diversion path buys. Timeout and "Not now" still discard the payment deliberately; only cards the user never got the chance to answer are rescued. `IngestReceiptRequest.occurredAt` is new and nullable, so every other capture flow keeps stamping insert time.
+
+---
+
 ## Pigeon save-success animation removed (2026-08-20)
 
 **Decision**: Deleted `SaveSuccessScreen`, its painters (`PigeonPainter`, `MailboxPainter`, scene/cargo artists), the `/save-success` route, and `test/save_success_variant_test.dart`. After a confirmed save, the app navigates directly to `ReceiptSavedScreen` (single receipt) or Insights (batch of 2+). Renamed `deferSaveSuccessNav` → `deferPostSaveNav` on `PendingImportService.processImport`.

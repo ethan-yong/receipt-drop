@@ -14,8 +14,9 @@ import 'payment_event_bridge.dart';
 ///
 /// This is only ever triggered by the user explicitly turning on the Profile →
 /// "Payment detection" toggle — there is no automatic/lifecycle prompting. It
-/// walks the two permissions in order (notification access, then the overlay
-/// that renders the category picker), prompting for whichever is still
+/// walks the permissions in order (notification access, the overlay that
+/// renders the category picker, then the Doze exemption that decides whether
+/// detection is prompt or hours late), prompting for whichever is still
 /// missing. Opening a system Settings screen ends the walk for that tap; the
 /// Settings rows (with their warning state) cover any step the user didn't
 /// complete in one pass.
@@ -28,9 +29,11 @@ abstract final class PaymentPermissionPrompt {
     if (_inFlight) return;
     _inFlight = true;
     try {
-      final openedSettings = await _promptNotificationAccess(context);
-      if (openedSettings || !context.mounted) return;
-      await _promptOverlay(context);
+      if (await _promptNotificationAccess(context)) return;
+      if (!context.mounted) return;
+      if (await _promptOverlay(context)) return;
+      if (!context.mounted) return;
+      await _promptBatteryOptimization(context);
     } finally {
       _inFlight = false;
     }
@@ -59,9 +62,9 @@ abstract final class PaymentPermissionPrompt {
     return false;
   }
 
-  static Future<void> _promptOverlay(BuildContext context) async {
-    if (await PaymentEventBridge.isOverlayPermissionGranted()) return;
-    if (!context.mounted) return;
+  static Future<bool> _promptOverlay(BuildContext context) async {
+    if (await PaymentEventBridge.isOverlayPermissionGranted()) return false;
+    if (!context.mounted) return false;
 
     final allow = await _showRationale(
       context,
@@ -74,6 +77,32 @@ abstract final class PaymentPermissionPrompt {
     );
     if (allow == true) {
       await PaymentEventBridge.openOverlayPermissionSettings();
+      return true;
+    }
+    return false;
+  }
+
+  /// The step that decides whether detection feels instant or broken. While
+  /// the phone is dozing Android simply doesn't deliver notifications to
+  /// listeners, so without this a payment is picked up whenever the device
+  /// next wakes — which the user experiences as the picker appearing at a
+  /// random time, or only after they open the app.
+  static Future<void> _promptBatteryOptimization(BuildContext context) async {
+    if (await PaymentEventBridge.isBatteryOptimizationIgnored()) return;
+    if (!context.mounted) return;
+
+    final allow = await _showRationale(
+      context,
+      icon: '⚡',
+      title: 'Allow unrestricted battery use',
+      body:
+          'Android pauses background apps to save power, which can delay a '
+          'payment from being noticed until your phone next wakes up. '
+          'Allowing unrestricted use lets Receipt Drop catch payments as they '
+          'happen.',
+    );
+    if (allow == true) {
+      await PaymentEventBridge.requestIgnoreBatteryOptimizations();
     }
   }
 

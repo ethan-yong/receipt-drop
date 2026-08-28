@@ -140,4 +140,31 @@ object PaymentLogger {
     fun eventQueued(id: String) {
         Log.d(TAG, "event queued: id=$id")
     }
+
+    /** A payment saved without the user ever picking a category — it goes to
+     * the in-app review queue instead. [reason] names which guard diverted
+     * it, since "why didn't the card show?" is otherwise unanswerable from a
+     * field report. */
+    fun eventQueuedForReview(id: String, reason: String) {
+        Log.d(TAG, "event queued for review: id=$id reason=$reason")
+    }
+
+    /** The notification was delivered too long after the payment to justify
+     * interrupting the user with a floating card (see
+     * PaymentNotificationListenerService.STALE_NOTIFICATION_MS). */
+    fun staleNotificationDiverted(event: PaymentNotificationEvent, ageMs: Long) {
+        Log.d(
+            TAG,
+            "stale notification diverted to review queue: " +
+                "pkg=${event.sourcePackage} ageMs=$ageMs",
+        )
+    }
+
+    fun llmCallRetrying(event: PaymentNotificationEvent, attempt: Int, reason: String) {
+        Log.w(
+            TAG,
+            "retrying payment notification understanding: " +
+                "pkg=${event.sourcePackage} attempt=$attempt reason=$reason",
+        )
+    }
 }

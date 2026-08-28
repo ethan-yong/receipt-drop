@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// A payment event captured natively (Google Wallet notification detected,
-/// user picked a category from the floating overlay) and durably queued on
-/// the Android side, waiting for Flutter to save it as a real transaction.
+/// A payment event captured natively (payment notification detected) and
+/// durably queued on the Android side, waiting for Flutter to save it as a
+/// real transaction.
 /// See android/app/src/main/kotlin/.../paymentdetect/PaymentEventQueueStore.kt.
 class QueuedPaymentEvent {
   const QueuedPaymentEvent({
@@ -11,6 +11,7 @@ class QueuedPaymentEvent {
     required this.merchantRaw,
     required this.amountMyr,
     required this.category,
+    required this.suggestedCategory,
     required this.sourcePackage,
     required this.occurredAt,
     required this.fingerprint,
@@ -21,7 +22,8 @@ class QueuedPaymentEvent {
       id: map['id'] as String,
       merchantRaw: map['merchantRaw'] as String,
       amountMyr: (map['amountMyr'] as num).toDouble(),
-      category: map['category'] as String,
+      category: map['category'] as String?,
+      suggestedCategory: map['suggestedCategory'] as String?,
       sourcePackage: map['sourcePackage'] as String,
       occurredAt: DateTime.fromMillisecondsSinceEpoch(
         map['occurredAtEpochMs'] as int,
@@ -33,10 +35,23 @@ class QueuedPaymentEvent {
   final String id;
   final String merchantRaw;
   final double amountMyr;
-  final String category;
+
+  /// The category the user tapped on the floating overlay. Null when the
+  /// overlay was never shown — a notification the OS delivered too late to
+  /// interrupt the user over (see [suggestedCategory]).
+  final String? category;
+
+  /// Native [CategoryMatcher]'s guess, carried so an uncategorized event
+  /// still lands on a sensible default when it goes to the review queue.
+  final String? suggestedCategory;
+
   final String sourcePackage;
   final DateTime occurredAt;
   final String fingerprint;
+
+  /// True when no one has confirmed a category for this event yet, so it must
+  /// reach the user as a review-queue item rather than a settled transaction.
+  bool get needsReview => category == null;
 }
 
 /// Whether payment detection is permitted *and* actually running.
@@ -166,6 +181,34 @@ abstract final class PaymentEventBridge {
       await _channel.invokeMethod<void>('openAutostartSettings');
     } on Object {
       // Best-effort — nothing else to do if the settings screen can't open.
+    }
+  }
+
+  /// Whether the OS will let this app run while the device is dozing.
+  ///
+  /// Without the exemption, Doze holds notification-listener callbacks until
+  /// the device next wakes: a payment made before an idle stretch is detected
+  /// minutes to hours late, or seemingly "only when you open the app" (which
+  /// is itself just what wakes the process). This is the difference between
+  /// the feature working and appearing to fire at random.
+  static Future<bool> isBatteryOptimizationIgnored() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return false;
+    try {
+      final ignored = await _channel.invokeMethod<bool>(
+        'isBatteryOptimizationIgnored',
+      );
+      return ignored ?? false;
+    } on Object {
+      return false;
+    }
+  }
+
+  static Future<void> requestIgnoreBatteryOptimizations() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await _channel.invokeMethod<void>('requestIgnoreBatteryOptimizations');
+    } on Object {
+      // Best-effort — the state re-reads from native on next resume.
     }
   }
 

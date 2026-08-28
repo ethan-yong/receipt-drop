@@ -16,7 +16,16 @@ data class QueuedPaymentEvent(
     val id: String,
     val merchantRaw: String,
     val amountMyr: Double,
-    val category: String,
+    /**
+     * The category the user tapped on the overlay, or null when the overlay
+     * was never shown because the OS delivered the notification too late to
+     * interrupt over. Flutter routes a null-category event to the in-app
+     * review queue instead of saving it as a settled transaction.
+     */
+    val category: String?,
+    /** [CategoryMatcher]'s guess, so an uncategorized event still has a
+     * sensible default to review rather than landing on "Others". */
+    val suggestedCategory: String?,
     val sourcePackage: String,
     val occurredAtEpochMs: Long,
     val fingerprint: String,
@@ -26,6 +35,7 @@ data class QueuedPaymentEvent(
         "merchantRaw" to merchantRaw,
         "amountMyr" to amountMyr,
         "category" to category,
+        "suggestedCategory" to suggestedCategory,
         "sourcePackage" to sourcePackage,
         "occurredAtEpochMs" to occurredAtEpochMs,
         "fingerprint" to fingerprint,
@@ -35,7 +45,10 @@ data class QueuedPaymentEvent(
         put("id", id)
         put("merchantRaw", merchantRaw)
         put("amountMyr", amountMyr)
-        put("category", category)
+        // putOpt drops the key entirely when the value is null, which
+        // fromJson's optString-based reads already treat as absent.
+        putOpt("category", category)
+        putOpt("suggestedCategory", suggestedCategory)
         put("sourcePackage", sourcePackage)
         put("occurredAtEpochMs", occurredAtEpochMs)
         put("fingerprint", fingerprint)
@@ -46,11 +59,20 @@ data class QueuedPaymentEvent(
             id = json.getString("id"),
             merchantRaw = json.getString("merchantRaw"),
             amountMyr = json.getDouble("amountMyr"),
-            category = json.getString("category"),
+            category = optNullableString(json, "category"),
+            suggestedCategory = optNullableString(json, "suggestedCategory"),
             sourcePackage = json.getString("sourcePackage"),
             occurredAtEpochMs = json.getLong("occurredAtEpochMs"),
             fingerprint = json.getString("fingerprint"),
         )
+
+        /** Tolerates an absent key so events queued by an older build — which
+         * always wrote a category and never wrote a suggestion — still parse
+         * after an app update instead of being silently dropped. */
+        private fun optNullableString(json: JSONObject, key: String): String? {
+            if (!json.has(key) || json.isNull(key)) return null
+            return json.optString(key).takeUnless { it.isBlank() }
+        }
     }
 }
 

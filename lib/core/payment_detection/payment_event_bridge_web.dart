@@ -6,6 +6,7 @@ class QueuedPaymentEvent {
     required this.merchantRaw,
     required this.amountMyr,
     required this.category,
+    required this.suggestedCategory,
     required this.sourcePackage,
     required this.occurredAt,
     required this.fingerprint,
@@ -14,10 +15,13 @@ class QueuedPaymentEvent {
   final String id;
   final String merchantRaw;
   final double amountMyr;
-  final String category;
+  final String? category;
+  final String? suggestedCategory;
   final String sourcePackage;
   final DateTime occurredAt;
   final String fingerprint;
+
+  bool get needsReview => category == null;
 }
 
 enum PaymentListenerState { notGranted, grantedButInactive, active }
@@ -57,6 +61,10 @@ abstract final class PaymentEventBridge {
   static Future<void> openNotificationAccessSettings() async {}
 
   static Future<void> openAutostartSettings() async {}
+
+  static Future<bool> isBatteryOptimizationIgnored() async => false;
+
+  static Future<void> requestIgnoreBatteryOptimizations() async {}
 
   static Future<bool> isOverlayPermissionGranted() async => false;
 
