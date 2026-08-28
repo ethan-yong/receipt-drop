@@ -1,0 +1,21 @@
+Receipt Drop App Store icon
+Generation mode: built-in image_gen tool
+Generated: 2026-08-28
+Source master: receipt-drop-app-store-v2-master.png
+1024px export: receipt-drop-app-store-v2.png
+Existing launcher assets and configuration left unchanged.
+Export: opaque 24-bit RGB PNG, 1024 x 1024, square canvas.
+Apple icon guidance: https://developer.apple.com/design/human-interface-guidelines/app-icons
+
+Final generation prompt:
+Use case: logo-brand.
+Create one polished, distinctive App Store icon for Receipt Drop, a playful receipt-first spending tracker with receipt collecting, cozy dioramas, badges, and friendly social features. This is a NEW original icon, based on the app's actual warm cream and sunshine-yellow design language.
+
+Output: a single square 1024 x 1024 pixel icon image, full-bleed opaque background to every edge and corner, straight square canvas edges. Show ONLY the finished icon artwork, no presentation sheet or mockup.
+
+Scene/backdrop: uninterrupted rich sunshine yellow #FFD32E, subtly warm with very restrained tonal variation.
+Subject: one adorable warm ivory paper receipt sliding into a chunky rounded golden-yellow collection pocket. The receipt is the only character: two confident dark espresso oval eyes, a tiny friendly curved smile, and very subtle apricot cheeks. The receipt has a distinctive broad softly zigzag-cut top edge and two short warm-gray horizontal receipt marks below its face; no actual text. The golden pocket is a simple thick rounded open-top inbox pouch, with a curved lip and gently recessed opening, no handles and no extra face. One simple small downward arrow is softly debossed in the middle of the pocket, communicating 'drop'. Make the receipt and pocket read as one compact, memorable silhouette.
+Style: premium soft 3D clay illustration, gently rounded tactile forms, smooth matte surfaces with almost no visible texture, controlled studio illumination from upper left, subtle contact shadows, crisp clean edges. Warm, reassuring, cheerful, and contemporary, appropriate for a delightful personal finance app.
+Composition: close, front-facing, nearly symmetric, optically centered; the combined silhouette occupies about 74 percent of canvas width and 76 percent of height, with comfortable consistent breathing room. Receipt occupies the upper two-thirds of the subject, pocket lower third. Strong dark face against cream paper. Distinct value separation between golden pocket and yellow background. Keep face features bold and uncluttered so recognizable at 48 px.
+Palette: sunshine yellow #FFD32E, slightly deeper golden yellow pocket #F4B820, warm ivory #FCFAF1, espresso #1B150B, muted warm-gray print marks, very restrained apricot #F88F4F accents.
+Avoid: lettering, wordmark, app name, numbers, currency symbols, barcode, extra mascots, pug, second face, sparkles, coins, plants, photoreal paper fibers, noisy grain, elaborate scenery, glass, metallic sheen, hard outlines, overcomplicated geometry, giant shadows, inset icon tile, rounded outer canvas corners, white borders, transparent corners, watermark.

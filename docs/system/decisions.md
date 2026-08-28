@@ -14,6 +14,18 @@ Newest first. Each entry: decision, reason, alternatives considered, tradeoffs. 
 
 ---
 
+## WhatsApp Cloud API proof-of-concept: `whatsapp-test` edge function (2026-08-26)
+
+**Decision**: Added `supabase/functions/whatsapp-test`, a JWT-authenticated Supabase Edge Function that sends Meta's pre-approved `hello_world` template to a single, server-configured test recipient (`WHATSAPP_TEST_RECIPIENT`) via the WhatsApp Cloud API (`graph.facebook.com/v23.0/<phone_number_id>/messages`). Phase 3A only — a proof-of-concept that the backend can talk to Meta's API at all. Deliberately not a generic `{phone, message}` proxy: recipient and template are both fixed server-side env vars, never accepted from the request body. Not wired into Split Bill's existing `wa.me`-link reminder flow (`lib/domain/logic/phone_number.dart`, `lib/domain/logic/whatsapp_reminder_link.dart`, `lib/features/bill_split/`), which is untouched and remains the only WhatsApp-adjacent surface end users see.
+
+**Reason**: De-risks a later (out-of-scope-for-now) Phase 3B — replacing or augmenting Split Bill's client-side `wa.me` deep links with real backend-sent messages — by first proving credentials/setup/request shape work in isolation, without touching the reminder flow real users depend on.
+
+**Alternatives considered**: (1) build this directly into `enrich-transaction` or a Split Bill-adjacent function (rejected — conflates an unproven integration with load-bearing code); (2) accept `{phone, message}` in the request body from day one (rejected — a general send-to-anyone proxy is a bigger trust/abuse surface than this PoC needs, and a fixed server-side recipient was a hard requirement); (3) send a free-form text message instead of a template (rejected — Meta requires an approved template for the first message to a recipient outside a 24h session window; `hello_world` is the only template guaranteed pre-approved on every WABA with no manual template-approval step).
+
+**Tradeoffs**: Only reachable by an authenticated user, but any authenticated user can trigger a real WhatsApp send to the fixed test number — acceptable for a personal-project PoC exercised manually, not something to leave reachable indefinitely without further gating if the project moves toward public distribution. `hello_world` is a fixed, non-customizable message — proves connectivity, not message content correctness. Graph API version is hardcoded as a const (`v23.0`); Meta deprecates old versions on a rolling schedule and this will need bumping periodically.
+
+---
+
 ## Auto-prompt payment permissions once after login (2026-08-26)
 
 **Decision**: On Android, run the existing `PaymentPermissionPrompt` walkthrough (notification access, then display-over-other-apps) automatically once per install as soon as the user lands in `MainShell` after login / session restore. Persist `AppPrefs.paymentPermissionPromptDone` so "Not now" or a completed walk never auto-asks again. Profile → Payment detection still calls `runSetupWalkthrough` manually and ignores that flag. Opening a Settings screen mid-walk now waits for `AppLifecycleState.resumed` before the next step (previously the overlay step was skipped after notification Settings opened).

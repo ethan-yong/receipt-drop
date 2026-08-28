@@ -52,6 +52,14 @@ Invoked by `lib/data/repositories/places_repository.dart` for the manual text-se
 
 In both modes: client updates the transaction after the user confirms, calling `TransactionRepository.updateTransactionPlace()` which writes `place_status='user_locked'` and re-queues sync.
 
+### `whatsapp-test`
+Phase 3A proof-of-concept only — not invoked by any Flutter code yet, and **not** related to Split Bill's existing `wa.me` reminder links (`lib/domain/logic/phone_number.dart`, `lib/domain/logic/whatsapp_reminder_link.dart`, `lib/features/bill_split/`), which are untouched. Proves the backend can send a message through Meta's official WhatsApp Cloud API.
+
+- Input: none meaningful — authenticated `POST` with an empty (or ignored) body. Recipient and message content are fixed server-side; there is deliberately no `{phone, message}` passthrough (the caller cannot choose who receives a message or what it says).
+- Always sends Meta's pre-approved `hello_world` (`en_US`) template — the only message type Meta allows before a 24h customer-service window is open with a given recipient — to `WHATSAPP_TEST_RECIPIENT` via `POST https://graph.facebook.com/v23.0/<WHATSAPP_PHONE_NUMBER_ID>/messages`.
+- Requires env `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEST_RECIPIENT` — see `supabase/functions/.env.example` and [`whatsapp-test.md`](whatsapp-test.md) for the full Meta dashboard setup.
+- Response: `{ok: true, message_id: "wamid...."}` on success; `{ok: false, error: "<code>"}` on failure. Meta's raw error body (code/type/fbtrace_id) and the access token are logged server-side only, never returned to the client. Error codes: `unauthorized`(401), `method_not_allowed`(405), `invalid_json`(400), `server_misconfigured`(500), `invalid_or_expired_token`/`invalid_recipient`/`invalid_phone_number_id`/`meta_api_rejected`/`unexpected_upstream_response`/`upstream_timeout`/`upstream_unreachable`(502).
+
 ### `_shared/place_matching.ts`
 Exports used by `enrich-transaction`: `SEARCH_RADIUS_METERS=300`, `isUsableMerchantText()` (rejects <4 alphanumeric chars), `diceCoefficient()`, `haversineMeters()`, `distanceScore()`, `CATEGORY_TO_PLACE_TYPES`, `DEFAULT_NEARBY_TYPES`.
 
@@ -125,3 +133,4 @@ Optional. When `LEADERBOARD_API_URL` is unset in Flutter's `.env`, the Friends t
 | Redis | `services/leaderboard-api` | Global leaderboard ZSET + friends-leaderboard cache-aside |
 | Supabase Auth | Flutter (PKCE), all server surfaces (JWT verification) | Identity |
 | Supabase Storage | Flutter sync worker + `places-proxy` | `receipts` (private, per-user folder), `config` (public), `place-photos` (public, service-role writes only — venue photo cache) |
+| WhatsApp Cloud API (Meta Graph API v23.0) | `whatsapp-test` (edge function only — Phase 3A PoC, not yet wired into any client flow) | Proves the backend can send a fixed `hello_world` template to a fixed server-configured test recipient |
