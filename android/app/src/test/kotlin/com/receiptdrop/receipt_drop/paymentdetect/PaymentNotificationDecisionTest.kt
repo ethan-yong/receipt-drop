@@ -67,4 +67,35 @@ class PaymentNotificationDecisionTest {
             ),
         )
     }
+
+    @Test
+    fun `a notification delivered promptly is not stale`() {
+        assertFalse(isStaleForOverlay(postTimeMs = 10_000L, nowMs = 12_000L))
+    }
+
+    @Test
+    fun `a notification released after an idle stretch is stale`() {
+        // The Doze case: posted, held back by the OS, delivered on the next
+        // wake half an hour later.
+        val postedAt = 1_000_000L
+        val deliveredAt = postedAt + 30 * 60 * 1000
+
+        assertTrue(isStaleForOverlay(postTimeMs = postedAt, nowMs = deliveredAt))
+    }
+
+    @Test
+    fun `exactly at the threshold is not yet stale`() {
+        assertFalse(
+            isStaleForOverlay(
+                postTimeMs = 0L,
+                nowMs = STALE_NOTIFICATION_MS,
+            ),
+        )
+    }
+
+    @Test
+    fun `a clock skewed backwards is never treated as stale`() {
+        // A future postTime must not underflow into a huge positive age.
+        assertFalse(isStaleForOverlay(postTimeMs = 20_000L, nowMs = 10_000L))
+    }
 }

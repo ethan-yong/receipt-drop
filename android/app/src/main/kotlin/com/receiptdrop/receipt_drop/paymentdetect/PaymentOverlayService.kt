@@ -16,6 +16,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.TextView
 import com.receiptdrop.receipt_drop.R
 import java.util.Locale
@@ -38,6 +39,23 @@ class PaymentOverlayService : Service() {
     private val timeoutHandler = Handler(Looper.getMainLooper())
     private var timeoutRunnable: Runnable? = null
 
+    /**
+     * Cards waiting for their turn.
+     *
+     * Payments arrive in bursts far more often than the one-at-a-time design
+     * first assumed — most of all right after an idle stretch, when the OS
+     * releases every notification it held back at once. Showing each new card
+     * by tearing the current window down and adding a fresh one mid-animation
+     * both looked like flickering and silently threw away every payment but
+     * the last, since only the surviving card could be categorized.
+     */
+    private val pending = ArrayDeque<Intent>()
+
+    /** The card currently on screen, kept so that a service killed while the
+     * user still had it open (an OEM memory manager can do this at any time)
+     * can hand that payment to the durable queue instead of dropping it. */
+    private var currentIntent: Intent? = null
+
     /** Set for the duration of the exit animation. The card stays on screen
      * and clickable while it plays, so without this a second chip tap (or the
      * timeout firing just as a chip is tapped) queues a second event and
@@ -49,27 +67,70 @@ class PaymentOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null) {
-            stopSelf(startId)
+            if (overlayView == null) stopSelf(startId)
             return START_NOT_STICKY
         }
 
         if (!Settings.canDrawOverlays(this)) {
             PaymentLogger.overlayDismissed("no_overlay_permission")
-            stopSelf(startId)
+            queueUncategorized(intent, "no_overlay_permission")
+            if (overlayView == null) stopSelf(startId)
             return START_NOT_STICKY
         }
 
-        // Single-card-at-a-time: drop any previously shown overlay first.
-        removeCurrentView("replaced")
-        dismissing = false
+        if (pending.size >= MAX_PENDING) {
+            // Deep enough that more cards would be an unreasonable amount of
+            // interruption. Hand the payment straight to the durable queue so
+            // the user still gets it — in the review queue rather than lost.
+            queueUncategorized(intent, "overlay_queue_full")
+            return START_NOT_STICKY
+        }
 
+        pending.addLast(intent)
+        if (overlayView == null) showNext()
+
+        return START_NOT_STICKY
+    }
+
+    /** Shows the next queued card, or stops the service when none is left. */
+    private fun showNext() {
+        val intent = pending.removeFirstOrNull()
+        currentIntent = intent
+        if (intent == null) {
+            stopSelf()
+            return
+        }
+        dismissing = false
         if (intent.getBooleanExtra(EXTRA_UNDERSTANDING_FAILED, false)) {
             showFailedOverlay()
         } else {
             showPaymentOverlay(intent)
         }
+    }
 
-        return START_NOT_STICKY
+    /**
+     * Durably queues a payment the user was never actually asked about, so it
+     * reaches them as a review-queue item instead of disappearing. Skipped
+     * for the dismiss-only "couldn't understand this" card, which carries no
+     * amount to save.
+     */
+    private fun queueUncategorized(intent: Intent, reason: String) {
+        if (intent.getBooleanExtra(EXTRA_UNDERSTANDING_FAILED, false)) return
+        val amount = intent.getDoubleExtra(EXTRA_AMOUNT, 0.0)
+        if (amount <= 0.0) return
+
+        val event = QueuedPaymentEvent(
+            id = UUID.randomUUID().toString(),
+            merchantRaw = intent.getStringExtra(EXTRA_DISPLAY_NAME) ?: "",
+            amountMyr = amount,
+            category = null,
+            suggestedCategory = intent.getStringExtra(EXTRA_SUGGESTED_CATEGORY),
+            sourcePackage = intent.getStringExtra(EXTRA_SOURCE_PACKAGE) ?: "",
+            occurredAtEpochMs = intent.getLongExtra(EXTRA_POST_TIME, System.currentTimeMillis()),
+            fingerprint = intent.getStringExtra(EXTRA_FINGERPRINT) ?: "",
+        )
+        PaymentEventQueueStore(applicationContext).enqueue(event)
+        PaymentLogger.eventQueuedForReview(event.id, reason)
     }
 
     private fun showPaymentOverlay(intent: Intent) {
@@ -215,6 +276,7 @@ class PaymentOverlayService : Service() {
         fingerprint: String,
     ) {
         if (dismissing) return
+        dismissing = true  // lock immediately so neither chips nor timeout can re-enter
         cancelTimeout()
         PaymentLogger.categorySelected(category)
 
@@ -223,6 +285,7 @@ class PaymentOverlayService : Service() {
             merchantRaw = displayName,
             amountMyr = amount,
             category = category,
+            suggestedCategory = null,
             sourcePackage = sourcePackage,
             occurredAtEpochMs = postTime,
             fingerprint = fingerprint,
@@ -230,16 +293,67 @@ class PaymentOverlayService : Service() {
         PaymentEventQueueStore(applicationContext).enqueue(event)
         PaymentLogger.eventQueued(event.id)
 
-        dismissOverlay("category_selected")
+        showSuccessAndDismiss()
+    }
+
+    private fun showSuccessAndDismiss() {
+        val view = overlayView ?: run { showNext(); return }
+        val mainContent = view.findViewById<View>(R.id.overlay_main_content)
+        val successContent = view.findViewById<View>(R.id.overlay_success_content)
+        val successCircle = view.findViewById<View>(R.id.overlay_success_circle)
+        val successLabel = view.findViewById<View>(R.id.overlay_success_label)
+
+        // Fade out the payment content
+        mainContent.animate()
+            .alpha(0f)
+            .setDuration(150)
+            .withLayer()
+            .start()
+
+        // Pop the circle in: scale 0.4→1 with overshoot + fade the whole block
+        successContent.visibility = View.VISIBLE
+        successContent.alpha = 0f
+        successCircle.scaleX = 0.4f
+        successCircle.scaleY = 0.4f
+        successLabel.alpha = 0f
+
+        successContent.animate()
+            .alpha(1f)
+            .setDuration(250)
+            .withLayer()
+            .start()
+
+        successCircle.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(400)
+            .setInterpolator(OvershootInterpolator(1.5f))
+            .start()
+
+        // Label fades in slightly after the circle lands
+        successLabel.animate()
+            .alpha(1f)
+            .setStartDelay(180)
+            .setDuration(260)
+            .start()
+
+        // Hold the success state briefly, then exit
+        val runnable = Runnable { performDismiss("category_selected") }
+        timeoutRunnable = runnable
+        timeoutHandler.postDelayed(runnable, 1100L)
     }
 
     private fun dismissOverlay(reason: String) {
         if (dismissing) return
         dismissing = true
         cancelTimeout()
+        performDismiss(reason)
+    }
+
+    private fun performDismiss(reason: String) {
         val view = overlayView
         if (view == null) {
-            stopSelf()
+            showNext()
             return
         }
         view.animate()
@@ -257,7 +371,9 @@ class PaymentOverlayService : Service() {
                 // view and stop the service out from under it.
                 if (overlayView === view) {
                     removeCurrentView(reason)
-                    stopSelf()
+                    // Each card gets the screen to itself, start to finish —
+                    // the next one is only added once this window is gone.
+                    showNext()
                 }
             }
             .start()
@@ -283,6 +399,18 @@ class PaymentOverlayService : Service() {
     override fun onDestroy() {
         cancelTimeout()
         removeCurrentView("service_destroyed")
+        // `dismissing` means the card was already answered — categorized (in
+        // which case it is queued already) or explicitly declined. Only a
+        // card still awaiting an answer needs rescuing.
+        if (!dismissing) {
+            currentIntent?.let { queueUncategorized(it, "service_destroyed") }
+        }
+        currentIntent = null
+        // Anything still waiting its turn would otherwise die with the
+        // service without the user ever seeing it.
+        while (pending.isNotEmpty()) {
+            queueUncategorized(pending.removeFirst(), "service_destroyed")
+        }
         super.onDestroy()
     }
 
@@ -301,6 +429,11 @@ class PaymentOverlayService : Service() {
         private const val EXTRA_UNDERSTANDING_FAILED = "understanding_failed"
 
         private const val AUTO_DISMISS_MS = 12_000L
+
+        /** Each card holds the screen for up to [AUTO_DISMISS_MS], so this is
+         * a cap on how long a burst can keep interrupting the user before the
+         * remainder is diverted to the in-app review queue instead. */
+        private const val MAX_PENDING = 4
 
         // Mirrors assets/config/categories-v1.json / AppColors.categoryEmoji
         // (lib/core/theme/app_colors.dart) — kept in sync manually since the

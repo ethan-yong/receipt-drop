@@ -36,6 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   PaymentListenerStatus _listenerStatus =
       const PaymentListenerStatus.unavailable();
   bool _overlayPermissionGranted = false;
+  bool _batteryOptimizationIgnored = false;
   bool _paymentDetectionEnabled = false;
 
   String? get _userId => Supabase.instance.client.auth.currentUser?.id;
@@ -83,11 +84,14 @@ class _SettingsScreenState extends State<SettingsScreen>
     final listenerStatus = await PaymentEventBridge.notificationListenerStatus();
     final overlayPermission =
         await PaymentEventBridge.isOverlayPermissionGranted();
+    final batteryOptimizationIgnored =
+        await PaymentEventBridge.isBatteryOptimizationIgnored();
     if (mounted) {
       setState(() {
         _paymentDetectionEnabled = enabled;
         _listenerStatus = listenerStatus;
         _overlayPermissionGranted = overlayPermission;
+        _batteryOptimizationIgnored = batteryOptimizationIgnored;
       });
     }
   }
@@ -516,6 +520,26 @@ class _SettingsScreenState extends State<SettingsScreen>
                               !_overlayPermissionGranted,
                           onTap: () =>
                               PaymentEventBridge.openOverlayPermissionSettings(),
+                        ),
+                        _SettingsRow(
+                          icon: Icons.battery_saver_outlined,
+                          title: 'Unrestricted battery use',
+                          subtitle:
+                              _listenerStatus.granted &&
+                                  !_batteryOptimizationIgnored
+                              ? 'Without this, payments are only detected '
+                                    'when your phone next wakes up — often '
+                                    'minutes or hours late'
+                              : 'Detects payments right away instead of when '
+                                    'your phone next wakes up',
+                          trailing: _batteryOptimizationIgnored
+                              ? 'Granted'
+                              : 'Not granted',
+                          trailingWarning:
+                              _listenerStatus.granted &&
+                              !_batteryOptimizationIgnored,
+                          onTap: () => PaymentEventBridge
+                              .requestIgnoreBatteryOptimizations(),
                         ),
                       ],
                     ],

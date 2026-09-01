@@ -5,6 +5,8 @@ import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -23,6 +25,11 @@ class PaymentNotificationListenerService : NotificationListenerService() {
     private lateinit var settings: PaymentDetectionSettings
     private var categoryMatcher: CategoryMatcher? = null
     private val executor: ExecutorService = Executors.newCachedThreadPool()
+
+    /** Fingerprints currently being understood. Covers the window between
+     * accepting a notification and having a verdict to write to [dedupCache],
+     * during which the OS can re-deliver the same notification. */
+    private val inFlight: MutableSet<String> = Collections.synchronizedSet(mutableSetOf())
 
     override fun onCreate() {
         super.onCreate()
@@ -67,7 +74,14 @@ class PaymentNotificationListenerService : NotificationListenerService() {
             PaymentLogger.duplicateIgnored(fingerprint)
             return
         }
-        dedupCache.remember(fingerprint)
+        // Only claims the fingerprint for the duration of this attempt. The
+        // durable 24h dedup entry is written once there's an actual verdict
+        // (see handleEvent) — writing it here meant a single network blip
+        // permanently hid that payment, with no retry and nothing shown.
+        if (!inFlight.add(fingerprint)) {
+            PaymentLogger.duplicateIgnored(fingerprint)
+            return
+        }
 
         val event = PaymentNotificationEvent(
             sourcePackage = payload.packageName,
@@ -87,47 +101,135 @@ class PaymentNotificationListenerService : NotificationListenerService() {
     }
 
     private fun handleEvent(context: Context, event: PaymentNotificationEvent, fingerprint: String) {
-        when (val result = client.understand(event)) {
-            is PaymentNotificationResult.Success -> {
-                val understanding = result.understanding
-                PaymentLogger.llmCallSucceeded(understanding)
-
-                if (understanding.transactionType == PaymentTransactionType.TRANSFER_IN) {
-                    // Detected, logged, deduped — but the app's transaction
-                    // model is expense-only with no income concept, so this
-                    // is never surfaced further (no overlay, no transaction).
-                    PaymentLogger.transferInSuppressed(understanding)
-                    return
+        try {
+            when (val result = understandWithRetry(event)) {
+                is PaymentNotificationResult.Success -> {
+                    // A verdict, right or wrong — safe to stop reconsidering
+                    // this notification for the cache's TTL.
+                    dedupCache.remember(fingerprint)
+                    handleUnderstood(context, event, fingerprint, result)
                 }
 
-                if (!shouldShowOverlay(understanding)) {
-                    // A real LLM response that just wasn't actionable
-                    // (unknown / no amount / low confidence) — log for
-                    // diagnosis and show a minimal, dismiss-only fallback
-                    // card rather than staying completely silent, since the
-                    // system did genuinely attempt to understand this one
-                    // (unlike a pure network/timeout failure, handled below).
+                is PaymentNotificationResult.Failure -> {
+                    // Infrastructure failure (network/timeout/malformed
+                    // response) — log only, no overlay. Interrupting the user
+                    // for a connectivity blip is noise, not signal; a genuine
+                    // LLM "unknown" verdict is a different, bounded case.
+                    //
+                    // Deliberately not remembered: this is the absence of a
+                    // verdict, so a re-posted notification should get another
+                    // chance rather than being silently swallowed for 24h.
                     PaymentLogger.unknownOrLowConfidenceSuppressed(event, result)
-                    PaymentOverlayService.showUnderstandingFailed(context, event)
-                    return
                 }
-
-                val suggestedCategory = categoryMatcher
-                    ?.guessWithConfidence(understanding.displayName ?: "", event.rawText)
-                    ?.category
-
-                PaymentLogger.overlayShown(understanding)
-                PaymentOverlayService.show(context, event, understanding, suggestedCategory, fingerprint)
             }
+        } finally {
+            inFlight.remove(fingerprint)
+        }
+    }
 
-            is PaymentNotificationResult.Failure -> {
-                // Infrastructure failure (network/timeout/malformed response) —
-                // log only, no overlay. Interrupting the user for a
-                // connectivity blip is noise, not signal; a genuine LLM
-                // "unknown" verdict (above) is a different, bounded case.
-                PaymentLogger.unknownOrLowConfidenceSuppressed(event, result)
+    private fun handleUnderstood(
+        context: Context,
+        event: PaymentNotificationEvent,
+        fingerprint: String,
+        result: PaymentNotificationResult.Success,
+    ) {
+        val understanding = result.understanding
+        PaymentLogger.llmCallSucceeded(understanding)
+
+        if (understanding.transactionType == PaymentTransactionType.TRANSFER_IN) {
+            // Detected, logged, deduped — but the app's transaction model is
+            // expense-only with no income concept, so this is never surfaced
+            // further (no overlay, no transaction).
+            PaymentLogger.transferInSuppressed(understanding)
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        val stale = isStaleForOverlay(event.postTime, now)
+
+        if (!shouldShowOverlay(understanding)) {
+            // A real LLM response that just wasn't actionable (unknown / no
+            // amount / low confidence) — log for diagnosis and show a
+            // minimal, dismiss-only fallback card rather than staying
+            // completely silent, since the system did genuinely attempt to
+            // understand this one.
+            PaymentLogger.unknownOrLowConfidenceSuppressed(event, result)
+            if (!stale) PaymentOverlayService.showUnderstandingFailed(context, event)
+            return
+        }
+
+        val suggestedCategory = categoryMatcher
+            ?.guessWithConfidence(understanding.displayName ?: "", event.rawText)
+            ?.category
+
+        if (stale) {
+            // The OS held this back (Doze, or the process being suspended)
+            // until long after the payment. A card popping up over an
+            // unrelated app minutes later reads as a glitch and asks the user
+            // to categorize something they've moved on from, so it goes
+            // straight to the in-app review queue instead.
+            PaymentLogger.staleNotificationDiverted(event, now - event.postTime)
+            enqueueForReview(context, event, understanding, suggestedCategory, fingerprint)
+            return
+        }
+
+        PaymentLogger.overlayShown(understanding)
+        PaymentOverlayService.show(context, event, understanding, suggestedCategory, fingerprint)
+    }
+
+    private fun enqueueForReview(
+        context: Context,
+        event: PaymentNotificationEvent,
+        understanding: PaymentNotificationUnderstanding,
+        suggestedCategory: String?,
+        fingerprint: String,
+    ) {
+        val amount = understanding.amount ?: return
+        val queued = QueuedPaymentEvent(
+            id = UUID.randomUUID().toString(),
+            merchantRaw = understanding.displayName ?: "",
+            amountMyr = amount,
+            category = null,
+            suggestedCategory = suggestedCategory,
+            sourcePackage = event.sourcePackage,
+            occurredAtEpochMs = event.postTime,
+            fingerprint = fingerprint,
+        )
+        PaymentEventQueueStore(context).enqueue(queued)
+        PaymentLogger.eventQueuedForReview(queued.id, "stale_notification")
+    }
+
+    /**
+     * Retries a failed understanding call a couple of times before giving up.
+     *
+     * The single-shot version turned any transient failure into a permanently
+     * lost payment, because the fingerprint had already been written to the
+     * 24h dedup cache and the notification is never re-delivered. Waking from
+     * an idle stretch is exactly when the first request is most likely to hit
+     * a not-yet-reconnected network.
+     */
+    private fun understandWithRetry(event: PaymentNotificationEvent): PaymentNotificationResult {
+        var last: PaymentNotificationResult = PaymentNotificationResult.Failure("no_attempt")
+        for (attempt in 1..MAX_LLM_ATTEMPTS) {
+            val result = client.understand(event)
+            if (result is PaymentNotificationResult.Success) return result
+
+            last = result
+            val reason = (result as PaymentNotificationResult.Failure).reason
+            // Missing build config can't fix itself between attempts.
+            if (reason == "client_misconfigured") return result
+
+            if (attempt < MAX_LLM_ATTEMPTS) {
+                PaymentLogger.llmCallRetrying(event, attempt, reason)
+                try {
+                    Thread.sleep(RETRY_BACKOFF_MS * attempt)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return result
+                }
             }
         }
+        return last
     }
 
     private fun buildPayload(sbn: StatusBarNotification): NotificationPayload {
@@ -163,5 +265,8 @@ class PaymentNotificationListenerService : NotificationListenerService() {
 
     companion object {
         private const val TAG = "PaymentDetect"
+
+        private const val MAX_LLM_ATTEMPTS = 3
+        private const val RETRY_BACKOFF_MS = 1_500L
     }
 }

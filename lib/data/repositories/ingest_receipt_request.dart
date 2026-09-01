@@ -39,6 +39,7 @@ class IngestReceiptRequest {
     this.pickedPlaceLocked = false,
     this.fieldCorrections = const [],
     this.notes,
+    this.occurredAt,
   });
 
   /// Both null for a transaction with no receipt image (e.g. captured from a
@@ -103,4 +104,11 @@ class IngestReceiptRequest {
   /// notification's inline reply before this receipt was ever confirmed.
   /// See `docs/plans/2026-07-30-post-share-receipt-notification.md`.
   final String? notes;
+
+  /// When the spend actually happened, for sources that know it independently
+  /// of when the receipt reaches the outbox. A payment-notification capture
+  /// can sit in the native queue for hours before Flutter drains it, so
+  /// defaulting to the insert time would file it under the wrong day. Null
+  /// for the capture flows where the two are the same moment.
+  final DateTime? occurredAt;
 }

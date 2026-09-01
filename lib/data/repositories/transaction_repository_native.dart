@@ -115,7 +115,7 @@ class TransactionRepository {
           OutboxTransactionsCompanion.insert(
             id: id,
             userId: request.userId,
-            occurredAt: Value(now),
+            occurredAt: Value(request.occurredAt ?? now),
             amountMyr: Value(request.amountMyr),
             amountSource: Value(amountSource),
             needsAmount: Value(request.needsAmount),

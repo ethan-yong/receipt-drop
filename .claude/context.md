@@ -34,6 +34,17 @@ The share intent flow (OS share sheet → Receipt Drop) has been reworked from *
 
 If you're picking this up cold: check `git status`/`git diff` again before assuming this description is still current.
 
+## Payment detection (notification → overlay → transaction), reworked 2026-08-29
+
+Three separately-reproduced bugs were fixed here; see `docs/system/decisions.md` for the evidence. Things to know before touching this area:
+
+- **The floating card is queued, not replaced.** `PaymentOverlayService` holds an `ArrayDeque<Intent>` and shows one card at a time. Don't reintroduce a `removeCurrentView("replaced")` on a new `onStartCommand` — that was the flicker *and* silently dropped every payment but the last in a burst.
+- **Anything the user was never asked about goes to the durable queue uncategorized** (`QueuedPaymentEvent.category == null`), and Flutter ingests it with `needsReview: true` so it lands on the existing needs-review banner. That covers a stale notification, queue overflow, a destroyed service, and a missing overlay permission. A *timeout* or "Not now" still discards deliberately — don't "fix" those into saves.
+- **`PaymentEventDrainService.drainAndIngest()` must run on resume, not just in `main()`.** The listener keeps the process alive, so returning to the app reuses the existing Flutter engine and `main()` does not re-run. `PaymentEventDrainListener` (wired in `app.dart`) is what makes a category picked on the overlay actually reach the home screen.
+- **The dedup cache is written only after the LLM returns a verdict.** Remembering the fingerprint before the network call meant one blip hid that payment for 24h with no retry. There's an in-memory `inFlight` set covering the gap, plus 3 attempts with backoff.
+- **Doze is the reason detection ever felt random.** The app now asks for `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, but the user can decline, so the stale-diversion path above has to keep working without it.
+- Not verified on a real device this pass — the change set was built and unit-tested, but the phone's installed APK is signed with a key that isn't on the dev machine, so it couldn't be updated in place.
+
 ## Incomplete / partially-wired features
 
 - **Pending-receipt location context (2026-07-30)**: `ShareIntentListener` also resolves a best-effort nearby-venue name per shared file (passive-only GPS check + `places-proxy`'s `nearby_candidates` mode with no bias) and writes it to the new `pending_imports.venueLabel` column, shown as a "📍" line on `PendingImportsScreen`'s card. See `docs/plans/2026-07-30-pending-receipt-location-context.md`. Independent of, and not yet consolidated with, the *existing* OCR-time `shareLocationLat/Lng` capture in `receipt_ingest_service.dart` (used for the confirm sheet's map preview) — the two capture points currently coexist; consolidating them is a flagged, not-yet-done follow-up. Not verified against a real device/location this pass.
